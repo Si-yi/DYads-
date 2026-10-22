@@ -11240,7 +11240,8 @@ static void DYYYUpdateDetailInputTransparency(UIView *root) {
         CGRect fieldPill = CGRectMake(12, (CGRectGetHeight(middle.bounds) - 36) / 2, width - 24, 36);
         CGRect pill = expanded ? CGRectInset(container.bounds, 8, 6) : [middle convertRect:fieldPill toView:container];
         if (expanded) {
-            CGFloat bottom = CGRectGetMaxY(container.bounds) - 8;
+            // 底边下延 6 点，增加工具按钮下面的留白，表情仍在框外。
+            CGFloat bottom = CGRectGetMaxY(container.bounds) - 2;
             UIView *panel = dyyyCompactEmoticonPanel;
             if (panel.window && !panel.hidden && panel.alpha > 0.01 &&
                 panel.window.windowScene == window.windowScene && CGRectGetHeight(panel.bounds) > 0) {
@@ -11248,21 +11249,21 @@ static void DYYYUpdateDetailInputTransparency(UIView *root) {
                 rect = [window convertRect:rect fromWindow:panel.window];
                 rect = [container convertRect:rect fromView:window];
                 if (CGRectGetMinY(rect) > CGRectGetMinY(pill) + 36)
-                    bottom = MIN(bottom, CGRectGetMinY(rect) - 8);
+                    bottom = MIN(bottom, CGRectGetMinY(rect) - 2);
             }
             if (!dyyyCompactKeyboardDismissed && !CGRectIsEmpty(dyyyCompactKeyboardScreenFrame)) {
                 CGRect keyboard = [window convertRect:dyyyCompactKeyboardScreenFrame fromCoordinateSpace:window.screen.coordinateSpace];
                 keyboard = [container convertRect:keyboard fromView:window];
                 if (CGRectGetMinY(keyboard) > CGRectGetMinY(pill) + 36 &&
                     CGRectGetWidth(keyboard) >= CGRectGetWidth(container.bounds) * 0.75)
-                    bottom = MIN(bottom, CGRectGetMinY(keyboard) - 8);
+                    bottom = MIN(bottom, CGRectGetMinY(keyboard) - 2);
             }
             pill.size.height = bottom - CGRectGetMinY(pill);
         }
         pill.size.height = MAX(36, pill.size.height);
         if (!chrome) {
             chrome = [[UIView alloc] initWithFrame:pill];
-            chrome.accessibilityIdentifier = @"DYYY.AdaptiveCommentInput.r4";
+            chrome.accessibilityIdentifier = @"DYYY.AdaptiveCommentInput.r5";
             chrome.userInteractionEnabled = NO;
             chrome.accessibilityElementsHidden = YES;
             UIVisualEffect *material = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterialDark];
@@ -11302,30 +11303,52 @@ static void DYYYUpdateDetailInputTransparency(UIView *root) {
         DYYYCompactClearEmoticonPanel(dyyyCompactEmoticonPanel);
         // 展开期间保留原生文字换行、图片预览和发送区布局，仅让玻璃外壳跟随其尺寸。
         if (expanded) return;
-        // 只调输入行内原有文字和右侧功能栈，不移动容器、不缩放触摸区域。
-        CGFloat textRight = CGRectGetMaxX(fieldPill) - 12;
-        for (UIView *view in middle.subviews) {
-            CGRect base = DYYYCompactInputBaseFrame(view);
-            if ([NSStringFromClass(view.class) isEqualToString:@"AWEElementStackView"] && !view.hidden &&
-                base.size.width > 0 && base.size.height >= 20 && base.origin.x > width * 0.55) {
-                CGRect target = base;
-                target.origin.x = MIN(base.origin.x, CGRectGetMaxX(fieldPill) - 12 - base.size.width);
-                target.origin.y = CGRectGetMidY(fieldPill) - base.size.height / 2;
-                DYYYCompactInputSetFrame(view, target);
-                textRight = MIN(textRight, target.origin.x - 8);
-            }
-        }
-        for (UIView *view in middle.subviews) {
+        // 作品详情页会多套一层宿主，按 middle 坐标计算，兼容嵌套的文字和按钮组。
+        CGFloat contentLeft = CGRectGetMinX(fieldPill) + 18;
+        CGFloat contentRight = CGRectGetMaxX(fieldPill) - 18;
+        CGFloat textRight = contentRight;
+        NSMutableSet<UIView *> *movedGroups = [NSMutableSet set];
+        for (UIView *view in views) {
+            if (view == middle || ![view isDescendantOfView:middle] || view.hidden || view.alpha <= 0.01) continue;
             NSString *name = NSStringFromClass(view.class);
-            CGRect base = DYYYCompactInputBaseFrame(view);
-            if (([name isEqualToString:@"AWECommentInputViewSwiftImpl.CommentInputTextView"] || [view isKindOfClass:UILabel.class]) &&
-                base.size.height > 0 && base.size.height <= 30 && base.origin.x < width / 2) {
-                CGRect target = base;
-                target.origin.x = CGRectGetMinX(fieldPill) + 12;
-                target.origin.y = CGRectGetMidY(fieldPill) - base.size.height / 2;
-                target.size.width = MAX(0, MIN(base.size.width, textRight - target.origin.x));
-                DYYYCompactInputSetFrame(view, target);
+            if (![name isEqualToString:@"AWEElementStackView"] && ![view isKindOfClass:UIStackView.class]) continue;
+            BOOL insideGroup = NO;
+            for (UIView *parent = view.superview; parent && parent != middle; parent = parent.superview) {
+                if ([movedGroups containsObject:parent]) { insideGroup = YES; break; }
             }
+            if (insideGroup) continue;
+            CGRect base = DYYYCompactInputBaseFrame(view);
+            CGRect rect = [middle convertRect:base fromView:view.superview];
+            if (rect.size.width <= 0 || rect.size.height < 20 || rect.origin.x <= width * 0.55) continue;
+            rect.origin.x = MIN(rect.origin.x, contentRight - rect.size.width);
+            rect.origin.y = CGRectGetMidY(fieldPill) - rect.size.height / 2;
+            DYYYCompactInputSetFrame(view, [view.superview convertRect:rect fromView:middle]);
+            [movedGroups addObject:view];
+            textRight = MIN(textRight, CGRectGetMinX(rect) - 10);
+        }
+        for (UIView *view in views) {
+            if (view == middle || ![view isDescendantOfView:middle] || view.hidden || view.alpha <= 0.01) continue;
+            NSString *name = NSStringFromClass(view.class);
+            BOOL inputText = [name isEqualToString:@"AWECommentInputViewSwiftImpl.CommentInputTextView"] ||
+                [view isKindOfClass:UITextView.class] || [view isKindOfClass:UITextField.class];
+            if (!inputText && ![view isKindOfClass:UILabel.class]) continue;
+            BOOL insideTextOrGroup = NO;
+            for (UIView *parent = view.superview; parent && parent != middle; parent = parent.superview) {
+                if ([movedGroups containsObject:parent] || [parent isKindOfClass:UITextView.class] ||
+                    [parent isKindOfClass:UITextField.class] ||
+                    [NSStringFromClass(parent.class) isEqualToString:@"AWECommentInputViewSwiftImpl.CommentInputTextView"]) {
+                    insideTextOrGroup = YES; break;
+                }
+            }
+            if (insideTextOrGroup) continue;
+            CGRect base = DYYYCompactInputBaseFrame(view);
+            CGRect rect = [middle convertRect:base fromView:view.superview];
+            if (rect.size.height <= 0 || rect.size.height > CGRectGetHeight(middle.bounds) ||
+                rect.origin.x >= width / 2) continue;
+            rect.origin.x = contentLeft;
+            rect.origin.y = CGRectGetMidY(fieldPill) - rect.size.height / 2;
+            rect.size.width = MAX(0, MIN(rect.size.width, textRight - rect.origin.x));
+            DYYYCompactInputSetFrame(view, [view.superview convertRect:rect fromView:middle]);
         }
     } @finally {
         objc_setAssociatedObject(root, &kDYYYCompactInputBusyKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
