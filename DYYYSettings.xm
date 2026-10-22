@@ -22,6 +22,7 @@
 #import "DYYYSettingsHelper.h"
 #import "DYYYBackupTools.h"
 #import "DYYYDebugInspector.h"
+#import "DYYYAutoMessage.h"
 #import "DYYYUtils.h"
 
 @class DYYYIconOptionsDialogView;
@@ -4087,6 +4088,10 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
     [pluginToolsSections addObject:[DYYYSettingsHelper createSectionWithTitle:@"高级" items:@[ remoteConfigEntry ]]];
     AWESettingItemModel *pluginToolsEntry = DYYYMakePageEntry(rootVC, @"插件工具", @"ic_gearsimplify_outlined_20", @"DYYY · 插件工具", pluginToolsSections);
 
+    NSArray<AWESettingSectionModel *> *autoMessageSections = [DYYYAutoMessage settingsSectionsWithRootViewController:rootVC];
+    AWESettingItemModel *autoMessageEntry = DYYYMakePageEntry(rootVC, @"自动消息", @"ic_message_outlined_20", @"DYYY · 自动消息", @[ autoMessageSections.firstObject ]);
+    AWESettingItemModel *friendShareEntry = DYYYMakePageEntry(rootVC, @"好友分享进推荐", @"ic_video_outlined_20", @"DYYY · 好友分享进推荐", @[ autoMessageSections.lastObject ]);
+
     NSMutableArray *backupToolItems = [NSMutableArray array];
     NSArray<NSDictionary *> *backupToolDefinitions = @[
         @{@"identifier" : @"DYYYBackupExport", @"title" : @"备份到文件", @"imageName" : @"ic_phonearrowup_outlined_20"},
@@ -4126,15 +4131,17 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
     AWESettingSectionModel *pluginSection = [[%c(AWESettingSectionModel) alloc] init];
     pluginSection.sectionHeaderTitle = @"DYYY";
     pluginSection.sectionHeaderHeight = 40;
-    pluginSection.sectionFooterTitle = @"本项目仅供学习、研究与测试使用，严禁用于商业用途或违法活动。使用者应自行遵守所在地法律法规及相关平台规则，并承担因使用、修改或分发本项目产生的风险与责任。项目作者及贡献者不对相关后果承担责任。";
+    pluginSection.footerTitle = @"本项目仅供学习、研究与测试使用，严禁用于商业用途或违法活动。使用者应自行遵守所在地法律法规及相关平台规则，并承担因使用、修改或分发本项目产生的风险与责任。项目作者及贡献者不对相关后果承担责任。";
     pluginSection.type = 0;
-    pluginSection.itemArray = @[ pluginToolsEntry, backupToolsEntry, authorInfoEntry ];
+    pluginSection.itemArray = @[ autoMessageEntry, friendShareEntry, pluginToolsEntry, backupToolsEntry, authorInfoEntry ];
 
     DYYYResetSettingsSearchIndex();
     DYYYBuildSettingsSearchIndexIfNeeded(mainItems);
     BOOL wasBuildingSearchIndex = DYYYBuildingSettingsSearchIndex;
     DYYYBuildingSettingsSearchIndex = YES;
     if (pluginToolsEntry.cellTappedBlock) pluginToolsEntry.cellTappedBlock();
+    if (autoMessageEntry.cellTappedBlock) autoMessageEntry.cellTappedBlock();
+    if (friendShareEntry.cellTappedBlock) friendShareEntry.cellTappedBlock();
     if (backupToolsEntry.cellTappedBlock) backupToolsEntry.cellTappedBlock();
     DYYYBuildingSettingsSearchIndex = wasBuildingSearchIndex;
     DYYYRegisterSearchSections(@"DYYY · 作者信息", @[ aboutSection ]);
