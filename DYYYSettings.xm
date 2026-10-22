@@ -4126,7 +4126,7 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
     AWESettingSectionModel *pluginSection = [[%c(AWESettingSectionModel) alloc] init];
     pluginSection.sectionHeaderTitle = @"DYYY";
     pluginSection.sectionHeaderHeight = 40;
-    pluginSection.footerTitle = @"本项目仅供学习、研究与测试使用，严禁用于商业用途或违法活动。使用者应自行遵守所在地法律法规及相关平台规则，并承担因使用、修改或分发本项目产生的风险与责任。项目作者及贡献者不对相关后果承担责任。";
+    pluginSection.sectionFooterTitle = @"本项目仅供学习、研究与测试使用，严禁用于商业用途或违法活动。使用者应自行遵守所在地法律法规及相关平台规则，并承担因使用、修改或分发本项目产生的风险与责任。项目作者及贡献者不对相关后果承担责任。";
     pluginSection.type = 0;
     pluginSection.itemArray = @[ pluginToolsEntry, backupToolsEntry, authorInfoEntry ];
 

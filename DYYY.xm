@@ -20,6 +20,7 @@
 #import "CityManager.h"
 #import "DYYYBottomAlertView.h"
 #import "DYYYManager.h"
+#import "DYYYSettingsHelper.h"
 
 #import "AWMSafeDispatchTimer.h"
 #import "DYYYConstants.h"
