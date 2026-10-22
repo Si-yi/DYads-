@@ -946,37 +946,6 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
       // 创建基本设置二级界面的设置项
       NSMutableDictionary *cellTapHandlers = [NSMutableDictionary dictionary];
 
-      // 【外观设置】分类
-      NSMutableArray<AWESettingItemModel *> *appearanceItems = [NSMutableArray array];
-      NSArray *appearanceSettings = @[
-          @{@"identifier" : @"DYYYEnableDanmuColor",
-            @"title" : @"启用弹幕改色",
-            @"detail" : @"",
-            @"cellType" : @6,
-            @"imageName" : @"ic_dansquare_outlined_20"},
-          @{
-              @"identifier" : @"DYYYDanmuColor",
-              @"title" : @"自定弹幕颜色",
-              @"subTitle" : @"填入 random 使用随机颜色弹幕",
-              @"detail" : @"十六进制",
-              @"cellType" : @20,
-              @"imageName" : @"ic_dansquarenut_outlined_20"
-          },
-          @{
-              @"identifier" : @"DYYYDanmuRainbowRotating",
-              @"title" : @"旋转彩虹弹幕",
-              @"subTitle" : @"启用后将覆盖上面的自定义弹幕颜色",
-              @"detail" : @"",
-              @"cellType" : @37,
-              @"imageName" : @"ic_dansquarenut_outlined_20"
-          }
-      ];
-
-      for (NSDictionary *dict in appearanceSettings) {
-          AWESettingItemModel *item = [DYYYSettingsHelper createSettingItem:dict cellTapHandlers:cellTapHandlers];
-          [appearanceItems addObject:item];
-      }
-
       // 【视频播放设置】分类
       NSMutableArray<AWESettingItemModel *> *videoItems = [NSMutableArray array];
       NSArray *videoSettings = @[
@@ -1490,7 +1459,6 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
 
       // 创建并组织所有section
       NSMutableArray *sections = [NSMutableArray array];
-      [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"外观设置" items:appearanceItems]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"视频播放" items:videoItems]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"杂项设置" items:miscellaneousItems]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"过滤与屏蔽" footerTitle:@"请不要同时开启过多过滤推荐项目，这会增大视频流加载延迟。" items:filterItems]];
@@ -4130,4 +4098,7 @@ __attribute__((constructor)) static void DYYYDisableFloatButtons(void) {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     [defaults removeObjectForKey:@"DYYYEnableFloatSpeedButton"];
     [defaults removeObjectForKey:@"DYYYEnableFloatClearButton"];
+    // 外观设置（弹幕改色）同样已移除
+    [defaults removeObjectForKey:@"DYYYEnableDanmuColor"];
+    [defaults removeObjectForKey:@"DYYYDanmuRainbowRotating"];
 }
