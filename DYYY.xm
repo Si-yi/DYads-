@@ -27,7 +27,6 @@
 #import "DYYYFloatSpeedButton.h"
 #import "DYYYSettingViewController.h"
 #import "DYYYToast.h"
-#import "DYYYVideoFeedTable.h"
 #import "DYYYPlusIcon.h"
 #import "DYYYUtils.h"
 
@@ -11396,19 +11395,6 @@ static Class tabBarButtonClass = nil;
     BOOL enableBlur = DYYYGetBool(@"DYYYEnableCommentBlur");
     BOOL enableFS = DYYYGetBool(@"DYYYEnableFullScreen");
 
-    // 首页全屏：HUD（文案、进度条）被写成撑高后的满高时，钉回表撑高前的高度（见 DYYYVideoFeedTable.xm）。
-    if (enableFS) {
-        UIResponder *hudOwner = self.nextResponder;
-        if (hudOwner && [hudOwner isKindOfClass:%c(AWEPlayInteractionViewController)]) {
-            CGFloat tabDelta = (gCurrentTabBarHeight > 0 && originalTabBarHeight > 0) ? gCurrentTabBarHeight - originalTabBarHeight : 0;
-            CGRect pinnedFrame = DYYYFeedHUDAdjustFrame(self, frame, tabDelta);
-            if (!CGRectIsNull(pinnedFrame)) {
-                %orig(pinnedFrame);
-                return;
-            }
-        }
-    }
-
     UIViewController *vc = [DYYYUtils firstAvailableViewControllerFromView:self];
     Class DetailVCClass = NSClassFromString(@"AWEMixVideoPanelDetailTableViewController");
     Class PlayVCClass1 = NSClassFromString(@"AWEAwemePlayVideoViewController");
@@ -11528,15 +11514,6 @@ static Class tabBarButtonClass = nil;
     } else {
         [FloatingSpeedButton reloadConfiguration];
         updateClearButtonVisibility();
-    }
-
-    // 首页全屏：HUD 在撑高过的视频表内时，高度由 DYYYVideoFeedTable.xm 钉在表撑高前的高度，
-    // 不再按页面类型猜。不在这类表内（搜索页、好友聊天页等）才走下面原来的规则。
-    if (DYYYGetBool(@"DYYYEnableFullScreen")) {
-        CGFloat tabDelta = (gCurrentTabBarHeight > 0 && originalTabBarHeight > 0) ? gCurrentTabBarHeight - originalTabBarHeight : 0;
-        if (DYYYFeedHUDApplyPin(self.view, tabDelta)) {
-            return;
-        }
     }
 
     // 详情页（别人主页里的视频、顶栏「经验」等入口）：原生表高就是整屏，信息区本来就按整页高度排到评论输入栏上沿。

@@ -895,6 +895,39 @@ static void DYYYBuildSettingsSearchIndexIfNeeded(NSArray<AWESettingItemModel *> 
 }
 %end
 
+#pragma mark - 界面精简：按 DYKiller 的分区重排
+
+static char kDYYYPageEntryKey;
+
+// 做一个「点进去是子页」的入口行；子页里可以继续嵌套。搜索索引构建时会连带登记嵌套子页里的设置项。
+static AWESettingItemModel *DYYYMakePageEntry(UIViewController *rootVC, NSString *title, NSString *icon, NSString *indexPath, NSArray *sections) {
+    AWESettingItemModel *entry = [[NSClassFromString(@"AWESettingItemModel") alloc] init];
+    entry.identifier = [@"DYYYPage." stringByAppendingString:title];
+    entry.title = title;
+    entry.type = 0;
+    entry.svgIconImageName = icon;
+    entry.cellType = 26;
+    entry.colorStyle = 0;
+    entry.isEnable = YES;
+    objc_setAssociatedObject(entry, &kDYYYPageEntryKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    entry.cellTappedBlock = ^{
+      DYYYRegisterSearchSections(indexPath, sections);
+      if (DYYYBuildingSettingsSearchIndex) {
+          for (AWESettingSectionModel *section in sections) {
+              for (AWESettingItemModel *item in section.itemArray) {
+                  if (objc_getAssociatedObject(item, &kDYYYPageEntryKey) && item.cellTappedBlock) {
+                      item.cellTappedBlock();
+                  }
+              }
+          }
+          return;
+      }
+      AWESettingBaseViewController *subVC = [DYYYSettingsHelper createSubSettingsViewController:title sections:sections];
+      [rootVC.navigationController pushViewController:(UIViewController *)subVC animated:YES];
+    };
+    return entry;
+}
+
 #ifdef __cplusplus
 extern "C"
 #endif
@@ -1761,10 +1794,13 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
 
     [mainItems addObject:uiSettingItem];
 
-    // 创建隐藏设置分类项
+    // 「移除顶部频道」入口：在下面单独建好，放进「界面精简 → 首页顶栏」里。
+    __block AWESettingItemModel *topChannelEntry = nil;
+
+    // 创建界面精简分类项（原「隐藏设置」+「顶栏移除」，按 DYKiller 的分区重排）
     AWESettingItemModel *hideSettingItem = [[%c(AWESettingItemModel) alloc] init];
     hideSettingItem.identifier = @"DYYYHideSettings";
-    hideSettingItem.title = @"隐藏设置";
+    hideSettingItem.title = @"界面精简";
     hideSettingItem.type = 0;
     hideSettingItem.svgIconImageName = @"ic_eyeslash_outlined_20";
     hideSettingItem.cellType = 26;
@@ -2570,23 +2606,138 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
           AWESettingItemModel *item = [DYYYSettingsHelper createSettingItem:dict];
           [commentpanel addObject:item];
       }
-      // 创建并组织所有section
+      // 按 DYKiller「界面精简」的分区重排。已有的设置项一个不少：按标识取用，没被分区收走的放到最后。
+      NSMutableDictionary<NSString *, AWESettingItemModel *> *pool = [NSMutableDictionary dictionary];
+      NSMutableArray<NSString *> *poolOrder = [NSMutableArray array];
+      for (NSArray<AWESettingItemModel *> *group in @[ mainUiItems, videoUiItems, sidebarItems, messageAndMineItems, infoItems, livestreamItems, modernpanels, commentpanel ]) {
+          for (AWESettingItemModel *item in group) {
+              if (item.identifier.length > 0 && !pool[item.identifier]) {
+                  pool[item.identifier] = item;
+                  [poolOrder addObject:item.identifier];
+              }
+          }
+      }
+      NSMutableSet<NSString *> *used = [NSMutableSet set];
+      NSArray<AWESettingItemModel *> * (^pick)(NSArray<NSString *> *) = ^NSArray<AWESettingItemModel *> *(NSArray<NSString *> *ids) {
+        NSMutableArray<AWESettingItemModel *> *result = [NSMutableArray array];
+        for (NSString *identifier in ids) {
+            AWESettingItemModel *item = pool[identifier];
+            if (item && ![used containsObject:identifier]) {
+                [result addObject:item];
+                [used addObject:identifier];
+            }
+        }
+        return result;
+      };
+      NSArray *(^sec)(NSMutableArray *, NSString *, NSArray *) = ^NSArray *(NSMutableArray *list, NSString *title, NSArray *items) {
+        if (items.count > 0) {
+            [list addObject:[DYYYSettingsHelper createSectionWithTitle:title items:items]];
+        }
+        return list;
+      };
+
+      // —— 视频播放 → 播放页精简
+      NSMutableArray *playbackSections = [NSMutableArray array];
+      sec(playbackSections, @"播放页元素", pick(@[ @"DYYYHideEntry", @"DYYYRemoveEntry", @"DYYYHideDanmuButton", @"DYYYHideCancelMute", @"DYYYHideBack", @"DYYYHideGradient", @"DYYYHidePauseVideoRelatedWord", @"DYYYHideStoryProgressSlide", @"DYYYHideDotsIndicator", @"DYYYHidePopover" ]));
+      sec(playbackSections, @"右侧按钮", pick(@[ @"DYYYHideLOTAnimationView", @"DYYYHideFollowPromptView", @"DYYYHideLikeLabel", @"DYYYHideCommentLabel", @"DYYYHideCollectLabel", @"DYYYHideShareLabel", @"DYYYHideLikeButton", @"DYYYHideCommentButton", @"DYYYHideCollectButton", @"DYYYHideShareButton", @"DYYYHideAvatarButton", @"DYYYHideAvatarLive", @"DYYYHideMusicButton" ]));
+      sec(playbackSections, @"锚点标签", pick(@[ @"DYYYHideFeedAnchorContainer", @"DYYYHideLocation", @"DYYYHideCameraLocation", @"DYYYHideChallengeStickers", @"DYYYHideEditTag", @"DYYYHideLiveGIF", @"DYYYHideItemTag", @"DYYYHideQuqishuiting", @"DYYYHideHisShop" ]));
+      sec(playbackSections, @"文案上方", pick(@[ @"DYYYHideFriendRecommend", @"DYYYHideRecommendTips", @"DYYYHideShareContentView", @"DYYYHideTemplateLabel", @"DYYYHideTemplateTags" ]));
+      sec(playbackSections, @"昵称右侧", pick(@[ @"DYYYHideRightLabel", @"DYYYHideGongChuang", @"DYYYHideChapterProgress" ]));
+      sec(playbackSections, @"文案下方", pick(@[ @"DYYYHideBottomRelated", @"DYYYHideInteractionSearch", @"DYYYHideAntiAddictedNotice", @"DYYYHideTemplateVideo", @"DYYYHideTemplatePlaylet", @"DYYYHideHotspot", @"DYYYHideBottomInteraction", @"DYYYHideSearchSame" ]));
+      AWESettingItemModel *playbackEntry = DYYYMakePageEntry(rootVC, @"播放页精简", @"ic_eyeslash_outlined_20", @"界面精简 · 播放页精简", playbackSections);
+
+      // —— 视频播放 → 评论区精简
+      NSMutableArray *commentSections = [NSMutableArray array];
+      sec(commentSections, @"评论区顶部", pick(@[ @"DYYYHideCommentDiscover", @"DYYYHideCommentTips" ]));
+      sec(commentSections, @"评论区元素", pick(@[ @"DYYYHideCommentViews" ]));
+      AWESettingItemModel *commentEntry = DYYYMakePageEntry(rootVC, @"评论区精简", @"ic_comment_outlined_20", @"界面精简 · 评论区精简", commentSections);
+
+      // —— 视频播放 → 分享面板精简
+      NSMutableArray *shareSections = [NSMutableArray array];
+      sec(shareSections, @"分享面板", pick(@[ @"DYYYHidePrivateMessages" ]));
+      AWESettingItemModel *shareEntry = DYYYMakePageEntry(rootVC, @"分享面板精简", @"ic_share_outlined", @"界面精简 · 分享面板精简", shareSections);
+
+      // —— 长按菜单
+      NSMutableArray *feedMenuSections = [NSMutableArray array];
+      NSArray *feedMenuItems = pick(@[ @"DYYYSimplifyLongPressPanel", @"DYYYHidePanelItems" ]);
+      if (feedMenuItems.count > 0) {
+          [feedMenuSections addObject:[DYYYSettingsHelper createSectionWithTitle:@"隐藏面板功能" footerTitle:@"隐藏视频长按面板中的功能" items:feedMenuItems]];
+      }
+      AWESettingItemModel *feedMenuEntry = DYYYMakePageEntry(rootVC, @"作品长按菜单", @"ic_video_outlined_20", @"界面精简 · 作品长按菜单", feedMenuSections);
+      NSMutableArray *commentMenuSections = [NSMutableArray array];
+      NSArray *commentMenuItems = pick(@[ @"DYYYHideCommentShareToFriends", @"DYYYHideCommentLongPressCopy", @"DYYYHideCommentLongPressSaveImage", @"DYYYHideCommentLongPressReport", @"DYYYHideCommentLongPressSearch", @"DYYYHideCommentLongPressDaily", @"DYYYHideCommentLongPressVideoReply", @"DYYYHideCommentLongPressPictureSearch" ]);
+      if (commentMenuItems.count > 0) {
+          [commentMenuSections addObject:[DYYYSettingsHelper createSectionWithTitle:@"隐藏长按评论功能" footerTitle:@"隐藏评论长按面板中的功能" items:commentMenuItems]];
+      }
+      AWESettingItemModel *commentMenuEntry = DYYYMakePageEntry(rootVC, @"评论长按菜单", @"ic_comment_outlined_20", @"界面精简 · 评论长按菜单", commentMenuSections);
+
+      // —— 朋友页精简
+      NSMutableArray *friendSections = [NSMutableArray array];
+      sec(friendSections, @"顶栏", pick(@[ @"DYYYHideFamiliar" ]));
+      AWESettingItemModel *friendEntry = DYYYMakePageEntry(rootVC, @"朋友页精简", @"ic_user_outlined_20", @"界面精简 · 朋友页精简", friendSections);
+
+      // —— 消息页精简
+      NSMutableArray *messageSections = [NSMutableArray array];
+      sec(messageSections, @"顶栏", pick(@[ @"DYYYHideMessageTabRedPacket", @"DYYYHidePushBanner" ]));
+      sec(messageSections, @"列表顶部", pick(@[ @"DYYYHideAvatarList", @"DYYYHideAvatarBubble" ]));
+      sec(messageSections, @"聊天页", pick(@[ @"DYYYHideGroupShop", @"DYYYHideGroupLiveIndicator", @"DYYYHideGroupInputActionBar", @"DYYYHideReply" ]));
+      AWESettingItemModel *messageEntry = DYYYMakePageEntry(rootVC, @"消息页精简", @"ic_msg_outlined_20", @"界面精简 · 消息页精简", messageSections);
+
+      // —— 个人主页精简
+      NSMutableArray *profileSections = [NSMutableArray array];
+      sec(profileSections, @"顶栏", pick(@[ @"DYYYHideButton" ]));
+      sec(profileSections, @"头像与昵称", pick(@[ @"DYYYHideProfileAvatarPlus", @"DYYYHideProfileCapsule" ]));
+      sec(profileSections, @"内容", pick(@[ @"DYYYHideProfileGuideBanner", @"DYYYHidePostView" ]));
+      AWESettingItemModel *profileEntry = DYYYMakePageEntry(rootVC, @"个人主页精简", @"ic_personcircleclean_outlined_20", @"界面精简 · 个人主页精简", profileSections);
+
+      // —— 首页顶栏
+      NSMutableArray<AWESettingItemModel *> *topBarItems = [NSMutableArray array];
+      [topBarItems addObjectsFromArray:pick(@[ @"DYYYHideLeftSideBar", @"DYYYHideDiscover" ])];
+      if (topChannelEntry) {
+          [topBarItems addObject:topChannelEntry];
+      }
+      [topBarItems addObjectsFromArray:pick(@[ @"DYYYHideTopBarBadge", @"DYYYHideTopBarLine", @"DYYYHideLiveView", @"DYYYHideConcernCapsuleView", @"DYYYHideMenuView", @"DYYYHideNearbyCapsuleView", @"DYYYHideSearchEntrance", @"DYYYHideSearchEntranceIndicator", @"DYYYHideSearchBubble" ])];
+
+      // 没有对应 DYK 分区的，保留原来的分类名接在后面。
+      NSArray *bottomBarItems = pick(@[ @"DYYYHideBottomBg", @"DYYYHideBottomDot", @"DYYYHideDoubleColumnEntry", @"DYYYHideShopButton", @"DYYYHideMessageButton", @"DYYYHideFriendsButton", @"DYYYHidePlusButton", @"DYYYHideMyButton", @"DYYYHideComment", @"DYYYHideHotSearch", @"DYYYHidePadTabBarElements" ]);
+      NSArray *sidebarPicked = pick(@[ @"DYYYHideSidebarRecentApps", @"DYYYHideSidebarRecentUsers", @"DYYYHideSidebarDot" ]);
+      NSMutableArray<AWESettingItemModel *> *liveItems = [NSMutableArray array];
+      for (AWESettingItemModel *item in livestreamItems) {
+          if (item.identifier.length > 0 && pool[item.identifier] == item) {
+              [liveItems addObjectsFromArray:pick(@[ item.identifier ])];
+          }
+      }
+      NSMutableArray<AWESettingItemModel *> *leftover = [NSMutableArray array];
+      for (NSString *identifier in poolOrder) {
+          [leftover addObjectsFromArray:pick(@[ identifier ])];
+      }
+
       NSMutableArray *sections = [NSMutableArray array];
-      [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"主界面元素" items:mainUiItems]];
-      [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"视频播放界面" items:videoUiItems]];
-      [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"侧边栏元素" items:sidebarItems]];
-      [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"消息页与我的页" items:messageAndMineItems]];
-      [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"提示与位置信息" items:infoItems]];
-      [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"直播间界面" items:livestreamItems]];
-      [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"隐藏面板功能" footerTitle:@"隐藏视频长按面板中的功能" items:modernpanels]];
-      [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"隐藏长按评论功能" footerTitle:@"隐藏评论长按面板中的功能" items:commentpanel]];
-      DYYYRegisterSearchSections(@"隐藏设置", sections);
+      sec(sections, @"首页顶栏", topBarItems);
+      sec(sections, @"视频播放", @[ playbackEntry, commentEntry, shareEntry ]);
+      sec(sections, @"长按菜单", @[ feedMenuEntry, commentMenuEntry ]);
+      sec(sections, @"朋友页", @[ friendEntry ]);
+      sec(sections, @"消息页", @[ messageEntry ]);
+      sec(sections, @"个人主页", @[ profileEntry ]);
+      sec(sections, @"底栏", bottomBarItems);
+      sec(sections, @"侧边栏", sidebarPicked);
+      sec(sections, @"直播间", liveItems);
+      sec(sections, @"未归类", leftover);
+
+      DYYYRegisterSearchSections(@"界面精简", sections);
       if (DYYYBuildingSettingsSearchIndex) {
+          for (AWESettingSectionModel *section in sections) {
+              for (AWESettingItemModel *item in section.itemArray) {
+                  if (objc_getAssociatedObject(item, &kDYYYPageEntryKey) && item.cellTappedBlock) {
+                      item.cellTappedBlock();
+                  }
+              }
+          }
           return;
       }
 
       // 创建并推入二级设置页面
-      AWESettingBaseViewController *subVC = [DYYYSettingsHelper createSubSettingsViewController:@"隐藏设置" sections:sections];
+      AWESettingBaseViewController *subVC = [DYYYSettingsHelper createSubSettingsViewController:@"界面精简" sections:sections];
       [rootVC.navigationController pushViewController:(UIViewController *)subVC animated:YES];
     };
     [mainItems addObject:hideSettingItem];
@@ -2594,7 +2745,8 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
     // 创建顶栏移除分类项
     AWESettingItemModel *removeSettingItem = [[%c(AWESettingItemModel) alloc] init];
     removeSettingItem.identifier = @"DYYYRemoveSettings";
-    removeSettingItem.title = @"顶栏移除";
+    removeSettingItem.title = @"移除顶部频道";
+    objc_setAssociatedObject(removeSettingItem, &kDYYYPageEntryKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     removeSettingItem.type = 0;
     removeSettingItem.svgIconImageName = @"ic_doublearrowup_outlined_20";
     removeSettingItem.cellType = 26;
@@ -2708,15 +2860,16 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
       NSMutableArray *sections = [NSMutableArray array];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"顶栏选项" items:removeSettingsItems]];
 
-      DYYYRegisterSearchSections(@"顶栏移除", sections);
+      DYYYRegisterSearchSections(@"界面精简 · 移除顶部频道", sections);
       if (DYYYBuildingSettingsSearchIndex) {
           return;
       }
 
-      AWESettingBaseViewController *subVC = [DYYYSettingsHelper createSubSettingsViewController:@"顶栏移除" sections:sections];
+      AWESettingBaseViewController *subVC = [DYYYSettingsHelper createSubSettingsViewController:@"移除顶部频道" sections:sections];
       [rootVC.navigationController pushViewController:(UIViewController *)subVC animated:YES];
     };
-    [mainItems addObject:removeSettingItem];
+    // 不再单独放在主菜单：作为「界面精简 → 首页顶栏」里的一行。
+    topChannelEntry = removeSettingItem;
 
     // 创建增强设置分类项
     AWESettingItemModel *enhanceSettingItem = [[%c(AWESettingItemModel) alloc] init];
