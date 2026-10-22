@@ -928,6 +928,42 @@ static AWESettingItemModel *DYYYMakePageEntry(UIViewController *rootVC, NSString
     return entry;
 }
 
+// 「媒体保存」「内容过滤」从原来的页面里单独拿出来做成主菜单入口：
+// 同一段建页代码，按 gDYYYPageMode 决定是只显示被拿出来的那一节，还是显示除它以外的部分。
+static NSString *gDYYYPageMode = nil;
+
+static NSArray *DYYYModeSections(NSArray *sections, NSString *movedHeader) {
+    NSMutableArray *result = [NSMutableArray array];
+    for (AWESettingSectionModel *section in sections) {
+        BOOL isMoved = [section.sectionHeaderTitle isEqualToString:movedHeader];
+        BOOL dedicated = gDYYYPageMode && [gDYYYPageMode isEqualToString:movedHeader];
+        if (dedicated ? isMoved : !isMoved) {
+            [result addObject:section];
+        }
+    }
+    return result;
+}
+
+static AWESettingItemModel *DYYYMakeMovedEntry(NSString *title, NSString *icon, NSString *movedHeader, AWESettingItemModel *host) {
+    AWESettingItemModel *entry = [[NSClassFromString(@"AWESettingItemModel") alloc] init];
+    entry.identifier = [@"DYYYMoved." stringByAppendingString:title];
+    entry.title = title;
+    entry.type = 0;
+    entry.svgIconImageName = icon;
+    entry.cellType = 26;
+    entry.colorStyle = 0;
+    entry.isEnable = YES;
+    __weak AWESettingItemModel *weakHost = host;
+    entry.cellTappedBlock = ^{
+      gDYYYPageMode = movedHeader;
+      if (weakHost.cellTappedBlock) {
+          weakHost.cellTappedBlock();
+      }
+      gDYYYPageMode = nil;
+    };
+    return entry;
+}
+
 #ifdef __cplusplus
 extern "C"
 #endif
@@ -1530,13 +1566,15 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"过滤与屏蔽" footerTitle:@"请不要同时开启过多过滤推荐项目，这会增大视频流加载延迟。" items:filterItems]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"二次确认" items:securityItems]];
 
-      DYYYRegisterSearchSections(@"基本设置", sections);
+      NSString *basicTitle = gDYYYPageMode ? @"内容过滤" : @"基本设置";
+      NSArray *basicShown = DYYYModeSections(sections, @"过滤与屏蔽");
+      DYYYRegisterSearchSections(basicTitle, basicShown);
       if (DYYYBuildingSettingsSearchIndex) {
           return;
       }
 
       // 创建并推入二级设置页面
-      AWESettingBaseViewController *subVC = [DYYYSettingsHelper createSubSettingsViewController:@"基本设置" sections:sections];
+      AWESettingBaseViewController *subVC = [DYYYSettingsHelper createSubSettingsViewController:basicTitle sections:basicShown];
       [rootVC.navigationController pushViewController:(UIViewController *)subVC animated:YES];
     };
     [mainItems addObject:basicSettingItem];
@@ -1544,7 +1582,7 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
     // 创建界面设置分类项
     AWESettingItemModel *uiSettingItem = [[%c(AWESettingItemModel) alloc] init];
     uiSettingItem.identifier = @"DYYYUISettings";
-    uiSettingItem.title = @"界面设置";
+    uiSettingItem.title = @"外观定制";
     uiSettingItem.type = 0;
     uiSettingItem.svgIconImageName = @"ic_ipadiphone_outlined";
     uiSettingItem.cellType = 26;
@@ -1782,13 +1820,13 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"底栏自定义" items:glassTabBarItems]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"图标自定义" items:iconItems]];
       // 创建并组织所有section
-      DYYYRegisterSearchSections(@"界面设置", sections);
+      DYYYRegisterSearchSections(@"外观定制", sections);
       if (DYYYBuildingSettingsSearchIndex) {
           return;
       }
 
       // 创建并推入二级设置页面
-      AWESettingBaseViewController *subVC = [DYYYSettingsHelper createSubSettingsViewController:@"界面设置" sections:sections];
+      AWESettingBaseViewController *subVC = [DYYYSettingsHelper createSubSettingsViewController:@"外观定制" sections:sections];
       [rootVC.navigationController pushViewController:(UIViewController *)subVC animated:YES];
     };
 
@@ -2874,7 +2912,7 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
     // 创建增强设置分类项
     AWESettingItemModel *enhanceSettingItem = [[%c(AWESettingItemModel) alloc] init];
     enhanceSettingItem.identifier = @"DYYYEnhanceSettings";
-    enhanceSettingItem.title = @"增强设置";
+    enhanceSettingItem.title = @"功能增强";
     enhanceSettingItem.type = 0;
     enhanceSettingItem.svgIconImageName = @"ic_squaresplit_outlined_20";
     enhanceSettingItem.cellType = 26;
@@ -3878,17 +3916,25 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"ABTest"
                                                          footerTitle:@"允许用户导出或导入抖音的 ABTest 配置。远程配置由 Nathalie 维护，在应用启动时自动更新远程配置。"
                                                                items:hotUpdateItems]];
-      DYYYRegisterSearchSections(@"增强设置", sections);
+      NSString *enhanceTitle = gDYYYPageMode ? @"媒体保存" : @"功能增强";
+      NSArray *enhanceShown = DYYYModeSections(sections, @"媒体保存");
+      DYYYRegisterSearchSections(enhanceTitle, enhanceShown);
       if (DYYYBuildingSettingsSearchIndex) {
           return;
       }
 
       // 创建并推入二级设置页面
-      AWESettingBaseViewController *subVC = [DYYYSettingsHelper createSubSettingsViewController:@"增强设置" sections:sections];
+      AWESettingBaseViewController *subVC = [DYYYSettingsHelper createSubSettingsViewController:enhanceTitle sections:enhanceShown];
       [rootVC.navigationController pushViewController:(UIViewController *)subVC animated:YES];
     };
 
     [mainItems addObject:enhanceSettingItem];
+
+    // 「媒体保存」「内容过滤」：原来在功能增强、基本设置里的两节，按 DYKiller 单独成页
+    AWESettingItemModel *mediaSaveEntry = DYYYMakeMovedEntry(@"媒体保存", @"ic_boxarrowdown_outlined", @"媒体保存", enhanceSettingItem);
+    AWESettingItemModel *contentFilterEntry = DYYYMakeMovedEntry(@"内容过滤", @"ic_funnel_outlined_20", @"过滤与屏蔽", basicSettingItem);
+    [mainItems addObject:mediaSaveEntry];
+    [mainItems addObject:contentFilterEntry];
 
     // 创建悬浮按钮设置分类项
     AWESettingItemModel *floatButtonSettingItem = [[%c(AWESettingItemModel) alloc] init];
@@ -4643,14 +4689,35 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
                                 onConfirm:nil];
     };
     [aboutItems addObject:licenseItem];
-    mainSection.itemArray = mainItems;
+    // 「功能」分组的顺序与 DYKiller 一致：界面精简、外观定制、功能增强、媒体保存、内容过滤；DYK 没有的接在后面。
+    NSMutableArray<AWESettingItemModel *> *orderedMainItems = [NSMutableArray array];
+    for (AWESettingItemModel *item in @[ hideSettingItem, uiSettingItem, enhanceSettingItem, mediaSaveEntry, contentFilterEntry, basicSettingItem, floatButtonSettingItem ]) {
+        [orderedMainItems addObject:item];
+    }
+    for (AWESettingItemModel *item in mainItems) {
+        if (![orderedMainItems containsObject:item]) {
+            [orderedMainItems addObject:item];
+        }
+    }
+    mainSection.itemArray = orderedMainItems;
     aboutSection.itemArray = aboutItems;
+
+    // 下半部分合成一个「DYYY」分组（DYKiller 是「插件工具 / 备份工具 / 作者信息」放在同一组）
+    AWESettingSectionModel *pluginSection = [[%c(AWESettingSectionModel) alloc] init];
+    pluginSection.sectionHeaderTitle = @"DYYY";
+    pluginSection.sectionHeaderHeight = 40;
+    pluginSection.type = 0;
+    NSMutableArray<AWESettingItemModel *> *pluginItems = [NSMutableArray array];
+    [pluginItems addObjectsFromArray:cleanupItems];
+    [pluginItems addObjectsFromArray:backupItems];
+    [pluginItems addObjectsFromArray:aboutItems];
+    pluginSection.itemArray = pluginItems;
 
     DYYYResetSettingsSearchIndex();
     DYYYBuildSettingsSearchIndexIfNeeded(mainItems);
     DYYYRegisterSearchSections(@"DYYY", @[ cleanupSection, backupSection, aboutSection ]);
 
-    NSArray *rootSections = @[ mainSection, cleanupSection, backupSection, aboutSection ];
+    NSArray *rootSections = @[ mainSection, pluginSection ];
     viewModel.sectionDataArray = rootSections;
     objc_setAssociatedObject(settingsVC, &kViewModelKey, viewModel, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     DYYYAttachSettingsSearchHeader(settingsVC, viewModel, rootSections);
