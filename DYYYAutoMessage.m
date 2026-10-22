@@ -24,7 +24,7 @@ static NSString *const kDYYYFriendShareWatchedIDs = @"DYYYFriendShareWatchedItem
 #pragma mark - 配置存储
 
 + (NSUserDefaults *)defaults {
-    return NSUserDefaults.standardUserDefaults;
+    return [NSUserDefaults standardUserDefaults];
 }
 
 + (NSMutableArray<NSMutableDictionary *> *)messageConfigs {
@@ -54,7 +54,7 @@ static NSString *const kDYYYFriendShareWatchedIDs = @"DYYYFriendShareWatchedItem
     NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
     formatter.locale = [[NSLocale alloc] initWithLocaleIdentifier:@"en_US_POSIX"];
     formatter.dateFormat = @"yyyy-MM-dd";
-    return [formatter stringFromDate:NSDate.date];
+    return [formatter stringFromDate:[NSDate date]];
 }
 
 + (BOOL)isNoSendTime {
@@ -65,7 +65,8 @@ static NSString *const kDYYYFriendShareWatchedIDs = @"DYYYFriendShareWatchedItem
     NSInteger start = [[parts[0] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet] integerValue];
     NSInteger end = [[parts[1] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet] integerValue];
     if (start < 0 || start > 23 || end < 0 || end > 23 || start == end) return NO;
-    NSInteger hour = NSCalendar.currentCalendar.component(NSCalendarUnitHour, fromDate:NSDate.date);
+    NSCalendar *calendar = [NSCalendar currentCalendar];
+    NSInteger hour = [calendar component:NSCalendarUnitHour fromDate:[NSDate date]];
     return start < end ? (hour >= start && hour < end) : (hour >= start || hour < end);
 }
 
@@ -78,7 +79,7 @@ static NSString *const kDYYYFriendShareWatchedIDs = @"DYYYFriendShareWatchedItem
     NSURL *url = [NSURL URLWithString:[NSString stringWithFormat:@"snssdk1128://chat/user/%@?message=%@", encodedUserID ?: @"", encodedMessage ?: @""]];
     if (!url) return NO;
     dispatch_async(dispatch_get_main_queue(), ^{
-        [UIApplication.sharedApplication openURL:url options:@{} completionHandler:nil];
+        [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:nil];
     });
     return YES;
 }
@@ -165,7 +166,7 @@ static NSString *const kDYYYFriendShareWatchedIDs = @"DYYYFriendShareWatchedItem
     [items addObject:add];
     for (NSMutableDictionary *config in [self messageConfigs]) {
         AWESettingItemModel *row = [self setting:@{ @"identifier" : [@"DYYYAutoMessageConfig." stringByAppendingString:config[@"userID"]],
-            @"title" : config[@"name"] ?: config[@"userID"], @"detail" : config[@"enabled"] ? @"已启用" : @"已停用", @"cellType" : @26,
+            @"title" : config[@"name"] ?: config[@"userID"], @"detail" : [config[@"enabled"] boolValue] ? @"已启用" : @"已停用", @"cellType" : @26,
             @"imageName" : @"ic_message_outlined_20" }];
         row.cellTappedBlock = ^{ [self editConfigFrom:root existing:config completion:nil]; };
         [items addObject:row];
