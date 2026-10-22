@@ -108,6 +108,22 @@ jobs:
       - name: Clean packages dir
         run: rm -rf packages && mkdir -p packages
         
+      - name: Auto version (1.0.0 ... 1.0.9, 1.1.0 ...)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # 只统计这个时间之后「成功」的构建次数，所以第一次是 1.0.0，失败的构建不占号。
+          SINCE: "2026-10-22T00:20:00Z"
+        run: |
+          idx=$(curl -fsS -H "Authorization: Bearer ${GH_TOKEN}" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/build.yml/runs?status=success&created=%3E%3D${SINCE}&per_page=1" \
+            | grep -o '"total_count": *[0-9]*' | head -1 | grep -o '[0-9]*$' || true)
+          idx=${idx:-0}
+          # 满 10 进位：1.0.9 的下一个是 1.1.0，1.9.9 的下一个是 2.0.0
+          version="$(( 1 + idx / 100 )).$(( idx / 10 % 10 )).$(( idx % 10 ))"
+          perl -pi -e "s/^Version: .*/Version: ${version}/" control
+          perl -pi -e "s/#define DYYY_VERSION \\@\".*\"/#define DYYY_VERSION \\@\"${version}\"/" DYYYConstants.h
+          echo "Auto version: ${version}"
+
       - name: Build Rootful
         run: |
           make package FINALPACKAGE=1 -j$(sysctl -n hw.ncpu)
@@ -130,6 +146,16 @@ jobs:
             [ -f "$f" ] && [[ "$f" != *"-root"*".deb" ]] && mv "$f" "${f%.deb}-roothide.deb"
           done
           
+      - name: Rename packages to DYads-<version>
+        run: |
+          for f in packages/com.huami.dyyy_*.deb; do
+            [ -f "$f" ] || continue
+            b=$(basename "$f")
+            n=${b#com.huami.dyyy_}
+            mv "$f" "packages/DYads-${n/_iphoneos-/_}"
+          done
+          ls packages
+
       - name: Prepare package metadata
         id: package
         run: |
@@ -173,7 +199,7 @@ jobs:
       - name: Upload package artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: DYYY-${{ steps.package.outputs.timestamp }}
+          name: DYads-${{ steps.package.outputs.version }}
           path: |
             ${{ github.workspace }}/packages/*.deb
             ${{ github.workspace }}/packages/*.dylib
