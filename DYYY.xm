@@ -27,6 +27,7 @@
 #import "DYYYFloatSpeedButton.h"
 #import "DYYYSettingViewController.h"
 #import "DYYYToast.h"
+#import "DYYYVideoFeedTable.h"
 #import "DYYYUtils.h"
 
 static CGFloat gStartY = 0.0;
@@ -11393,6 +11394,19 @@ static Class tabBarButtonClass = nil;
     BOOL enableBlur = DYYYGetBool(@"DYYYEnableCommentBlur");
     BOOL enableFS = DYYYGetBool(@"DYYYEnableFullScreen");
 
+    // 首页全屏：HUD（文案、进度条）被写成撑高后的满高时，钉回表撑高前的高度（见 DYYYVideoFeedTable.xm）。
+    if (enableFS) {
+        UIResponder *hudOwner = self.nextResponder;
+        if (hudOwner && [hudOwner isKindOfClass:%c(AWEPlayInteractionViewController)]) {
+            CGFloat tabDelta = (gCurrentTabBarHeight > 0 && originalTabBarHeight > 0) ? gCurrentTabBarHeight - originalTabBarHeight : 0;
+            CGRect pinnedFrame = DYYYFeedHUDAdjustFrame(self, frame, tabDelta);
+            if (!CGRectIsNull(pinnedFrame)) {
+                %orig(pinnedFrame);
+                return;
+            }
+        }
+    }
+
     UIViewController *vc = [DYYYUtils firstAvailableViewControllerFromView:self];
     Class DetailVCClass = NSClassFromString(@"AWEMixVideoPanelDetailTableViewController");
     Class PlayVCClass1 = NSClassFromString(@"AWEAwemePlayVideoViewController");
@@ -11512,6 +11526,15 @@ static Class tabBarButtonClass = nil;
     } else {
         [FloatingSpeedButton reloadConfiguration];
         updateClearButtonVisibility();
+    }
+
+    // 首页全屏：HUD 在撑高过的视频表内时，高度由 DYYYVideoFeedTable.xm 钉在表撑高前的高度，
+    // 不再按页面类型猜。不在这类表内（搜索页、好友聊天页等）才走下面原来的规则。
+    if (DYYYGetBool(@"DYYYEnableFullScreen")) {
+        CGFloat tabDelta = (gCurrentTabBarHeight > 0 && originalTabBarHeight > 0) ? gCurrentTabBarHeight - originalTabBarHeight : 0;
+        if (DYYYFeedHUDApplyPin(self.view, tabDelta)) {
+            return;
+        }
     }
 
     UIWindow *keyWindow = [DYYYUtils getActiveWindow];
@@ -12673,22 +12696,6 @@ static Class TagViewClass = nil;
     } else {
         self.transform = CGAffineTransformIdentity;
     }
-}
-
-%end
-
-%hook AWEAwemeDetailTableView
-
-- (void)setFrame:(CGRect)frame {
-    if (DYYYGetBool(@"DYYYEnableFullScreen")) {
-        CGFloat screenHeight = [UIScreen mainScreen].bounds.size.height;
-
-        CGFloat remainder = fmod(frame.size.height, screenHeight);
-        if (remainder != 0) {
-            frame.size.height += (screenHeight - remainder);
-        }
-    }
-    %orig(frame);
 }
 
 %end
