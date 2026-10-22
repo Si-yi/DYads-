@@ -58,11 +58,6 @@
               @"DYYYEnableArea" : @[ @"DYYYGeonamesUsername", @"DYYYLabelColor", @"DYYYEnableRandomGradient" ],
               @"DYYYShowScheduleDisplay" : @[ @"DYYYScheduleStyle", @"DYYYProgressLabelColor", @"DYYYTimelineVerticalPosition" ],
               @"DYYYEnableNotificationTransparency" : @[ @"DYYYNotificationCornerRadius" ],
-              @"DYYYEnableFloatSpeedButton" : @[ @"DYYYAutoRestoreSpeed", @"DYYYSpeedButtonShowX", @"DYYYSpeedButtonSize", @"DYYYSpeedSettings" ],
-              @"DYYYEnableFloatClearButton" : @[
-                  @"DYYYClearButtonIcon", @"DYYYEnableFloatClearButtonSize", @"DYYYRemoveTimeProgress", @"DYYYHideTimeProgress", @"DYYYHideDanmaku", @"DYYYHideSlider", @"DYYYHideTabBar",
-                  @"DYYYHideSpeed", @"DYYYHideClearButtonOnTap", @"DYYYHideChapter", @"DYYYHidePauseVideoIcon", @"DYYYHideStatusBarOnClear"
-              ],
               @"DYYYEnableModernPanel" : @[ @"DYYYLongPressPanelBlur", @"DYYYLongPressPanelDark" ],
               @"DYYYEnableDoubleTapMenu" : @[ @"DYYYDoubleTapMenuSettings" ],
           },
@@ -78,8 +73,6 @@
           @"conflicts" : @{
               @"DYYYEnableDoubleOpenComment" : @[ @"DYYYEnableDoubleTapMenu" ],
               @"DYYYEnableDoubleTapMenu" : @[ @"DYYYEnableDoubleOpenComment" ],
-              @"DYYYRemoveTimeProgress" : @[ @"DYYYHideTimeProgress" ],
-              @"DYYYHideTimeProgress" : @[ @"DYYYRemoveTimeProgress" ],
               @"DYYYHideLOTAnimationView" : @[ @"DYYYHideFollowPromptView" ],
               @"DYYYHideFollowPromptView" : @[ @"DYYYHideLOTAnimationView" ],
               @"DYYYSkipLive" : @[ @"DYYYSkipAllLive" ],

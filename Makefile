@@ -36,9 +36,9 @@ include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = DYYY
 
-DYYY_FILES = DYYY.xm DYYYFloatClearButton.xm DYYYFloatSpeedButton.m DYYYSettings.xm DYYYABTestHook.xm DYYYLongPressPanel.xm DYYYGlassTabBar.xm DYYYProfileClean.xm DYYYPlusIcon.m DKTabBarIcons.m DKTabBarIconDraw.m DKIconCropper.m DYYYSettingsHelper.m DYYYImagePickerDelegate.m DYYYBackupPickerDelegate.m DYYYSettingViewController.m DYYYBottomAlertView.m DYYYCustomInputView.m DYYYOptionsSelectionView.m DYYYIconOptionsDialogView.m DYYYAboutDialogView.m DYYYKeywordListView.m DYYYFilterSettingsView.m DYYYConfirmCloseView.m DYYYToast.m DYYYManager.m DYYYUtils.m CityManager.m AWMSafeDispatchTimer.m
+DYYY_FILES = DYYY.xm DYYYFloatClearButton.xm DYYYFloatSpeedButton.m DYYYSettings.xm DYYYABTestHook.xm DYYYLongPressPanel.xm DYYYGlassTabBar.xm DYYYProfileClean.xm DYYYPlusIcon.m DKTabBarIcons.m DKTabBarIconDraw.m DKIconCropper.m DYYYSettingsHelper.m DYYYBackupTools.m DYYYDebugInspector.m DKDebugCapture.m DKClassDump.m DKZipWriter.m DYYYImagePickerDelegate.m DYYYBackupPickerDelegate.m DYYYBottomAlertView.m DYYYCustomInputView.m DYYYOptionsSelectionView.m DYYYIconOptionsDialogView.m DYYYAboutDialogView.m DYYYKeywordListView.m DYYYFilterSettingsView.m DYYYConfirmCloseView.m DYYYToast.m DYYYManager.m DYYYUtils.m CityManager.m AWMSafeDispatchTimer.m
 DYYY_CFLAGS = -fobjc-arc -w
-DYYY_LDFLAGS = -weak_framework AVFAudio
+DYYY_LDFLAGS = -weak_framework AVFAudio -lz
 DYYY_FRAMEWORKS = CoreAudio PhotosUI
 CXXFLAGS += -std=c++11
 CCFLAGS += -std=c++11

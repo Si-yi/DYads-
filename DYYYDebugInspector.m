@@ -1,0 +1,183 @@
+#import "DYYYDebugInspector.h"
+#import "DKDebugCapture.h"
+#import "DKClassDump.h"
+#import "DKZipWriter.h"
+#import "DYYYConstants.h"
+#import <objc/runtime.h>
+
+static char kDYYYDebugButtonKey;
+static char kDYYYDebugDragKey;
+static void DYYYDebugShowActions(UIWindow *window);
+
+@interface DYYYDebugDrag : NSObject
+@property (nonatomic, weak) UIWindow *window;
+@property (nonatomic, weak) UIButton *button;
+- (void)handleTap;
+@end
+
+@implementation DYYYDebugDrag
+- (void)handleTap {
+    DYYYDebugShowActions(self.window);
+}
+- (void)handlePan:(UIPanGestureRecognizer *)gesture {
+    UIButton *button = self.button;
+    UIWindow *window = self.window;
+    if (!button || !window) return;
+    CGPoint delta = [gesture translationInView:window];
+    button.center = CGPointMake(button.center.x + delta.x, button.center.y + delta.y);
+    [gesture setTranslation:CGPointZero inView:window];
+    if (gesture.state == UIGestureRecognizerStateEnded || gesture.state == UIGestureRecognizerStateCancelled) {
+        CGFloat margin = 12.0;
+        CGFloat x = MIN(MAX(button.center.x, margin + button.bounds.size.width / 2), window.bounds.size.width - margin - button.bounds.size.width / 2);
+        CGFloat y = MIN(MAX(button.center.y, window.safeAreaInsets.top + margin + button.bounds.size.height / 2), window.bounds.size.height - window.safeAreaInsets.bottom - margin - button.bounds.size.height / 2);
+        [UIView animateWithDuration:0.18 animations:^{ button.center = CGPointMake(x, y); }];
+    }
+}
+@end
+
+static void DYYYDebugPresentAlert(UIViewController *presenter, NSString *title, NSString *message) {
+    if (!presenter) return;
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
+    [presenter presentViewController:alert animated:YES completion:nil];
+}
+
+static NSData *DYYYDebugJSONData(id value) {
+    if (!value) return nil;
+    return [NSJSONSerialization dataWithJSONObject:value options:NSJSONWritingPrettyPrinted | NSJSONWritingSortedKeys error:nil];
+}
+
+static NSDictionary *DYYYDebugMetadata(void) {
+    return @{
+        @"plugin": @"DYYY",
+        @"pluginVersion": DYYY_VERSION,
+        @"generatedAt": [[NSISO8601DateFormatter new] stringFromDate:NSDate.date],
+        @"bundleIdentifier": NSBundle.mainBundle.bundleIdentifier ?: @"",
+        @"appVersion": NSBundle.mainBundle.infoDictionary[@"CFBundleShortVersionString"] ?: @"",
+        @"buildVersion": NSBundle.mainBundle.infoDictionary[(NSString *)kCFBundleVersionKey] ?: @"",
+        @"systemName": UIDevice.currentDevice.systemName ?: @"",
+        @"systemVersion": UIDevice.currentDevice.systemVersion ?: @"",
+        @"deviceModel": UIDevice.currentDevice.model ?: @""
+    };
+}
+
+static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *window) {
+    if (!presenter || !window) return;
+    DKDebugExportContext *context = DKDebugCaptureContext(window, CGPointZero, nil);
+    NSString *base = [NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"DYYY_Debug_%@", NSUUID.UUID.UUIDString]];
+    NSString *zipPath = [base stringByAppendingPathExtension:@"zip"];
+    NSFileManager *manager = NSFileManager.defaultManager;
+    NSError *fileError = nil;
+    [manager createDirectoryAtPath:base withIntermediateDirectories:YES attributes:nil error:&fileError];
+    if (fileError) { DYYYDebugPresentAlert(presenter, @"调试导出失败", fileError.localizedDescription); return; }
+
+    NSMutableArray<NSString *> *files = [NSMutableArray array];
+    void (^writeJSON)(NSString *, id) = ^(NSString *name, id object) {
+      NSData *data = DYYYDebugJSONData(object ?: @{});
+      NSString *path = [base stringByAppendingPathComponent:name];
+      if (data && [data writeToFile:path atomically:YES]) [files addObject:path];
+    };
+    writeJSON(@"metadata.json", DYYYDebugMetadata());
+    writeJSON(@"windows.json", context.windowsJSON ?: @[]);
+    writeJSON(@"view_tree.json", context.viewTreeJSON ?: @[]);
+    writeJSON(@"selected_view.json", context.selectedViewJSON ?: @{});
+    writeJSON(@"layers.json", context.layersJSON ?: @[]);
+    if (context.viewTreeText.length) {
+        NSString *path = [base stringByAppendingPathComponent:@"view_tree.txt"];
+        if ([context.viewTreeText writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil]) [files addObject:path];
+    }
+    if (context.viewControllersText.length) {
+        NSString *path = [base stringByAppendingPathComponent:@"view_controllers.txt"];
+        if ([context.viewControllersText writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil]) [files addObject:path];
+    }
+    if (context.screenshotPNG.length) {
+        NSString *path = [base stringByAppendingPathComponent:@"screenshot.png"];
+        if ([context.screenshotPNG writeToFile:path atomically:YES]) [files addObject:path];
+    }
+    NSMutableArray<NSString *> *classNames = [NSMutableArray array];
+    for (NSString *name in context.pageClassNames) {
+        if (name.length && classNames.count < 200) [classNames addObject:name];
+    }
+    NSString *classPath = [base stringByAppendingPathComponent:@"classes"];
+    [manager createDirectoryAtPath:classPath withIntermediateDirectories:YES attributes:nil error:nil];
+    for (NSString *name in classNames) {
+        Class cls = NSClassFromString(name);
+        NSString *header = cls ? DKClassDumpHeaderForClass(cls) : nil;
+        if (!header.length) continue;
+        NSString *safeName = [[name componentsSeparatedByCharactersInSet:[[NSCharacterSet characterSetWithCharactersInString:@"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_."] invertedSet]] componentsJoinedByString:@"_"];
+        NSString *path = [classPath stringByAppendingPathComponent:[safeName stringByAppendingPathExtension:@"h"]];
+        if ([header writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil]) [files addObject:path];
+    }
+    if (files.count == 0) { DYYYDebugPresentAlert(presenter, @"调试导出失败", @"没有可写入的页面信息"); return; }
+
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+      NSError *zipError = nil;
+      BOOL success = [DKZipWriter createZipAtPath:zipPath rootDir:base files:files progress:nil error:&zipError];
+      dispatch_async(dispatch_get_main_queue(), ^{
+        if (!success) { DYYYDebugPresentAlert(presenter, @"调试导出失败", zipError.localizedDescription ?: @"无法创建 ZIP"); return; }
+        UIActivityViewController *share = [[UIActivityViewController alloc] initWithActivityItems:@[[NSURL fileURLWithPath:zipPath]] applicationActivities:nil];
+        UIPopoverPresentationController *popover = share.popoverPresentationController;
+        if (popover) { popover.sourceView = presenter.view; popover.sourceRect = CGRectMake(CGRectGetMidX(presenter.view.bounds), CGRectGetMidY(presenter.view.bounds), 1, 1); }
+        [presenter presentViewController:share animated:YES completion:nil];
+      });
+    });
+}
+
+static void DYYYDebugShowActions(UIWindow *window) {
+    UIViewController *presenter = DKDebugTopPresenter(window);
+    if (!presenter) return;
+    UIAlertController *menu = [UIAlertController alertControllerWithTitle:@"DYYY 调试工具" message:@"导出当前页面的视图树、截图和安全类信息。" preferredStyle:UIAlertControllerStyleActionSheet];
+    [menu addAction:[UIAlertAction actionWithTitle:@"导出当前页 ZIP" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { DYYYDebugExportCurrentPage(presenter, window); }]];
+    [menu addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    UIPopoverPresentationController *popover = menu.popoverPresentationController;
+    if (popover) { popover.sourceView = presenter.view; popover.sourceRect = CGRectMake(CGRectGetMidX(presenter.view.bounds), CGRectGetMidY(presenter.view.bounds), 1, 1); }
+    [presenter presentViewController:menu animated:YES completion:nil];
+}
+
+static void DYYYDebugInstallOnWindow(UIWindow *window) {
+    if (!window || ![NSUserDefaults.standardUserDefaults boolForKey:@"DYYYDebugInspectorEnabled"]) return;
+    UIButton *existing = objc_getAssociatedObject(window, &kDYYYDebugButtonKey);
+    if (existing) return;
+    UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
+    button.frame = CGRectMake(window.bounds.size.width - 74, window.bounds.size.height * 0.68, 56, 56);
+    button.autoresizingMask = UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleLeftMargin;
+    button.backgroundColor = [UIColor colorWithWhite:0.2 alpha:0.9];
+    button.layer.cornerRadius = 28;
+    button.layer.borderWidth = 1;
+    button.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.18].CGColor;
+    UIImage *image = [UIImage systemImageNamed:@"wrench.and.screwdriver"] ?: [UIImage systemImageNamed:@"wrench"];
+    [button setImage:image forState:UIControlStateNormal];
+    button.tintColor = UIColor.whiteColor;
+    button.accessibilityLabel = @"DYYY 调试工具";
+    DYYYDebugDrag *drag = [DYYYDebugDrag new];
+    drag.window = window;
+    drag.button = button;
+    UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:drag action:@selector(handlePan:)];
+    [button addGestureRecognizer:pan];
+    [button addTarget:drag action:@selector(handleTap) forControlEvents:UIControlEventTouchUpInside];
+    objc_setAssociatedObject(window, &kDYYYDebugDragKey, drag, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    [window addSubview:button];
+    objc_setAssociatedObject(window, &kDYYYDebugButtonKey, button, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+void DYYYDebugInspectorRefreshOverlay(void) {
+    BOOL enabled = [NSUserDefaults.standardUserDefaults boolForKey:@"DYYYDebugInspectorEnabled"];
+    for (UIWindow *window in DKDebugActiveWindows()) {
+        UIButton *button = objc_getAssociatedObject(window, &kDYYYDebugButtonKey);
+        if (!enabled) {
+            [button removeFromSuperview];
+            objc_setAssociatedObject(window, &kDYYYDebugButtonKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            objc_setAssociatedObject(window, &kDYYYDebugDragKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        } else {
+            DYYYDebugInstallOnWindow(window);
+        }
+    }
+}
+
+void DYYYDebugInspectorInstall(void) {
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+      [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) { DYYYDebugInspectorRefreshOverlay(); }];
+    });
+    dispatch_async(dispatch_get_main_queue(), ^{ DYYYDebugInspectorRefreshOverlay(); });
+}

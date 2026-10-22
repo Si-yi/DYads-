@@ -23,9 +23,11 @@
 
 #import "AWMSafeDispatchTimer.h"
 #import "DYYYConstants.h"
+#import "DYYYDebugInspector.h"
+
+extern "C" void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed);
 #import "DYYYFloatClearButton.h"
 #import "DYYYFloatSpeedButton.h"
-#import "DYYYSettingViewController.h"
 #import "DYYYToast.h"
 #import "DYYYPlusIcon.h"
 #import "DYYYUtils.h"
@@ -3303,49 +3305,8 @@ static void DYYYDisableAVPlayerItemHDRMetadata(AVPlayerItem *item) {
     if (gesture.state == UIGestureRecognizerStateBegan) {
         UIViewController *rootViewController = self.rootViewController;
         if (rootViewController) {
-            UIViewController *settingVC = [[DYYYSettingViewController alloc] init];
-
-            if (settingVC) {
-                BOOL isIPad = UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad;
-                if (@available(iOS 15.0, *)) {
-                    if (!isIPad) {
-                        settingVC.modalPresentationStyle = UIModalPresentationPageSheet;
-                    } else {
-                        settingVC.modalPresentationStyle = UIModalPresentationFullScreen;
-                    }
-                } else {
-                    settingVC.modalPresentationStyle = UIModalPresentationFullScreen;
-                }
-
-                if (settingVC.modalPresentationStyle == UIModalPresentationFullScreen) {
-                    UIButton *closeButton = [UIButton buttonWithType:UIButtonTypeSystem];
-                    [closeButton setTitle:@"关闭" forState:UIControlStateNormal];
-                    closeButton.translatesAutoresizingMaskIntoConstraints = NO;
-
-                    [settingVC.view addSubview:closeButton];
-
-                    [NSLayoutConstraint activateConstraints:@[
-                        [closeButton.trailingAnchor constraintEqualToAnchor:settingVC.view.trailingAnchor constant:-10],
-                        [closeButton.topAnchor constraintEqualToAnchor:settingVC.view.topAnchor constant:40], [closeButton.widthAnchor constraintEqualToConstant:80],
-                        [closeButton.heightAnchor constraintEqualToConstant:40]
-                    ]];
-
-                    [closeButton addTarget:self action:@selector(closeSettings:) forControlEvents:UIControlEventTouchUpInside];
-                }
-
-                UIView *handleBar = [[UIView alloc] init];
-                handleBar.backgroundColor = [UIColor whiteColor];
-                handleBar.layer.cornerRadius = 2.5;
-                handleBar.translatesAutoresizingMaskIntoConstraints = NO;
-                [settingVC.view addSubview:handleBar];
-
-                [NSLayoutConstraint activateConstraints:@[
-                    [handleBar.centerXAnchor constraintEqualToAnchor:settingVC.view.centerXAnchor], [handleBar.topAnchor constraintEqualToAnchor:settingVC.view.topAnchor constant:8],
-                    [handleBar.widthAnchor constraintEqualToConstant:40], [handleBar.heightAnchor constraintEqualToConstant:5]
-                ]];
-
-                [rootViewController presentViewController:settingVC animated:YES completion:nil];
-            }
+            BOOL hasAgreed = [DYYYSettingsHelper getUserDefaults:@"DYYYUserAgreementAccepted"];
+            showDYYYSettingsVC(rootViewController, hasAgreed);
         }
     }
 }
@@ -13094,7 +13055,18 @@ static void findTargetViewInView(UIView *view) {
 }
 
 %ctor {
-    [[NSUserDefaults standardUserDefaults] registerDefaults:@{
+    // 悬浮按钮设置已并入新版菜单并移除；删除旧偏好，避免旧版本开启状态继续显示控件。
+    NSUserDefaults *dyyyDefaults = [NSUserDefaults standardUserDefaults];
+    NSArray<NSString *> *retiredFloatingKeys = @[
+        @"DYYYEnableFloatSpeedButton", @"DYYYAutoRestoreSpeed", @"DYYYSpeedButtonShowX", @"DYYYSpeedButtonSize", @"DYYYSpeedSettings",
+        @"DYYYEnableFloatClearButton", @"DYYYEnableFloatClearButtonSize", @"DYYYClearButtonIcon", @"DYYYRemoveTimeProgress", @"DYYYHideTimeProgress",
+        @"DYYYHideDanmaku", @"DYYYHideSlider", @"DYYYHideTabBar", @"DYYYHideSpeed", @"DYYYHideClearButtonOnTap", @"DYYYHideChapter",
+        @"DYYYHidePauseVideoIcon", @"DYYYHideStatusBarOnClear", @"DYYYHideButtonCenterXPercent", @"DYYYHideButtonCenterYPercent", @"DYYYHideUIButtonLockState"
+    ];
+    for (NSString *key in retiredFloatingKeys) [dyyyDefaults removeObjectForKey:key];
+    DYYYDebugInspectorInstall();
+
+    [dyyyDefaults registerDefaults:@{
         @"DYYYDisableFeedNowPlayingInfo" : @YES
     }];
 
