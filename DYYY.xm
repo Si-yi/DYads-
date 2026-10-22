@@ -11100,6 +11100,159 @@ static Class tabBarButtonClass = nil;
 }
 %end
 
+// 详情页底部输入栏在 39.5.0 中包含独立的 Swift 背景承载层。
+// 只清理屏幕底部的详情页输入栏，编辑或退出全屏时恢复原有外观。
+static char kDYYYDetailInputOriginalAppearanceKey;
+static char kDYYYFloatingInputFrameKey;
+static char kDYYYFloatingInputAppliedFrameKey;
+static char kDYYYFloatingInputChromeKey;
+static char kDYYYFloatingInputLayoutKey;
+static char kDYYYFloatingInputOriginalBlurHiddenKey;
+
+static BOOL DYYYUpdateFloatingCommentInput(UIView *root) {
+    if (objc_getAssociatedObject(root, &kDYYYFloatingInputLayoutKey)) return NO;
+    UIView *container = nil;
+    NSMutableArray<UIView *> *pending = [NSMutableArray arrayWithObject:root];
+    BOOL editing = NO;
+    NSUInteger visited = 0;
+    while (pending.count && visited++ < 400) {
+        UIView *view = pending.lastObject;
+        [pending removeLastObject];
+        if (view.isFirstResponder) editing = YES;
+        if ([NSStringFromClass(view.class) isEqualToString:@"AWECommentInputViewSwiftImpl.CommentInputContainerView"]) container = view;
+        [pending addObjectsFromArray:view.subviews];
+    }
+    if (!container) return NO;
+    UIWindow *window = root.window;
+    CGRect rect = window ? [root convertRect:root.bounds toView:window] : CGRectZero;
+    BOOL enabled = DYYYGetBool(@"DYYYEnableFloatingCommentInput") && window && !editing &&
+        CGRectGetHeight(root.bounds) < CGRectGetHeight(window.bounds) * 0.2 &&
+        CGRectGetMinY(rect) > CGRectGetHeight(window.bounds) * 0.65 &&
+        CGRectGetHeight(container.bounds) >= 40 && CGRectGetHeight(container.bounds) <= 86;
+    NSValue *baseline = objc_getAssociatedObject(container, &kDYYYFloatingInputFrameKey);
+    NSValue *applied = objc_getAssociatedObject(container, &kDYYYFloatingInputAppliedFrameKey);
+    UIView *chrome = objc_getAssociatedObject(container, &kDYYYFloatingInputChromeKey);
+    objc_setAssociatedObject(root, &kDYYYFloatingInputLayoutKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if (!enabled) {
+        [chrome removeFromSuperview];
+        objc_setAssociatedObject(container, &kDYYYFloatingInputChromeKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        if (baseline && applied && CGRectEqualToRect(container.frame, applied.CGRectValue)) container.frame = baseline.CGRectValue;
+        objc_setAssociatedObject(container, &kDYYYFloatingInputFrameKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(container, &kDYYYFloatingInputAppliedFrameKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    } else {
+        // 原生布局重算（例如旋转）后，用新原始尺寸作为基准，避免每次布局叠加内缩。
+        if (!baseline || !applied || !CGRectEqualToRect(container.frame, applied.CGRectValue)) {
+            baseline = [NSValue valueWithCGRect:container.frame];
+            objc_setAssociatedObject(container, &kDYYYFloatingInputFrameKey, baseline, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+        CGRect frame = baseline.CGRectValue;
+        frame.origin.x += 14;
+        frame.size.width = MAX(0, frame.size.width - 28);
+        frame.size.height = MIN(56, frame.size.height);
+        if (!CGRectEqualToRect(container.frame, frame)) container.frame = frame;
+        objc_setAssociatedObject(container, &kDYYYFloatingInputAppliedFrameKey, [NSValue valueWithCGRect:frame], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        if (!chrome) {
+            chrome = [[UIView alloc] initWithFrame:container.bounds];
+            chrome.userInteractionEnabled = NO;
+            chrome.accessibilityElementsHidden = YES;
+            UIVisualEffect *material = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterialDark];
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 260000
+            if (@available(iOS 26.0, *)) {
+                UIGlassEffect *glass = [UIGlassEffect effectWithStyle:UIGlassEffectStyleRegular];
+                glass.interactive = NO;
+                glass.tintColor = [UIColor colorWithWhite:0 alpha:0.22];
+                material = glass;
+            }
+#endif
+            UIVisualEffectView *effect = [[UIVisualEffectView alloc] initWithEffect:material];
+            effect.frame = chrome.bounds;
+            effect.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+            effect.userInteractionEnabled = NO;
+            effect.clipsToBounds = YES;
+            effect.layer.borderWidth = 0.5;
+            effect.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.20].CGColor;
+            [chrome addSubview:effect];
+            chrome.layer.shadowColor = UIColor.blackColor.CGColor;
+            chrome.layer.shadowOpacity = 0.25;
+            chrome.layer.shadowOffset = CGSizeMake(0, 3);
+            chrome.layer.shadowRadius = 10;
+            objc_setAssociatedObject(container, &kDYYYFloatingInputChromeKey, chrome, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+        chrome.frame = container.bounds;
+        for (UIView *effect in chrome.subviews) {
+            effect.layer.cornerRadius = CGRectGetHeight(chrome.bounds) / 2;
+            effect.layer.cornerCurve = kCACornerCurveContinuous;
+        }
+        chrome.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:chrome.bounds cornerRadius:CGRectGetHeight(chrome.bounds) / 2].CGPath;
+        if (chrome.superview != container) [container insertSubview:chrome atIndex:0];
+        else [container sendSubviewToBack:chrome];
+    }
+    objc_setAssociatedObject(root, &kDYYYFloatingInputLayoutKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    return enabled;
+}
+
+static void DYYYUpdateDetailInputTransparency(UIView *root) {
+    if (!NSThread.isMainThread || !root) return;
+    if (objc_getAssociatedObject(root, &kDYYYFloatingInputLayoutKey)) return;
+    BOOL inDetail = NO;
+    Class detailClass = NSClassFromString(@"AWEAwemeDetailTableViewController");
+    for (UIView *host = root.superview; host && !inDetail; host = host.superview) {
+        UIViewController *controller = [DYYYUtils firstAvailableViewControllerFromView:host];
+        for (NSUInteger depth = 0; controller && depth < 12; depth++, controller = controller.parentViewController) {
+            if (detailClass && [controller isKindOfClass:detailClass]) { inDetail = YES; break; }
+        }
+    }
+    UIWindow *window = root.window;
+    CGRect rect = window ? [root convertRect:root.bounds toView:window] : CGRectZero;
+    BOOL floating = DYYYUpdateFloatingCommentInput(root);
+    BOOL shouldClear = floating || (DYYYGetBool(@"DYYYEnableFullScreen") && inDetail && window &&
+        CGRectGetHeight(root.bounds) > 0 && CGRectGetHeight(root.bounds) < CGRectGetHeight(window.bounds) * 0.2 &&
+        CGRectGetMinY(rect) > CGRectGetHeight(window.bounds) * 0.65);
+    NSMutableArray<UIView *> *pending = [NSMutableArray arrayWithObject:root];
+    NSMutableArray<UIView *> *targets = [NSMutableArray array];
+    NSUInteger visited = 0;
+    while (pending.count && visited++ < 400) {
+        UIView *view = pending.lastObject;
+        [pending removeLastObject];
+        if (view == objc_getAssociatedObject(view.superview, &kDYYYFloatingInputChromeKey)) continue;
+        if ([view isKindOfClass:UIVisualEffectView.class] && view.tag == 999) {
+            NSNumber *previousHidden = objc_getAssociatedObject(view, &kDYYYFloatingInputOriginalBlurHiddenKey);
+            if (floating) {
+                if (!previousHidden) objc_setAssociatedObject(view, &kDYYYFloatingInputOriginalBlurHiddenKey, @(view.hidden), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                view.hidden = YES;
+            } else if (previousHidden) {
+                view.hidden = previousHidden.boolValue;
+                objc_setAssociatedObject(view, &kDYYYFloatingInputOriginalBlurHiddenKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            }
+        }
+        if (view.isFirstResponder) shouldClear = NO;
+        NSString *name = NSStringFromClass(view.class);
+        BOOL container = view == root || [name isEqualToString:@"AWECommentInputViewSwiftImpl.CommentInputContainerView"] ||
+            [name isEqualToString:@"AWECommentInputViewSwiftImpl.CommentInputViewMiddleContainer"];
+        BOOL plainBackground = view.class == UIView.class &&
+            CGRectGetWidth(view.bounds) >= (CGRectGetWidth(root.bounds) - (floating ? 28 : 0)) * 0.9 &&
+            CGRectGetHeight(view.bounds) > 20 && CGRectGetHeight(view.bounds) <= CGRectGetHeight(root.bounds) + 1;
+        if (container || plainBackground || objc_getAssociatedObject(view, &kDYYYDetailInputOriginalAppearanceKey)) [targets addObject:view];
+        [pending addObjectsFromArray:view.subviews];
+    }
+    for (UIView *view in targets) {
+        NSDictionary *original = objc_getAssociatedObject(view, &kDYYYDetailInputOriginalAppearanceKey);
+        if (shouldClear) {
+            if (!original) {
+                original = @{ @"background": view.backgroundColor ?: NSNull.null, @"opaque": @(view.opaque) };
+                objc_setAssociatedObject(view, &kDYYYDetailInputOriginalAppearanceKey, original, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            }
+            view.backgroundColor = UIColor.clearColor;
+            view.opaque = NO;
+        } else if (original) {
+            id color = original[@"background"];
+            view.backgroundColor = color == NSNull.null ? nil : color;
+            view.opaque = [original[@"opaque"] boolValue];
+            objc_setAssociatedObject(view, &kDYYYDetailInputOriginalAppearanceKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+    }
+}
+
 %hook AWECommentInputBackgroundView
 - (void)layoutSubviews {
     %orig;
@@ -11114,6 +11267,7 @@ static Class tabBarButtonClass = nil;
     if (!CGAffineTransformEqualToTransform(self.transform, newTransform)) {
         self.transform = newTransform;
     }
+    DYYYUpdateDetailInputTransparency(self);
 }
 %end
 
@@ -12709,6 +12863,10 @@ static Class TagViewClass = nil;
             target.hidden = ([(UIView *)self frame].size.height == gCurrentTabBarHeight);
         }
     }
+    UIView *background = (UIView *)self;
+    Class backgroundClass = NSClassFromString(@"AWECommentInputBackgroundView");
+    while (background && !(backgroundClass && [background isKindOfClass:backgroundClass])) background = background.superview;
+    if (background) DYYYUpdateDetailInputTransparency(background);
 }
 
 %end
