@@ -229,11 +229,11 @@ static BOOL DYYYBackupApplyNormalizedPayload(NSDictionary *payload, BOOL saveUnd
     return YES;
 }
 
-@interface DYYYBackupPickerDelegate : NSObject <UIDocumentPickerDelegate>
+@interface DYYYBackupToolsPickerDelegate : NSObject <UIDocumentPickerDelegate>
 @property (nonatomic, copy) void (^completion)(NSURL *url);
 @end
 
-@implementation DYYYBackupPickerDelegate
+@implementation DYYYBackupToolsPickerDelegate
 - (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     if (self.completion) self.completion(urls.firstObject);
 }
@@ -243,7 +243,7 @@ static BOOL DYYYBackupApplyNormalizedPayload(NSDictionary *payload, BOOL saveUnd
 @end
 
 static void DYYYBackupPresentPicker(UIViewController *presenter, UIDocumentPickerViewController *picker, void (^completion)(NSURL *url)) {
-    DYYYBackupPickerDelegate *delegate = [DYYYBackupPickerDelegate new];
+    DYYYBackupToolsPickerDelegate *delegate = [DYYYBackupToolsPickerDelegate new];
     delegate.completion = completion;
     picker.delegate = delegate;
     objc_setAssociatedObject(picker, &kDYYYBackupPickerDelegateKey, delegate, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
