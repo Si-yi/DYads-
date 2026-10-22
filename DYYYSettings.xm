@@ -14,6 +14,7 @@
 #import "DYYYIconOptionsDialogView.h"
 #import "DYYYKeywordListView.h"
 #import "DYYYOptionsSelectionView.h"
+#import "DYYYPlusIcon.h"
 
 #import "DYYYConstants.h"
 #import "DYYYFloatClearButton.h"
@@ -1673,7 +1674,37 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
       [iconItems addObject:[DYYYSettingsHelper createIconCustomizationItemWithIdentifier:@"DYYYIconUnfavorite" title:@"未收藏图标" svgIcon:@"ic_star_outlined_20" saveFile:@"unfavorite.png"]];
       [iconItems addObject:[DYYYSettingsHelper createIconCustomizationItemWithIdentifier:@"DYYYIconFavorite" title:@"已收藏图标" svgIcon:@"ic_star_filled_20" saveFile:@"favorite.png"]];
       [iconItems addObject:[DYYYSettingsHelper createIconCustomizationItemWithIdentifier:@"DYYYIconShare" title:@"分享的图标" svgIcon:@"ic_share_outlined" saveFile:@"share.png"]];
-      [iconItems addObject:[DYYYSettingsHelper createIconCustomizationItemWithIdentifier:@"DYYYIconPlus" title:@"拍摄的图标" svgIcon:@"ic_camera_outlined" saveFile:@"tab_plus.png"]];
+      // 拍摄的按钮 / 拍摄的图标：移植自 DYKiller，取代原来只能换图的「拍摄的图标」
+      {
+          AWESettingItemModel *plusStyleItem = [DYYYSettingsHelper createSettingItem:@{@"identifier" : @"DYYYPlusStyle",
+                                                                                        @"title" : @"拍摄的按钮",
+                                                                                        @"detail" : DYYYPlusStyleDetail(),
+                                                                                        @"cellType" : @26,
+                                                                                        @"imageName" : @"ic_camera_outlined"}
+                                                                     cellTapHandlers:cellTapHandlers];
+          AWESettingItemModel *plusIconItem = [DYYYSettingsHelper createSettingItem:@{@"identifier" : @"DYYYPlusIcon",
+                                                                                       @"title" : @"拍摄的图标",
+                                                                                       @"detail" : DYYYPlusIconDetail(),
+                                                                                       @"cellType" : @26,
+                                                                                       @"imageName" : @"ic_camera_outlined"}
+                                                                    cellTapHandlers:cellTapHandlers];
+          __weak AWESettingItemModel *weakStyleItem = plusStyleItem;
+          __weak AWESettingItemModel *weakIconItem = plusIconItem;
+          void (^refreshPlusRows)(void) = ^{
+            weakStyleItem.detail = DYYYPlusStyleDetail();
+            weakIconItem.detail = DYYYPlusIconDetail();
+            [weakStyleItem refreshCell];
+            [weakIconItem refreshCell];
+          };
+          plusStyleItem.cellTappedBlock = ^{
+            DYYYPlusShowStyleChooser(topView(), refreshPlusRows);
+          };
+          plusIconItem.cellTappedBlock = ^{
+            DYYYPlusShowIconDialog(topView(), refreshPlusRows);
+          };
+          [iconItems addObject:plusStyleItem];
+          [iconItems addObject:plusIconItem];
+      }
 
       // 【底栏自定义】分类：悬浮底栏（iOS 26 液态玻璃）与玻璃材质，移植自 DYKiller
       NSMutableArray<AWESettingItemModel *> *glassTabBarItems = [NSMutableArray array];

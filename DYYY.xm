@@ -28,6 +28,7 @@
 #import "DYYYSettingViewController.h"
 #import "DYYYToast.h"
 #import "DYYYVideoFeedTable.h"
+#import "DYYYPlusIcon.h"
 #import "DYYYUtils.h"
 
 static CGFloat gStartY = 0.0;
@@ -4112,7 +4113,8 @@ static NSString *const kDYYYLongPressCopyEnabledKey = @"DYYYLongPressCopyTextEna
 
     UIImage *imageToApply = image;
     if ([self.accessibilityLabel isEqualToString:@"拍摄"]) {
-        UIImage *customImage = DYYYLoadCustomImage(@"tab_plus.png", CGSizeZero);
+        // 只有「拍摄的按钮」选了「自定义图片」才替换抖音原生底栏的拍摄键
+        UIImage *customImage = DYYYPlusNativeImage();
         if (customImage) {
             imageToApply = customImage;
         }
@@ -11534,6 +11536,20 @@ static Class tabBarButtonClass = nil;
         CGFloat tabDelta = (gCurrentTabBarHeight > 0 && originalTabBarHeight > 0) ? gCurrentTabBarHeight - originalTabBarHeight : 0;
         if (DYYYFeedHUDApplyPin(self.view, tabDelta)) {
             return;
+        }
+    }
+
+    // 详情页（别人主页里的视频、顶栏「经验」等入口）：原生表高就是整屏，信息区本来就按整页高度排到评论输入栏上沿。
+    // 表被底栏压缩过的情况上面的钉位已经接管；走到这里说明没被压缩，再减一次底栏高度只会让信息区、进度条整体上移，
+    // 视频下方空出一块，所以一律保持原生高度。
+    {
+        UIViewController *detailCandidate = self.parentViewController;
+        Class detailClass = NSClassFromString(@"AWEAwemeDetailTableViewController");
+        for (int depth = 0; detailClass && detailCandidate && depth < 5; depth++) {
+            if ([detailCandidate isKindOfClass:detailClass]) {
+                return;
+            }
+            detailCandidate = detailCandidate.parentViewController;
         }
     }
 

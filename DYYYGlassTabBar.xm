@@ -16,6 +16,8 @@
 
 #import "AwemeHeaders.h"
 #import "DYYYUtils.h"
+#import "DYYYPlusIcon.h"
+#import "DKTabBarIcons.h"
 
 #import <QuartzCore/QuartzCore.h>
 #import <math.h>
@@ -143,6 +145,9 @@ static __weak UIWindowScene *gObservedScene = nil;
 // 拍摄圆键及其内容。
 static UIVisualEffectView *gPlusKey = nil;
 static UIImageView *gPlusIcon = nil;
+// 新双色图标的青红层，垫在 gPlusIcon 下面；其他样式隐藏。
+static UIImageView *gPlusAccent = nil;
+static DKPlusStyle gPlusStyleApplied = DKPlusStyleDefault;
 static UIButton *gPlusHit = nil;
 // 抖音的拍摄按钮；被其他插件移除时为 nil，圆键随之隐藏。
 static __weak UIView *gPlusButton = nil;
@@ -584,18 +589,75 @@ static UIImage *DKGlassTrimTransparent(UIImage *image) {
     return result;
 }
 
-// 图标走模板图：抖音会随页面在白/黑两版图标间切换，只取 alpha 则两版形状一致，
+// 图标同样走模板图：抖音会随页面在白/黑两版图标间切换，只取 alpha 则两版形状一致，
 // 着色跟内容极性走（见「内容取色」），黑视频上不会出现看不见的黑图标。
-// 图源取抖音拍摄按钮当前显示的图，DYYY 的「拍摄的图标」自定义改的也是它，所以自然跟随。
+CGFloat DKGlassPlusIconInset(void) {
+    switch (DKPlusCurrentStyle()) {
+        case DKPlusStyleCustom: return kDKPlusIconCustomInset;
+        case DKPlusStyleCamera:
+        case DKPlusStyleBrand: return kDKPlusIconCameraInset;
+        case DKPlusStyleDefault: break;
+    }
+    return kDKPlusIconInset;
+}
+
+// 拍摄圆键的图按「拍摄按钮」选项出：默认镜像抖音原图；新图标 / 新双色图标为照相机，
+// 双色在机身下垫一层青红；自定义图片用用户的圆形图。
 static void DKGlassSyncPlusIcon(UIView *button) {
-    // 着色写在这里而不是 DKGlassApplyInk：这个函数每次布局都跑，图源没变也会走到。
+    DKPlusStyle style = DKPlusCurrentStyle();
+    if (style != gPlusStyleApplied) {
+        gPlusStyleApplied = style;
+        gPlusSourceIcon = nil;
+        gPlusIconInkStyle = UIUserInterfaceStyleUnspecified;
+    }
+    BOOL brand = style == DKPlusStyleBrand;
+    if (gPlusAccent.isHidden == brand) gPlusAccent.hidden = !brand;
+
+    // 自定义图标是用户选的照片，两道加工都要跳过：模板化只取 alpha，会把彩色抹成单色块；
+    // 圆形 alpha 已在裁剪时烘进图内，再裁一次透明包围盒会毁掉 3pt 均匀留边的前提。
+    if (style == DKPlusStyleCustom) {
+        UIImage *custom = DKPlusIconCustom();
+        if (custom == gPlusSourceIcon) return;
+        gPlusSourceIcon = custom;
+        gPlusIcon.image = custom;
+        return;
+    }
+
+    // 着色写在这里而不是 DKGlassApplyInk：这个函数每次布局都跑，图源没变也会走到，
+    // 换样式后不必等极性变化就能补上。
+    if (gPlusIconInkStyle != gInkStyle) {
+        gPlusIconInkStyle = gInkStyle;
+        gPlusIcon.tintColor = DKGlassInkColor(YES);
+    }
+
+    if (style == DKPlusStyleCamera || brand) {
+        CGFloat side = CGRectGetWidth(gPlusIcon.bounds);
+        UIImage *body = DKTabBarCameraTemplate(side);
+        if (gPlusIcon.image != body) gPlusIcon.image = body;
+        UIImage *accent = brand ? DKTabBarCameraAccent(side) : nil;
+        if (gPlusAccent.image != accent) gPlusAccent.image = accent;
+        gPlusSourceIcon = nil;
+        return;
+    }
+
+    // 着色写在这里而不是 DKGlassApplyInk：这个函数每次布局都跑，图源没变也会走到，
+    // 用户清掉自定义图标后不必等极性变化就能补上。
     if (gPlusIconInkStyle != gInkStyle) {
         gPlusIconInkStyle = gInkStyle;
         gPlusIcon.tintColor = DKGlassInkColor(YES);
     }
 
     UIImage *source = DKGlassPlusSourceIcon(button);
-    if (!source || source == gPlusSourceIcon) return;
+    if (!source) {
+        // 取不到抖音原图（DYYY 下它的拍摄键不一定带 image view）就画照相机，不留空圈。
+        CGFloat side = CGRectGetWidth(gPlusIcon.bounds);
+        UIImage *body = DKTabBarCameraTemplate(side);
+        if (gPlusIcon.image != body) gPlusIcon.image = body;
+        if (gPlusAccent.image) gPlusAccent.image = nil;
+        gPlusSourceIcon = nil;
+        return;
+    }
+    if (source == gPlusSourceIcon) return;
     gPlusSourceIcon = source;
     gPlusIcon.image = [DKGlassTrimTransparent(source)
         imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
@@ -792,6 +854,11 @@ static UIVisualEffectView *DKGlassMakePlusKey(id target) API_AVAILABLE(ios(26.0)
         [[UIVisualEffectView alloc] initWithEffect:DKGlassMakeGlassEffect(gGlassStyle, YES)];
     key.cornerConfiguration = [UICornerConfiguration capsuleConfiguration];
 
+    gPlusAccent = [[UIImageView alloc] init];
+    gPlusAccent.contentMode = UIViewContentModeScaleAspectFit;
+    gPlusAccent.hidden = YES;
+    [key.contentView addSubview:gPlusAccent];
+
     gPlusIcon = [[UIImageView alloc] init];
     gPlusIcon.contentMode = UIViewContentModeScaleAspectFit;
     [key.contentView addSubview:gPlusIcon];
@@ -969,8 +1036,10 @@ static void DKGlassLayoutGlass(AWENormalModeTabBar *douyinBar, NSUInteger refere
     if (!CGRectEqualToRect(gPlusKey.frame, keyFrame)) gPlusKey.frame = keyFrame;
 
     CGRect bounds = gPlusKey.bounds;
-    CGRect iconFrame = CGRectInset(bounds, kDKPlusIconInset, kDKPlusIconInset);
+    CGFloat iconInset = DKGlassPlusIconInset();
+    CGRect iconFrame = CGRectInset(bounds, iconInset, iconInset);
     if (!CGRectEqualToRect(gPlusIcon.frame, iconFrame)) gPlusIcon.frame = iconFrame;
+    if (!CGRectEqualToRect(gPlusAccent.frame, iconFrame)) gPlusAccent.frame = iconFrame;
     if (!CGRectEqualToRect(gPlusHit.frame, bounds)) gPlusHit.frame = bounds;
 
     DKGlassSyncPlusIcon(gPlusButton);
@@ -1039,6 +1108,8 @@ static void DKGlassUpdate(AWENormalModeTabBar *douyinBar) API_AVAILABLE(ios(26.0
         gBar = nil;
         gPlusKey = nil;
         gPlusIcon = nil;
+        gPlusAccent = nil;
+        gPlusStyleApplied = DKPlusStyleDefault;
         gPlusHit = nil;
         gPlusButton = nil;
         gPlusSourceIcon = nil;
@@ -1196,5 +1267,10 @@ static void DYYYGlassSettingsChanged(void) {
         }];
     }
 }
+
+#else
+
+// SDK 不带 iOS 26 玻璃 API 时没有悬浮底栏，刷新是空操作（拍摄图标设置页仍要链接到它）。
+void DKGlassTabBarRefresh(void) {}
 
 #endif /* __IPHONE_OS_VERSION_MAX_ALLOWED >= 260000 */
