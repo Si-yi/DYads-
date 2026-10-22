@@ -213,7 +213,7 @@ static UIImage *DYYYLoadCustomImage(NSString *fileName, CGSize targetSize) {
 }
 
 static BOOL DYYYShouldHandleSpeedFeatures(void) {
-    if ([[NSUserDefaults standardUserDefaults] boolForKey:@"DYYYEnableFloatSpeedButton"]) {
+    if (NO /* 已移除快捷倍速悬浮按钮 */) {
         return YES;
     }
 
@@ -315,7 +315,7 @@ static double DYYYDefaultPlaybackSpeed(void) {
 
 static void DYYYRestoreFloatSpeedButtonForAwemeIfNeeded(AWEAwemeModel *aweme) {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    BOOL shouldAutoRestore = [defaults boolForKey:@"DYYYEnableFloatSpeedButton"] && [defaults boolForKey:@"DYYYAutoRestoreSpeed"];
+    BOOL shouldAutoRestore = NO /* 已移除快捷倍速悬浮按钮 */ && [defaults boolForKey:@"DYYYAutoRestoreSpeed"];
     if (!shouldAutoRestore) {
         dyyyLastAutoRestoredSpeedAwemeIdentifier = nil;
         return;
@@ -516,7 +516,7 @@ static BOOL DYYYApplyPlaybackSpeed(AWEPlayInteractionViewController *interaction
 
 static double DYYYConfiguredPlaybackSpeed(void) {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    if ([defaults boolForKey:@"DYYYEnableFloatSpeedButton"]) {
+    if (NO /* 已移除快捷倍速悬浮按钮 */) {
         return getCurrentSpeed();
     }
 
@@ -528,7 +528,7 @@ static double DYYYConfiguredPlaybackSpeed(void) {
 
 static BOOL DYYYShouldPrepareDefaultPlaybackSpeedForPlayer(id playerViewController) {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    if (![defaults boolForKey:@"DYYYEnableFloatSpeedButton"] || ![defaults boolForKey:@"DYYYAutoRestoreSpeed"]) {
+    if (!NO /* 已移除快捷倍速悬浮按钮 */ || ![defaults boolForKey:@"DYYYAutoRestoreSpeed"]) {
         return NO;
     }
 
@@ -11107,6 +11107,39 @@ static char kDYYYCompactInputChromeKey;
 static char kDYYYCompactInputAppearanceKey;
 static char kDYYYCompactInputGeometryKey;
 static BOOL dyyyCompactKeyboardDismissed;
+static __weak UIView *dyyyCompactEmoticonPanel;
+static CGRect dyyyCompactKeyboardScreenFrame;
+
+// 快捷表情属于键盘附件窗口，不能放进评论输入容器的玻璃里。
+static void DYYYCompactClearEmoticonPanel(UIView *panel) {
+    if (!panel || !NSThread.isMainThread) return;
+    BOOL enabled = DYYYGetBool(@"DYYYEnableFloatingCommentInput");
+    NSMutableArray<UIView *> *pending = [NSMutableArray arrayWithObject:panel];
+    NSUInteger visited = 0;
+    while (pending.count && visited++ < 250) {
+        UIView *view = pending.lastObject;
+        [pending removeLastObject];
+        NSDictionary *saved = objc_getAssociatedObject(view, &kDYYYCompactInputAppearanceKey);
+        BOOL blur = [view isKindOfClass:UIVisualEffectView.class];
+        BOOL background = view == panel || view.class == UIView.class ||
+            [view isKindOfClass:UIScrollView.class] || [view isKindOfClass:UICollectionViewCell.class];
+        if (enabled && (background || blur)) {
+            if (!saved) {
+                saved = @{ @"color": view.backgroundColor ?: NSNull.null, @"opaque": @(view.opaque), @"hidden": @(view.hidden) };
+                objc_setAssociatedObject(view, &kDYYYCompactInputAppearanceKey, saved, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            }
+            if (blur) view.hidden = YES;
+            else { view.backgroundColor = UIColor.clearColor; view.opaque = NO; }
+        } else if (saved) {
+            objc_setAssociatedObject(view, &kDYYYCompactInputAppearanceKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            view.backgroundColor = saved[@"color"] == NSNull.null ? nil : saved[@"color"];
+            view.opaque = [saved[@"opaque"] boolValue];
+            view.hidden = [saved[@"hidden"] boolValue];
+        }
+        // 效果视图的子树由 UIKit 管理，不修改其内部层级。
+        if (!blur) [pending addObjectsFromArray:view.subviews];
+    }
+}
 
 static void DYYYCompactInputSetFrame(UIView *view, CGRect frame) {
     NSDictionary *state = objc_getAssociatedObject(view, &kDYYYCompactInputGeometryKey);
@@ -11189,7 +11222,7 @@ static void DYYYUpdateDetailInputTransparency(UIView *root) {
                 objc_setAssociatedObject(view, &kDYYYCompactInputAppearanceKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             }
         }
-        // 样式挂在整个输入容器，而不是固定高的 middle；图片、工具栏也包含在展开背景内。
+        // 玻璃包含文字、图片和发送工具栏；下方表情附件与键盘留在框外。
         UIView *chrome = container ? objc_getAssociatedObject(container, &kDYYYCompactInputChromeKey) : nil;
         UIView *oldMiddleChrome = middle ? objc_getAssociatedObject(middle, &kDYYYCompactInputChromeKey) : nil;
         [oldMiddleChrome removeFromSuperview];
@@ -11206,10 +11239,30 @@ static void DYYYUpdateDetailInputTransparency(UIView *root) {
         CGFloat width = CGRectGetWidth(middle.bounds);
         CGRect fieldPill = CGRectMake(12, (CGRectGetHeight(middle.bounds) - 36) / 2, width - 24, 36);
         CGRect pill = expanded ? CGRectInset(container.bounds, 8, 6) : [middle convertRect:fieldPill toView:container];
+        if (expanded) {
+            CGFloat bottom = CGRectGetMaxY(container.bounds) - 8;
+            UIView *panel = dyyyCompactEmoticonPanel;
+            if (panel.window && !panel.hidden && panel.alpha > 0.01 &&
+                panel.window.windowScene == window.windowScene && CGRectGetHeight(panel.bounds) > 0) {
+                CGRect rect = [panel convertRect:panel.bounds toView:panel.window];
+                rect = [window convertRect:rect fromWindow:panel.window];
+                rect = [container convertRect:rect fromView:window];
+                if (CGRectGetMinY(rect) > CGRectGetMinY(pill) + 36)
+                    bottom = MIN(bottom, CGRectGetMinY(rect) - 8);
+            }
+            if (!dyyyCompactKeyboardDismissed && !CGRectIsEmpty(dyyyCompactKeyboardScreenFrame)) {
+                CGRect keyboard = [window convertRect:dyyyCompactKeyboardScreenFrame fromCoordinateSpace:window.screen.coordinateSpace];
+                keyboard = [container convertRect:keyboard fromView:window];
+                if (CGRectGetMinY(keyboard) > CGRectGetMinY(pill) + 36 &&
+                    CGRectGetWidth(keyboard) >= CGRectGetWidth(container.bounds) * 0.75)
+                    bottom = MIN(bottom, CGRectGetMinY(keyboard) - 8);
+            }
+            pill.size.height = bottom - CGRectGetMinY(pill);
+        }
         pill.size.height = MAX(36, pill.size.height);
         if (!chrome) {
             chrome = [[UIView alloc] initWithFrame:pill];
-            chrome.accessibilityIdentifier = @"DYYY.AdaptiveCommentInput.r3";
+            chrome.accessibilityIdentifier = @"DYYY.AdaptiveCommentInput.r4";
             chrome.userInteractionEnabled = NO;
             chrome.accessibilityElementsHidden = YES;
             UIVisualEffect *material = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterialDark];
@@ -11246,6 +11299,7 @@ static void DYYYUpdateDetailInputTransparency(UIView *root) {
         }
         if (chrome.superview != container) [container insertSubview:chrome atIndex:0];
         else if (container.subviews.firstObject != chrome) [container sendSubviewToBack:chrome];
+        DYYYCompactClearEmoticonPanel(dyyyCompactEmoticonPanel);
         // 展开期间保留原生文字换行、图片预览和发送区布局，仅让玻璃外壳跟随其尺寸。
         if (expanded) return;
         // 只调输入行内原有文字和右侧功能栈，不移动容器、不缩放触摸区域。
@@ -11310,6 +11364,7 @@ static void DYYYScheduleAdaptiveInputSync(void) {
     scheduled = YES;
     dispatch_async(dispatch_get_main_queue(), ^{
         scheduled = NO;
+        DYYYCompactClearEmoticonPanel(dyyyCompactEmoticonPanel);
         for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
             if (![scene isKindOfClass:UIWindowScene.class] || scene.activationState != UISceneActivationStateForegroundActive) continue;
             for (UIWindow *window in ((UIWindowScene *)scene).windows) {
@@ -11328,10 +11383,14 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
             UITextFieldTextDidBeginEditingNotification, UITextFieldTextDidEndEditingNotification, UIApplicationDidBecomeActiveNotification ];
         for (NSString *name in names) {
             [NSNotificationCenter.defaultCenter addObserverForName:name object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
-                if ([note.name isEqualToString:UIKeyboardDidHideNotification]) dyyyCompactKeyboardDismissed = YES;
+                if ([note.name isEqualToString:UIKeyboardDidHideNotification]) {
+                    dyyyCompactKeyboardDismissed = YES;
+                    dyyyCompactKeyboardScreenFrame = CGRectZero;
+                }
                 else if ([note.name isEqualToString:UITextViewTextDidBeginEditingNotification] || [note.name isEqualToString:UITextFieldTextDidBeginEditingNotification]) dyyyCompactKeyboardDismissed = NO;
                 else if ([note.name isEqualToString:UIKeyboardWillChangeFrameNotification] || [note.name isEqualToString:UIKeyboardDidChangeFrameNotification]) {
                     CGRect endFrame = [note.userInfo[UIKeyboardFrameEndUserInfoKey] CGRectValue];
+                    dyyyCompactKeyboardScreenFrame = endFrame;
                     if (endFrame.size.height > 0 && CGRectGetMinY(endFrame) < CGRectGetHeight(UIScreen.mainScreen.bounds) - 1) dyyyCompactKeyboardDismissed = NO;
                 }
                 DYYYScheduleAdaptiveInputSync();
@@ -11339,6 +11398,15 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
         }
     });
 }
+
+%hook AWECommentMiniEmoticonPanelView
+- (void)layoutSubviews {
+    %orig;
+    dyyyCompactEmoticonPanel = self;
+    DYYYCompactClearEmoticonPanel(self);
+    DYYYScheduleAdaptiveInputSync();
+}
+%end
 
 %hook AWECommentInputViewController
 - (void)viewDidLayoutSubviews {

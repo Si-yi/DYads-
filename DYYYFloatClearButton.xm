@@ -410,7 +410,7 @@ void reloadClearButtonConfiguration(void) {
     initTargetClassNames();
 
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    BOOL isEnabled = [defaults boolForKey:@"DYYYEnableFloatClearButton"];
+    BOOL isEnabled = NO; // 悬浮清屏按钮已移除，保留状态恢复和共用接口。
     if (!isEnabled) {
         if (hideButton) {
             if (hideButton.isElementsHidden) {

@@ -297,7 +297,7 @@ void updateSpeedButtonVisibility() {
 
 + (void)reloadConfiguration {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    isFloatSpeedButtonEnabled = [defaults boolForKey:@"DYYYEnableFloatSpeedButton"];
+    isFloatSpeedButtonEnabled = NO; // 悬浮按钮功能已移除，保留共用倍速接口。
     showSpeedX = [defaults boolForKey:@"DYYYSpeedButtonShowX"];
 
     CGFloat configuredSize = [defaults floatForKey:@"DYYYSpeedButtonSize"];
