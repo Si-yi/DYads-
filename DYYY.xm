@@ -11100,59 +11100,104 @@ static Class tabBarButtonClass = nil;
 }
 %end
 
-// 详情页底部输入栏在 39.5.0 中包含独立的 Swift 背景承载层。
-// 只清理屏幕底部的详情页输入栏，编辑或退出全屏时恢复原有外观。
-static char kDYYYDetailInputOriginalAppearanceKey;
-static char kDYYYFloatingInputFrameKey;
-static char kDYYYFloatingInputAppliedFrameKey;
-static char kDYYYFloatingInputChromeKey;
-static char kDYYYFloatingInputLayoutKey;
-static char kDYYYFloatingInputOriginalBlurHiddenKey;
+// 39.5.0：评论面板的输入容器没有 AWECommentInputBackgroundView 外壳。
+// 保留整条原生输入区的 82 点（含安全区），只把可见胶囊绘制成 36 点高。
+static char kDYYYCompactInputBusyKey;
+static char kDYYYCompactInputChromeKey;
+static char kDYYYCompactInputAppearanceKey;
+static char kDYYYCompactInputGeometryKey;
 
-static BOOL DYYYUpdateFloatingCommentInput(UIView *root) {
-    if (objc_getAssociatedObject(root, &kDYYYFloatingInputLayoutKey)) return NO;
-    UIView *container = nil;
-    NSMutableArray<UIView *> *pending = [NSMutableArray arrayWithObject:root];
-    BOOL editing = NO;
-    NSUInteger visited = 0;
-    while (pending.count && visited++ < 400) {
-        UIView *view = pending.lastObject;
-        [pending removeLastObject];
-        if (view.isFirstResponder) editing = YES;
-        if ([NSStringFromClass(view.class) isEqualToString:@"AWECommentInputViewSwiftImpl.CommentInputContainerView"]) container = view;
-        [pending addObjectsFromArray:view.subviews];
-    }
-    if (!container) return NO;
-    UIWindow *window = root.window;
-    CGRect rect = window ? [root convertRect:root.bounds toView:window] : CGRectZero;
-    BOOL enabled = DYYYGetBool(@"DYYYEnableFloatingCommentInput") && window && !editing &&
-        CGRectGetHeight(root.bounds) < CGRectGetHeight(window.bounds) * 0.2 &&
-        CGRectGetMinY(rect) > CGRectGetHeight(window.bounds) * 0.65 &&
-        CGRectGetHeight(container.bounds) >= 40 && CGRectGetHeight(container.bounds) <= 86;
-    NSValue *baseline = objc_getAssociatedObject(container, &kDYYYFloatingInputFrameKey);
-    NSValue *applied = objc_getAssociatedObject(container, &kDYYYFloatingInputAppliedFrameKey);
-    UIView *chrome = objc_getAssociatedObject(container, &kDYYYFloatingInputChromeKey);
-    objc_setAssociatedObject(root, &kDYYYFloatingInputLayoutKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    if (!enabled) {
-        [chrome removeFromSuperview];
-        objc_setAssociatedObject(container, &kDYYYFloatingInputChromeKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        if (baseline && applied && CGRectEqualToRect(container.frame, applied.CGRectValue)) container.frame = baseline.CGRectValue;
-        objc_setAssociatedObject(container, &kDYYYFloatingInputFrameKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        objc_setAssociatedObject(container, &kDYYYFloatingInputAppliedFrameKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    } else {
-        // 原生布局重算（例如旋转）后，用新原始尺寸作为基准，避免每次布局叠加内缩。
-        if (!baseline || !applied || !CGRectEqualToRect(container.frame, applied.CGRectValue)) {
-            baseline = [NSValue valueWithCGRect:container.frame];
-            objc_setAssociatedObject(container, &kDYYYFloatingInputFrameKey, baseline, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+static void DYYYCompactInputSetFrame(UIView *view, CGRect frame) {
+    NSDictionary *state = objc_getAssociatedObject(view, &kDYYYCompactInputGeometryKey);
+    NSValue *base = state[@"base"];
+    NSValue *last = state[@"applied"];
+    if (!base || !CGRectEqualToRect(view.frame, last.CGRectValue)) base = [NSValue valueWithCGRect:view.frame];
+    objc_setAssociatedObject(view, &kDYYYCompactInputGeometryKey,
+        @{ @"base": base, @"applied": [NSValue valueWithCGRect:frame] }, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if (!CGRectEqualToRect(view.frame, frame)) view.frame = frame;
+}
+
+static CGRect DYYYCompactInputBaseFrame(UIView *view) {
+    NSDictionary *state = objc_getAssociatedObject(view, &kDYYYCompactInputGeometryKey);
+    NSValue *last = state[@"applied"];
+    return last && CGRectEqualToRect(view.frame, last.CGRectValue) ? [state[@"base"] CGRectValue] : view.frame;
+}
+
+static void DYYYUpdateDetailInputTransparency(UIView *root) {
+    if (!root || !NSThread.isMainThread || objc_getAssociatedObject(root, &kDYYYCompactInputBusyKey)) return;
+    objc_setAssociatedObject(root, &kDYYYCompactInputBusyKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    @try {
+        UIView *container = nil, *middle = nil;
+        BOOL editing = NO;
+        NSMutableArray<UIView *> *views = [NSMutableArray array];
+        NSMutableArray<UIView *> *pending = [NSMutableArray arrayWithObject:root];
+        while (pending.count && views.count < 500) {
+            UIView *view = pending.lastObject;
+            [pending removeLastObject];
+            if (view == objc_getAssociatedObject(view.superview, &kDYYYCompactInputChromeKey)) continue;
+            [views addObject:view];
+            NSString *name = NSStringFromClass(view.class);
+            if ([name isEqualToString:@"AWECommentInputViewSwiftImpl.CommentInputContainerView"]) container = view;
+            if ([name isEqualToString:@"AWECommentInputViewSwiftImpl.CommentInputViewMiddleContainer"]) middle = view;
+            if (view.isFirstResponder) editing = YES;
+            [pending addObjectsFromArray:view.subviews];
         }
-        CGRect frame = baseline.CGRectValue;
-        frame.origin.x += 14;
-        frame.size.width = MAX(0, frame.size.width - 28);
-        frame.size.height = MIN(56, frame.size.height);
-        if (!CGRectEqualToRect(container.frame, frame)) container.frame = frame;
-        objc_setAssociatedObject(container, &kDYYYFloatingInputAppliedFrameKey, [NSValue valueWithCGRect:frame], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        UIWindow *window = root.window;
+        CGRect screenRect = window ? [root convertRect:root.bounds toView:window] : CGRectZero;
+        BOOL atBottom = window && CGRectGetMinY(screenRect) > CGRectGetHeight(window.bounds) * 0.65 &&
+            CGRectGetHeight(root.bounds) > 0 && CGRectGetHeight(root.bounds) < CGRectGetHeight(window.bounds) * 0.2;
+        BOOL floating = DYYYGetBool(@"DYYYEnableFloatingCommentInput") && atBottom && !editing && container && middle &&
+            CGRectGetHeight(middle.bounds) >= 36 && CGRectGetHeight(middle.bounds) <= 64 && CGRectGetWidth(middle.bounds) > 160;
+        BOOL detail = NO;
+        Class detailClass = NSClassFromString(@"AWEAwemeDetailTableViewController");
+        for (UIView *host = root; host && !detail; host = host.superview) {
+            UIViewController *controller = [DYYYUtils firstAvailableViewControllerFromView:host];
+            for (NSUInteger n = 0; controller && n < 12; n++, controller = controller.parentViewController) {
+                if (detailClass && [controller isKindOfClass:detailClass]) { detail = YES; break; }
+            }
+        }
+        BOOL clearBackground = floating || (DYYYGetBool(@"DYYYEnableFullScreen") && detail && atBottom && !editing);
+        for (UIView *view in views) {
+            NSDictionary *geometry = objc_getAssociatedObject(view, &kDYYYCompactInputGeometryKey);
+            if (!floating && geometry) {
+                if (CGRectEqualToRect(view.frame, [geometry[@"applied"] CGRectValue])) view.frame = [geometry[@"base"] CGRectValue];
+                objc_setAssociatedObject(view, &kDYYYCompactInputGeometryKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            }
+            NSString *name = NSStringFromClass(view.class);
+            BOOL isContainer = view == root || view == container || view == middle;
+            BOOL widePlain = view.class == UIView.class && CGRectGetWidth(view.bounds) >= CGRectGetWidth(root.bounds) * 0.70 &&
+                CGRectGetHeight(view.bounds) <= CGRectGetHeight(root.bounds) + 1;
+            BOOL oldBlur = [view isKindOfClass:UIVisualEffectView.class] && view.tag == 999;
+            BOOL otherGlass = [name isEqualToString:@"DKCommentBarGlassView"] || [name isEqualToString:@"DKGlassFlexView"];
+            NSDictionary *saved = objc_getAssociatedObject(view, &kDYYYCompactInputAppearanceKey);
+            if (clearBackground && (isContainer || widePlain || oldBlur || otherGlass)) {
+                if (!saved) {
+                    saved = @{ @"color": view.backgroundColor ?: NSNull.null, @"opaque": @(view.opaque), @"hidden": @(view.hidden) };
+                    objc_setAssociatedObject(view, &kDYYYCompactInputAppearanceKey, saved, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                }
+                if (oldBlur || otherGlass) view.hidden = YES;
+                else { view.backgroundColor = UIColor.clearColor; view.opaque = NO; }
+            } else if (saved) {
+                view.backgroundColor = saved[@"color"] == NSNull.null ? nil : saved[@"color"];
+                view.opaque = [saved[@"opaque"] boolValue];
+                view.hidden = [saved[@"hidden"] boolValue];
+                objc_setAssociatedObject(view, &kDYYYCompactInputAppearanceKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            }
+        }
+        UIView *chrome = middle ? objc_getAssociatedObject(middle, &kDYYYCompactInputChromeKey) : nil;
+        if (!floating) {
+            // 根容器可能仍在，但编辑态暂时替换了 middle；回收所有旧胶囊。
+            for (UIView *view in views) {
+                UIView *old = objc_getAssociatedObject(view, &kDYYYCompactInputChromeKey);
+                [old removeFromSuperview];
+                objc_setAssociatedObject(view, &kDYYYCompactInputChromeKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            }
+            return;
+        }
+        CGFloat width = CGRectGetWidth(middle.bounds);
+        CGRect pill = CGRectMake(12, (CGRectGetHeight(middle.bounds) - 36) / 2, width - 24, 36);
         if (!chrome) {
-            chrome = [[UIView alloc] initWithFrame:container.bounds];
+            chrome = [[UIView alloc] initWithFrame:pill];
             chrome.userInteractionEnabled = NO;
             chrome.accessibilityElementsHidden = YES;
             UIVisualEffect *material = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterialDark];
@@ -11160,96 +11205,55 @@ static BOOL DYYYUpdateFloatingCommentInput(UIView *root) {
             if (@available(iOS 26.0, *)) {
                 UIGlassEffect *glass = [UIGlassEffect effectWithStyle:UIGlassEffectStyleRegular];
                 glass.interactive = NO;
-                glass.tintColor = [UIColor colorWithWhite:0 alpha:0.22];
                 material = glass;
             }
 #endif
             UIVisualEffectView *effect = [[UIVisualEffectView alloc] initWithEffect:material];
+            effect.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+            effect.userInteractionEnabled = NO;
             effect.frame = chrome.bounds;
             effect.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-            effect.userInteractionEnabled = NO;
             effect.clipsToBounds = YES;
-            effect.layer.borderWidth = 0.5;
-            effect.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.20].CGColor;
-            [chrome addSubview:effect];
-            chrome.layer.shadowColor = UIColor.blackColor.CGColor;
-            chrome.layer.shadowOpacity = 0.25;
-            chrome.layer.shadowOffset = CGSizeMake(0, 3);
-            chrome.layer.shadowRadius = 10;
-            objc_setAssociatedObject(container, &kDYYYFloatingInputChromeKey, chrome, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        }
-        chrome.frame = container.bounds;
-        for (UIView *effect in chrome.subviews) {
-            effect.layer.cornerRadius = CGRectGetHeight(chrome.bounds) / 2;
+            effect.layer.cornerRadius = 18;
             effect.layer.cornerCurve = kCACornerCurveContinuous;
+            effect.layer.borderWidth = 0.5;
+            effect.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.18].CGColor;
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 260000
+            if (@available(iOS 26.0, *)) effect.cornerConfiguration = [UICornerConfiguration capsuleConfiguration];
+#endif
+            [chrome addSubview:effect];
+            objc_setAssociatedObject(middle, &kDYYYCompactInputChromeKey, chrome, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         }
-        chrome.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:chrome.bounds cornerRadius:CGRectGetHeight(chrome.bounds) / 2].CGPath;
-        if (chrome.superview != container) [container insertSubview:chrome atIndex:0];
-        else [container sendSubviewToBack:chrome];
-    }
-    objc_setAssociatedObject(root, &kDYYYFloatingInputLayoutKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    return enabled;
-}
-
-static void DYYYUpdateDetailInputTransparency(UIView *root) {
-    if (!NSThread.isMainThread || !root) return;
-    if (objc_getAssociatedObject(root, &kDYYYFloatingInputLayoutKey)) return;
-    BOOL inDetail = NO;
-    Class detailClass = NSClassFromString(@"AWEAwemeDetailTableViewController");
-    for (UIView *host = root.superview; host && !inDetail; host = host.superview) {
-        UIViewController *controller = [DYYYUtils firstAvailableViewControllerFromView:host];
-        for (NSUInteger depth = 0; controller && depth < 12; depth++, controller = controller.parentViewController) {
-            if (detailClass && [controller isKindOfClass:detailClass]) { inDetail = YES; break; }
-        }
-    }
-    UIWindow *window = root.window;
-    CGRect rect = window ? [root convertRect:root.bounds toView:window] : CGRectZero;
-    BOOL floating = DYYYUpdateFloatingCommentInput(root);
-    BOOL shouldClear = floating || (DYYYGetBool(@"DYYYEnableFullScreen") && inDetail && window &&
-        CGRectGetHeight(root.bounds) > 0 && CGRectGetHeight(root.bounds) < CGRectGetHeight(window.bounds) * 0.2 &&
-        CGRectGetMinY(rect) > CGRectGetHeight(window.bounds) * 0.65);
-    NSMutableArray<UIView *> *pending = [NSMutableArray arrayWithObject:root];
-    NSMutableArray<UIView *> *targets = [NSMutableArray array];
-    NSUInteger visited = 0;
-    while (pending.count && visited++ < 400) {
-        UIView *view = pending.lastObject;
-        [pending removeLastObject];
-        if (view == objc_getAssociatedObject(view.superview, &kDYYYFloatingInputChromeKey)) continue;
-        if ([view isKindOfClass:UIVisualEffectView.class] && view.tag == 999) {
-            NSNumber *previousHidden = objc_getAssociatedObject(view, &kDYYYFloatingInputOriginalBlurHiddenKey);
-            if (floating) {
-                if (!previousHidden) objc_setAssociatedObject(view, &kDYYYFloatingInputOriginalBlurHiddenKey, @(view.hidden), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-                view.hidden = YES;
-            } else if (previousHidden) {
-                view.hidden = previousHidden.boolValue;
-                objc_setAssociatedObject(view, &kDYYYFloatingInputOriginalBlurHiddenKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        chrome.frame = pill;
+        if (chrome.superview != middle) [middle insertSubview:chrome atIndex:0];
+        else if (middle.subviews.firstObject != chrome) [middle sendSubviewToBack:chrome];
+        // 只调输入行内原有文字和右侧功能栈，不移动容器、不缩放触摸区域。
+        CGFloat textRight = CGRectGetMaxX(pill) - 12;
+        for (UIView *view in middle.subviews) {
+            CGRect base = DYYYCompactInputBaseFrame(view);
+            if ([NSStringFromClass(view.class) isEqualToString:@"AWEElementStackView"] && !view.hidden &&
+                base.size.width > 0 && base.size.height >= 20 && base.origin.x > width * 0.55) {
+                CGRect target = base;
+                target.origin.x = MIN(base.origin.x, CGRectGetMaxX(pill) - 12 - base.size.width);
+                target.origin.y = CGRectGetMidY(pill) - base.size.height / 2;
+                DYYYCompactInputSetFrame(view, target);
+                textRight = MIN(textRight, target.origin.x - 8);
             }
         }
-        if (view.isFirstResponder) shouldClear = NO;
-        NSString *name = NSStringFromClass(view.class);
-        BOOL container = view == root || [name isEqualToString:@"AWECommentInputViewSwiftImpl.CommentInputContainerView"] ||
-            [name isEqualToString:@"AWECommentInputViewSwiftImpl.CommentInputViewMiddleContainer"];
-        BOOL plainBackground = view.class == UIView.class &&
-            CGRectGetWidth(view.bounds) >= (CGRectGetWidth(root.bounds) - (floating ? 28 : 0)) * 0.9 &&
-            CGRectGetHeight(view.bounds) > 20 && CGRectGetHeight(view.bounds) <= CGRectGetHeight(root.bounds) + 1;
-        if (container || plainBackground || objc_getAssociatedObject(view, &kDYYYDetailInputOriginalAppearanceKey)) [targets addObject:view];
-        [pending addObjectsFromArray:view.subviews];
-    }
-    for (UIView *view in targets) {
-        NSDictionary *original = objc_getAssociatedObject(view, &kDYYYDetailInputOriginalAppearanceKey);
-        if (shouldClear) {
-            if (!original) {
-                original = @{ @"background": view.backgroundColor ?: NSNull.null, @"opaque": @(view.opaque) };
-                objc_setAssociatedObject(view, &kDYYYDetailInputOriginalAppearanceKey, original, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        for (UIView *view in middle.subviews) {
+            NSString *name = NSStringFromClass(view.class);
+            CGRect base = DYYYCompactInputBaseFrame(view);
+            if (([name isEqualToString:@"AWECommentInputViewSwiftImpl.CommentInputTextView"] || [view isKindOfClass:UILabel.class]) &&
+                base.size.height > 0 && base.size.height <= 30 && base.origin.x < width / 2) {
+                CGRect target = base;
+                target.origin.x = CGRectGetMinX(pill) + 12;
+                target.origin.y = CGRectGetMidY(pill) - base.size.height / 2;
+                target.size.width = MAX(0, MIN(base.size.width, textRight - target.origin.x));
+                DYYYCompactInputSetFrame(view, target);
             }
-            view.backgroundColor = UIColor.clearColor;
-            view.opaque = NO;
-        } else if (original) {
-            id color = original[@"background"];
-            view.backgroundColor = color == NSNull.null ? nil : color;
-            view.opaque = [original[@"opaque"] boolValue];
-            objc_setAssociatedObject(view, &kDYYYDetailInputOriginalAppearanceKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         }
+    } @finally {
+        objc_setAssociatedObject(root, &kDYYYCompactInputBusyKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
 }
 
@@ -12866,7 +12870,7 @@ static Class TagViewClass = nil;
     UIView *background = (UIView *)self;
     Class backgroundClass = NSClassFromString(@"AWECommentInputBackgroundView");
     while (background && !(backgroundClass && [background isKindOfClass:backgroundClass])) background = background.superview;
-    if (background) DYYYUpdateDetailInputTransparency(background);
+    DYYYUpdateDetailInputTransparency(background ?: (UIView *)self);
 }
 
 %end
@@ -13214,15 +13218,8 @@ static void findTargetViewInView(UIView *view) {
 }
 
 %ctor {
-    // 悬浮按钮设置已并入新版菜单并移除；删除旧偏好，避免旧版本开启状态继续显示控件。
+    // 恢复原 DYYY 悬浮按钮分组后，保留用户原有配置。
     NSUserDefaults *dyyyDefaults = [NSUserDefaults standardUserDefaults];
-    NSArray<NSString *> *retiredFloatingKeys = @[
-        @"DYYYEnableFloatSpeedButton", @"DYYYAutoRestoreSpeed", @"DYYYSpeedButtonShowX", @"DYYYSpeedButtonSize", @"DYYYSpeedSettings",
-        @"DYYYEnableFloatClearButton", @"DYYYEnableFloatClearButtonSize", @"DYYYClearButtonIcon", @"DYYYRemoveTimeProgress", @"DYYYHideTimeProgress",
-        @"DYYYHideDanmaku", @"DYYYHideSlider", @"DYYYHideTabBar", @"DYYYHideSpeed", @"DYYYHideClearButtonOnTap", @"DYYYHideChapter",
-        @"DYYYHidePauseVideoIcon", @"DYYYHideStatusBarOnClear", @"DYYYHideButtonCenterXPercent", @"DYYYHideButtonCenterYPercent", @"DYYYHideUIButtonLockState"
-    ];
-    for (NSString *key in retiredFloatingKeys) [dyyyDefaults removeObjectForKey:key];
     DYYYDebugInspectorInstall();
 
     [dyyyDefaults registerDefaults:@{
