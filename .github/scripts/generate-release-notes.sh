@@ -502,7 +502,7 @@ if [[ -n "$previous_tag" ]] &&
 fi
 
 if [[ -z "$previous_tag" ]]; then
-    previous_tag=$(git tag --list 'DYYY_*' --sort=-version:refname | head -n 1)
+    previous_tag=$(git tag --list 'DYads-*' --sort=-version:refname | head -n 1)
 fi
 
 if [[ -n "$previous_tag" ]] &&
