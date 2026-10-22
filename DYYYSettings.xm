@@ -2039,6 +2039,21 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
             @"title" : @"隐藏我的页发作品",
             @"detail" : @"",
             @"cellType" : @6,
+            @"imageName" : @"ic_eyeslash_outlined_16"},
+          @{@"identifier" : @"DYYYHideProfileAvatarPlus",
+            @"title" : @"隐藏我的头像加号",
+            @"detail" : @"",
+            @"cellType" : @6,
+            @"imageName" : @"ic_eyeslash_outlined_16"},
+          @{@"identifier" : @"DYYYHideProfileCapsule",
+            @"title" : @"隐藏昵称下方胶囊",
+            @"detail" : @"",
+            @"cellType" : @6,
+            @"imageName" : @"ic_eyeslash_outlined_16"},
+          @{@"identifier" : @"DYYYHideProfileGuideBanner",
+            @"title" : @"隐藏我的发布引导",
+            @"detail" : @"",
+            @"cellType" : @6,
             @"imageName" : @"ic_eyeslash_outlined_16"}
       ];
       for (NSDictionary *dict in messageAndMineSettings) {
