@@ -14,6 +14,10 @@
 
 #define DYYY_FS_KEY @"DYYYEnableFullScreen"
 
+// Logos 的 %hook 需要类已声明；这个类 AwemeHeaders.h 里没有。
+@interface AWEFeedDataSafeTableView : UITableView
+@end
+
 // 覆盖 @3x 像素对齐带来的亚像素漂移。
 static const CGFloat kFeedTolerance = 0.5;
 // 表高至少要到容器的这个比例才认作「已排好、只差一个底栏」，排除布局早期的半成品尺寸。
@@ -268,6 +272,10 @@ BOOL DYYYFeedHUDApplyPin(UIView *hudView, CGFloat tabBarDelta) {
 }
 
 %ctor {
+    // 默认组（首页表、HUD 相关 hook）必须显式初始化。
+    %init;
+
+    // 详情页那组：控制器或任一方法在这个版本里不存在就整组不启用。
     Class controllerClass = NSClassFromString(@"AWEAwemeDetailTableViewController");
     if (!controllerClass) return;
     SEL selectors[] = {
