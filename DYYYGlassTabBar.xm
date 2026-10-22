@@ -906,54 +906,30 @@ static CGFloat gGeometryTarget = 0.0;
 static CGFloat gGeometryMeasured = 0.0;
 static BOOL gInsetMeasured = NO;
 
-static void DKGlassCollectTabButtons(UIView *root, NSMutableArray<UIView *> *result) {
-    for (UIView *subview in root.subviews) {
-        if ([NSStringFromClass(subview.class) isEqualToString:kDKTabButtonClass]) [result addObject:subview];
-        else DKGlassCollectTabButtons(subview, result);
-    }
-}
-
 static BOOL DKGlassMetricChanged(CGFloat a, CGFloat b) {
     return fabs(a - b) > 0.5;
 }
 
-// 从 platter 实物量出各项；返回 YES 表示有量变了，需要按新值重算一轮。
-// 胶囊里每颗按钮画两份（选中 / 未选中），frame 相同，取 minX 最小与次小的两个不同值即可。
-// 内缩只在压缩态量：此时胶囊两侧各让出一个内缩；自然态胶囊比可用宽度窄，读数偏大不可信。
-static BOOL DKGlassMeasure(UIView *platter, NSUInteger count) {
+// 只量高度和纵向位置。旋转时 UIKit 会压缩按钮，压缩后的宽度不是自然宽度；
+// 将它反写到下一轮目标宽度会形成反馈，回到竖屏后胶囊也无法恢复。
+static BOOL DKGlassMeasure(UIView *platter) {
     if (!platter || CGRectGetHeight(platter.bounds) <= 0.0) return NO;
     CGRect frame = [platter convertRect:platter.bounds toView:gBar];
+    CGFloat height = CGRectGetHeight(frame);
+    if (!isfinite(height) || height < 32.0 || height > 80.0) return NO;
     DKGlassMetrics metrics = gMetrics;
-    metrics.height = CGRectGetHeight(frame);
+    metrics.height = height;
     metrics.top = CGRectGetMinY(frame);
-
-    NSMutableArray<UIView *> *buttons = [NSMutableArray array];
-    DKGlassCollectTabButtons(platter, buttons);
-    CGFloat first = CGFLOAT_MAX, second = CGFLOAT_MAX, width = 0.0;
-    for (UIView *button in buttons) {
-        CGRect rect = [button convertRect:button.bounds toView:platter];
-        CGFloat x = CGRectGetMinX(rect);
-        if (x < first - 0.5) {
-            if (first < CGFLOAT_MAX) second = first;
-            first = x;
-            width = CGRectGetWidth(rect);
-        } else if (x > first + 0.5 && x < second - 0.5) {
-            second = x;
-        }
-    }
-    if (first < CGFLOAT_MAX && width > 0.0) {
-        metrics.buttonPad = first;
-        metrics.buttonWidth = width;
-    }
-    CGFloat naturalPitch = metrics.buttonWidth - 2.0 * metrics.buttonPad;
-    if (count >= 2 && second < CGFLOAT_MAX && second - first < naturalPitch - 0.5) {
-        metrics.inset = (CGRectGetWidth(gBar.bounds) - CGRectGetWidth(frame)) / 2.0;
+    // 内缩只从左右对称、非零的稳定胶囊取值，不接受旋转过渡中收缩的读数。
+    CGFloat left = CGRectGetMinX(frame);
+    CGFloat right = CGRectGetWidth(gBar.bounds) - CGRectGetMaxX(frame);
+    if (CGRectGetWidth(frame) > 0.0 && fabs(left - right) < 0.5 &&
+        left >= 0.0 && left <= kDKPlatterFallbackInset) {
+        metrics.inset = left;
         gInsetMeasured = YES;
     }
-
-    BOOL changed = DKGlassMetricChanged(metrics.buttonWidth, gMetrics.buttonWidth) ||
-                   DKGlassMetricChanged(metrics.buttonPad, gMetrics.buttonPad) ||
-                   DKGlassMetricChanged(metrics.height, gMetrics.height) ||
+    BOOL changed = DKGlassMetricChanged(metrics.height, gMetrics.height) ||
+                   DKGlassMetricChanged(metrics.top, gMetrics.top) ||
                    DKGlassMetricChanged(metrics.inset, gMetrics.inset);
     gMetrics = metrics;
     return changed;
@@ -962,12 +938,13 @@ static BOOL DKGlassMeasure(UIView *platter, NSUInteger count) {
 // 胶囊宽度跟着 4+1 参考态走：参考态是 reference 个项目、右侧有拍摄圆键、整组占满底栏两侧内缩之间。
 // 由参考态得出相邻间距，少几项就少几个间距——每项的大小与位置间隔都与参考态相同，不拉长。
 static CGFloat DKGlassCapsuleWidth(NSUInteger count, NSUInteger reference, CGFloat barWidth) {
-    CGFloat single = gMetrics.buttonWidth + 2.0 * gMetrics.buttonPad;
-    CGFloat naturalPitch = MAX(gMetrics.buttonWidth - 2.0 * gMetrics.buttonPad, 0.0);
+    // 自然尺寸使用固定基线，当前窗口的可用宽度只负责限制间距。
+    CGFloat single = kDKTabButtonFallbackWidth + 2.0 * kDKTabButtonFallbackPad;
+    CGFloat naturalPitch = kDKTabButtonFallbackWidth - 2.0 * kDKTabButtonFallbackPad;
     reference = MAX(reference, count);
     if (count <= 1 || reference <= 1) return single;
 
-    CGFloat available = barWidth - gMetrics.height - kDKPlusKeyGap - 2.0 * gMetrics.inset;
+    CGFloat available = MAX(0.0, barWidth - (gPlusButton ? gMetrics.height + kDKPlusKeyGap : 0.0) - 2.0 * gMetrics.inset);
     CGFloat referenceWidth = MIN(available, single + (reference - 1) * naturalPitch);
     CGFloat pitch = MIN(MAX((referenceWidth - single) / (reference - 1), 0.0), naturalPitch);
     return single + (count - 1) * pitch;
@@ -988,6 +965,7 @@ NSString *DKGlassGeometryStatus(void) {
 // 写入先比较，不会形成布局环。
 static void DKGlassLayoutGlass(AWENormalModeTabBar *douyinBar, NSUInteger reference) API_AVAILABLE(ios(26.0)) {
     CGSize size = douyinBar.bounds.size;
+    if (!isfinite(size.width) || !isfinite(size.height) || size.width <= 0.0 || size.height <= 0.0) return;
     if (DKGlassMetricChanged(size.width, gMetricsBarWidth)) {
         gMetrics = kDKGlassFallbackMetrics;
         gMetricsBarWidth = size.width;
@@ -1009,7 +987,7 @@ static void DKGlassLayoutGlass(AWENormalModeTabBar *douyinBar, NSUInteger refere
         }
         [gBar layoutIfNeeded];
         platterView = DKGlassFindPlatter(gBar);
-        if (!DKGlassMeasure(platterView, count)) break;
+        if (!DKGlassMeasure(platterView)) break;
     }
     gGeometryCount = count;
     gGeometryReference = reference;
