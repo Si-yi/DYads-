@@ -147,7 +147,7 @@ jobs:
             echo "Unable to read package version from ${SOURCE_HEAD_SHA}:control" >&2
             exit 1
           fi
-          release_name="DYYY_${version}#${BUILD_RUN_NUMBER}"
+          release_name="DYads-${version}#${BUILD_RUN_NUMBER}"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$release_name" >> "$GITHUB_OUTPUT"
           echo "title=$release_name" >> "$GITHUB_OUTPUT"
