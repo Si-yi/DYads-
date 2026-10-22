@@ -142,9 +142,12 @@ jobs:
           if ! git cat-file -e "${SOURCE_HEAD_SHA}^{commit}" 2>/dev/null; then
             git fetch --no-tags origin "$SOURCE_HEAD_SHA"
           fi
-          version=$(git show "${SOURCE_HEAD_SHA}:control" | awk -F': ' '$1 == "Version" { print $2; exit }')
-          if [ -z "$version" ]; then
-            echo "Unable to read package version from ${SOURCE_HEAD_SHA}:control" >&2
+          # 版本号以构建时自动递增后的包名为准（DYads-1.0.2_arm-rootful.deb → 1.0.2），
+          # 仓库里提交的 control 不会被自动改，读它会得到旧版本号。
+          first_deb=$(ls packages/DYads-*.deb | head -n 1)
+          version=$(basename "$first_deb" | sed -E 's/^DYads-([^_]+)_.*$/\1/')
+          if [ -z "$version" ] || [ "$version" = "$(basename "$first_deb")" ]; then
+            echo "Unable to read package version from ${first_deb}" >&2
             exit 1
           fi
           release_name="DYads-${version}#${BUILD_RUN_NUMBER}"
