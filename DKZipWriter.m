@@ -3,12 +3,13 @@
 //  DYKiller
 //
 //  调试导出使用的最小 ZIP 写入器。
-//  写入存储条目，并使用 zlib 计算 CRC32。
+//  文本使用标准 ZIP raw-deflate 压缩，图片保留原编码，并使用 zlib 计算 CRC32。
 //
 
 #import "DKZipWriter.h"
 #import <CoreFoundation/CoreFoundation.h>
 #import <zlib.h>
+#include <limits.h>
 
 static void DKZipAppendUInt16(NSMutableData *data, uint16_t value) {
     uint16_t v = CFSwapInt16HostToLittle(value);
@@ -36,16 +37,35 @@ static NSError *DKZipError(NSInteger code, NSString *message) {
                            userInfo:@{NSLocalizedDescriptionKey: message ?: @"ZIP failed"}];
 }
 
-static NSData *DKZipLocalHeader(NSData *nameData, uint32_t crc, uint32_t size) {
+static NSData *DKZipDeflate(NSData *content) {
+    if (content.length == 0 || content.length > UINT_MAX) return nil;
+    z_stream stream = {0};
+    if (deflateInit2(&stream, Z_DEFAULT_COMPRESSION, Z_DEFLATED, -MAX_WBITS, 8, Z_DEFAULT_STRATEGY) != Z_OK) return nil;
+    uLong bound = deflateBound(&stream, (uLong)content.length);
+    if (bound > UINT_MAX) { deflateEnd(&stream); return nil; }
+    NSMutableData *packed = [NSMutableData dataWithLength:(NSUInteger)bound];
+    stream.next_in = (Bytef *)content.bytes;
+    stream.avail_in = (uInt)content.length;
+    stream.next_out = packed.mutableBytes;
+    stream.avail_out = (uInt)packed.length;
+    int result = deflate(&stream, Z_FINISH);
+    NSUInteger size = (NSUInteger)stream.total_out;
+    deflateEnd(&stream);
+    if (result != Z_STREAM_END || size >= content.length) return nil;
+    packed.length = size;
+    return packed;
+}
+
+static NSData *DKZipLocalHeader(NSData *nameData, uint32_t crc, uint32_t size, uint32_t packedSize, uint16_t method) {
     NSMutableData *d = [NSMutableData data];
     DKZipAppendUInt32(d, 0x04034b50);
     DKZipAppendUInt16(d, 20);
     DKZipAppendUInt16(d, 0x0800);
-    DKZipAppendUInt16(d, 0);
+    DKZipAppendUInt16(d, method);
     DKZipAppendUInt16(d, 0);
     DKZipAppendUInt16(d, 0);
     DKZipAppendUInt32(d, crc);
-    DKZipAppendUInt32(d, size);
+    DKZipAppendUInt32(d, packedSize);
     DKZipAppendUInt32(d, size);
     DKZipAppendUInt16(d, (uint16_t)nameData.length);
     DKZipAppendUInt16(d, 0);
@@ -53,17 +73,17 @@ static NSData *DKZipLocalHeader(NSData *nameData, uint32_t crc, uint32_t size) {
     return d;
 }
 
-static NSData *DKZipCentralHeader(NSData *nameData, uint32_t crc, uint32_t size, uint32_t offset) {
+static NSData *DKZipCentralHeader(NSData *nameData, uint32_t crc, uint32_t size, uint32_t packedSize, uint16_t method, uint32_t offset) {
     NSMutableData *d = [NSMutableData data];
     DKZipAppendUInt32(d, 0x02014b50);
     DKZipAppendUInt16(d, 20);
     DKZipAppendUInt16(d, 20);
     DKZipAppendUInt16(d, 0x0800);
-    DKZipAppendUInt16(d, 0);
+    DKZipAppendUInt16(d, method);
     DKZipAppendUInt16(d, 0);
     DKZipAppendUInt16(d, 0);
     DKZipAppendUInt32(d, crc);
-    DKZipAppendUInt32(d, size);
+    DKZipAppendUInt32(d, packedSize);
     DKZipAppendUInt32(d, size);
     DKZipAppendUInt16(d, (uint16_t)nameData.length);
     DKZipAppendUInt16(d, 0);
@@ -179,21 +199,26 @@ static NSData *DKZipEndRecords(uint64_t entryCount, uint64_t centralSize, uint64
 
                 uint32_t size = (uint32_t)content.length;
                 uint32_t crc = (uint32_t)crc32(0, content.bytes, (uInt)content.length);
-                NSData *local = DKZipLocalHeader(nameData, crc, size);
-                if (local.length + content.length > UINT32_MAX - offset) {
+                NSString *extension = file.pathExtension.lowercaseString;
+                BOOL alreadyPacked = [@[ @"png", @"jpg", @"jpeg", @"zip" ] containsObject:extension];
+                NSData *compressed = alreadyPacked ? nil : DKZipDeflate(content);
+                NSData *payload = compressed ?: content;
+                uint16_t method = compressed ? 8 : 0;
+                NSData *local = DKZipLocalHeader(nameData, crc, size, (uint32_t)payload.length, method);
+                if (local.length + payload.length > UINT32_MAX - offset) {
                     entryError = DKZipError(-8, @"ZIP32 data offset overflow");
                     break;
                 }
                 @try {
                     [handle writeData:local];
-                    [handle writeData:content];
+                    [handle writeData:payload];
                 } @catch (NSException *exception) {
                     entryError = DKZipError(-5, exception.reason ?: @"ZIP entry write failed");
                     break;
                 }
-                [central appendData:DKZipCentralHeader(nameData, crc, size, offset)];
+                [central appendData:DKZipCentralHeader(nameData, crc, size, (uint32_t)payload.length, method, offset)];
 
-                offset += (uint32_t)(local.length + content.length);
+                offset += (uint32_t)(local.length + payload.length);
                 entryCount++;
                 done++;
                 if (progress) progress((CGFloat)done / (CGFloat)MAX(total, 1));

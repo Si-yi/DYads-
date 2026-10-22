@@ -11106,6 +11106,7 @@ static char kDYYYCompactInputBusyKey;
 static char kDYYYCompactInputChromeKey;
 static char kDYYYCompactInputAppearanceKey;
 static char kDYYYCompactInputGeometryKey;
+static BOOL dyyyCompactKeyboardDismissed;
 
 static void DYYYCompactInputSetFrame(UIView *view, CGRect frame) {
     NSDictionary *state = objc_getAssociatedObject(view, &kDYYYCompactInputGeometryKey);
@@ -11146,8 +11147,11 @@ static void DYYYUpdateDetailInputTransparency(UIView *root) {
         CGRect screenRect = window ? [root convertRect:root.bounds toView:window] : CGRectZero;
         BOOL atBottom = window && CGRectGetMinY(screenRect) > CGRectGetHeight(window.bounds) * 0.65 &&
             CGRectGetHeight(root.bounds) > 0 && CGRectGetHeight(root.bounds) < CGRectGetHeight(window.bounds) * 0.2;
-        BOOL floating = DYYYGetBool(@"DYYYEnableFloatingCommentInput") && atBottom && !editing && container && middle &&
-            CGRectGetHeight(middle.bounds) >= 36 && CGRectGetHeight(middle.bounds) <= 64 && CGRectGetWidth(middle.bounds) > 160;
+        BOOL visibleInput = window && !container.hidden && container.alpha > 0.01 &&
+            CGRectIntersectsRect(screenRect, window.bounds);
+        BOOL floating = DYYYGetBool(@"DYYYEnableFloatingCommentInput") && visibleInput && container && middle &&
+            CGRectGetHeight(middle.bounds) >= 36 && CGRectGetWidth(middle.bounds) > 160;
+        BOOL expanded = (editing && !dyyyCompactKeyboardDismissed) || CGRectGetHeight(middle.bounds) > 64 || CGRectGetHeight(container.bounds) > 120;
         BOOL detail = NO;
         Class detailClass = NSClassFromString(@"AWEAwemeDetailTableViewController");
         for (UIView *host = root; host && !detail; host = host.superview) {
@@ -11159,7 +11163,7 @@ static void DYYYUpdateDetailInputTransparency(UIView *root) {
         BOOL clearBackground = floating || (DYYYGetBool(@"DYYYEnableFullScreen") && detail && atBottom && !editing);
         for (UIView *view in views) {
             NSDictionary *geometry = objc_getAssociatedObject(view, &kDYYYCompactInputGeometryKey);
-            if (!floating && geometry) {
+            if ((!floating || expanded) && geometry) {
                 if (CGRectEqualToRect(view.frame, [geometry[@"applied"] CGRectValue])) view.frame = [geometry[@"base"] CGRectValue];
                 objc_setAssociatedObject(view, &kDYYYCompactInputGeometryKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             }
@@ -11178,13 +11182,18 @@ static void DYYYUpdateDetailInputTransparency(UIView *root) {
                 if (oldBlur || otherGlass) view.hidden = YES;
                 else { view.backgroundColor = UIColor.clearColor; view.opaque = NO; }
             } else if (saved) {
+                objc_setAssociatedObject(view, &kDYYYCompactInputAppearanceKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
                 view.backgroundColor = saved[@"color"] == NSNull.null ? nil : saved[@"color"];
                 view.opaque = [saved[@"opaque"] boolValue];
                 view.hidden = [saved[@"hidden"] boolValue];
                 objc_setAssociatedObject(view, &kDYYYCompactInputAppearanceKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             }
         }
-        UIView *chrome = middle ? objc_getAssociatedObject(middle, &kDYYYCompactInputChromeKey) : nil;
+        // 样式挂在整个输入容器，而不是固定高的 middle；图片、工具栏也包含在展开背景内。
+        UIView *chrome = container ? objc_getAssociatedObject(container, &kDYYYCompactInputChromeKey) : nil;
+        UIView *oldMiddleChrome = middle ? objc_getAssociatedObject(middle, &kDYYYCompactInputChromeKey) : nil;
+        [oldMiddleChrome removeFromSuperview];
+        if (middle) objc_setAssociatedObject(middle, &kDYYYCompactInputChromeKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         if (!floating) {
             // 根容器可能仍在，但编辑态暂时替换了 middle；回收所有旧胶囊。
             for (UIView *view in views) {
@@ -11195,9 +11204,12 @@ static void DYYYUpdateDetailInputTransparency(UIView *root) {
             return;
         }
         CGFloat width = CGRectGetWidth(middle.bounds);
-        CGRect pill = CGRectMake(12, (CGRectGetHeight(middle.bounds) - 36) / 2, width - 24, 36);
+        CGRect fieldPill = CGRectMake(12, (CGRectGetHeight(middle.bounds) - 36) / 2, width - 24, 36);
+        CGRect pill = expanded ? CGRectInset(container.bounds, 8, 6) : [middle convertRect:fieldPill toView:container];
+        pill.size.height = MAX(36, pill.size.height);
         if (!chrome) {
             chrome = [[UIView alloc] initWithFrame:pill];
+            chrome.accessibilityIdentifier = @"DYYY.AdaptiveCommentInput.r3";
             chrome.userInteractionEnabled = NO;
             chrome.accessibilityElementsHidden = YES;
             UIVisualEffect *material = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterialDark];
@@ -11222,20 +11234,29 @@ static void DYYYUpdateDetailInputTransparency(UIView *root) {
             if (@available(iOS 26.0, *)) effect.cornerConfiguration = [UICornerConfiguration capsuleConfiguration];
 #endif
             [chrome addSubview:effect];
-            objc_setAssociatedObject(middle, &kDYYYCompactInputChromeKey, chrome, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            objc_setAssociatedObject(container, &kDYYYCompactInputChromeKey, chrome, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         }
         chrome.frame = pill;
-        if (chrome.superview != middle) [middle insertSubview:chrome atIndex:0];
-        else if (middle.subviews.firstObject != chrome) [middle sendSubviewToBack:chrome];
+        for (UIView *effect in chrome.subviews) {
+            effect.layer.cornerRadius = expanded ? 20 : 18;
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 260000
+            if (@available(iOS 26.0, *)) effect.cornerConfiguration = expanded ?
+                [UICornerConfiguration configurationWithUniformRadius:[UICornerRadius fixedRadius:20]] : [UICornerConfiguration capsuleConfiguration];
+#endif
+        }
+        if (chrome.superview != container) [container insertSubview:chrome atIndex:0];
+        else if (container.subviews.firstObject != chrome) [container sendSubviewToBack:chrome];
+        // 展开期间保留原生文字换行、图片预览和发送区布局，仅让玻璃外壳跟随其尺寸。
+        if (expanded) return;
         // 只调输入行内原有文字和右侧功能栈，不移动容器、不缩放触摸区域。
-        CGFloat textRight = CGRectGetMaxX(pill) - 12;
+        CGFloat textRight = CGRectGetMaxX(fieldPill) - 12;
         for (UIView *view in middle.subviews) {
             CGRect base = DYYYCompactInputBaseFrame(view);
             if ([NSStringFromClass(view.class) isEqualToString:@"AWEElementStackView"] && !view.hidden &&
                 base.size.width > 0 && base.size.height >= 20 && base.origin.x > width * 0.55) {
                 CGRect target = base;
-                target.origin.x = MIN(base.origin.x, CGRectGetMaxX(pill) - 12 - base.size.width);
-                target.origin.y = CGRectGetMidY(pill) - base.size.height / 2;
+                target.origin.x = MIN(base.origin.x, CGRectGetMaxX(fieldPill) - 12 - base.size.width);
+                target.origin.y = CGRectGetMidY(fieldPill) - base.size.height / 2;
                 DYYYCompactInputSetFrame(view, target);
                 textRight = MIN(textRight, target.origin.x - 8);
             }
@@ -11246,8 +11267,8 @@ static void DYYYUpdateDetailInputTransparency(UIView *root) {
             if (([name isEqualToString:@"AWECommentInputViewSwiftImpl.CommentInputTextView"] || [view isKindOfClass:UILabel.class]) &&
                 base.size.height > 0 && base.size.height <= 30 && base.origin.x < width / 2) {
                 CGRect target = base;
-                target.origin.x = CGRectGetMinX(pill) + 12;
-                target.origin.y = CGRectGetMidY(pill) - base.size.height / 2;
+                target.origin.x = CGRectGetMinX(fieldPill) + 12;
+                target.origin.y = CGRectGetMidY(fieldPill) - base.size.height / 2;
                 target.size.width = MAX(0, MIN(base.size.width, textRight - target.origin.x));
                 DYYYCompactInputSetFrame(view, target);
             }
@@ -11256,6 +11277,82 @@ static void DYYYUpdateDetailInputTransparency(UIView *root) {
         objc_setAssociatedObject(root, &kDYYYCompactInputBusyKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
 }
+
+// 沿用 DYK 的同步时机：控制器原生布局落定后再收敛输入区。
+static void DYYYSyncCompactInputsInView(UIView *view) {
+    if (!view || !NSThread.isMainThread) return;
+    Class inputClass = NSClassFromString(@"AWECommentInputViewSwiftImpl.CommentInputContainerView");
+    if (!inputClass) return;
+    NSMutableArray *pending = [NSMutableArray arrayWithObject:view];
+    NSUInteger visited = 0;
+    while (pending.count && visited++ < 2500) {
+        UIView *candidate = pending.lastObject;
+        [pending removeLastObject];
+        if ([candidate isKindOfClass:inputClass]) {
+            UIView *root = candidate;
+            for (UIView *parent = candidate.superview; parent && parent != view.superview; parent = parent.superview) {
+                if ([NSStringFromClass(parent.class) isEqualToString:@"AWECommentInputBackgroundView"]) { root = parent; break; }
+            }
+            DYYYUpdateDetailInputTransparency(root);
+            continue;
+        }
+        [pending addObjectsFromArray:candidate.subviews];
+    }
+}
+
+static void DYYYScheduleAdaptiveInputSync(void) {
+    static BOOL scheduled;
+    if (!NSThread.isMainThread) {
+        dispatch_async(dispatch_get_main_queue(), ^{ DYYYScheduleAdaptiveInputSync(); });
+        return;
+    }
+    if (scheduled) return;
+    scheduled = YES;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        scheduled = NO;
+        for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+            if (![scene isKindOfClass:UIWindowScene.class] || scene.activationState != UISceneActivationStateForegroundActive) continue;
+            for (UIWindow *window in ((UIWindowScene *)scene).windows) {
+                if (window.hidden || window.alpha <= 0.01 || window.windowLevel != UIWindowLevelNormal) continue;
+                DYYYSyncCompactInputsInView(window.rootViewController.view);
+            }
+        }
+    });
+}
+
+static void DYYYInstallAdaptiveInputLifecycle(void) {
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSArray *names = @[ UIKeyboardWillChangeFrameNotification, UIKeyboardDidChangeFrameNotification,
+            UIKeyboardDidHideNotification, UITextViewTextDidBeginEditingNotification, UITextViewTextDidChangeNotification, UITextViewTextDidEndEditingNotification,
+            UITextFieldTextDidBeginEditingNotification, UITextFieldTextDidEndEditingNotification, UIApplicationDidBecomeActiveNotification ];
+        for (NSString *name in names) {
+            [NSNotificationCenter.defaultCenter addObserverForName:name object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
+                if ([note.name isEqualToString:UIKeyboardDidHideNotification]) dyyyCompactKeyboardDismissed = YES;
+                else if ([note.name isEqualToString:UITextViewTextDidBeginEditingNotification] || [note.name isEqualToString:UITextFieldTextDidBeginEditingNotification]) dyyyCompactKeyboardDismissed = NO;
+                else if ([note.name isEqualToString:UIKeyboardWillChangeFrameNotification] || [note.name isEqualToString:UIKeyboardDidChangeFrameNotification]) {
+                    CGRect endFrame = [note.userInfo[UIKeyboardFrameEndUserInfoKey] CGRectValue];
+                    if (endFrame.size.height > 0 && CGRectGetMinY(endFrame) < CGRectGetHeight(UIScreen.mainScreen.bounds) - 1) dyyyCompactKeyboardDismissed = NO;
+                }
+                DYYYScheduleAdaptiveInputSync();
+            }];
+        }
+    });
+}
+
+%hook AWECommentInputViewController
+- (void)viewDidLayoutSubviews {
+    %orig;
+    DYYYSyncCompactInputsInView(self.view);
+}
+%end
+
+%hook AWEAwemeDetailTableViewController
+- (void)viewDidLayoutSubviews {
+    %orig;
+    DYYYSyncCompactInputsInView(self.view);
+}
+%end
 
 %hook AWECommentInputBackgroundView
 - (void)layoutSubviews {
@@ -11310,8 +11407,10 @@ static void DYYYUpdateDetailInputTransparency(UIView *root) {
 - (void)viewDidLayoutSubviews {
     %orig;
 
-    if (!DYYYGetBool(@"DYYYEnableCommentBlur"))
+    if (!DYYYGetBool(@"DYYYEnableCommentBlur")) {
+        DYYYSyncCompactInputsInView(self.view);
         return;
+    }
 
     Class containerViewClass = NSClassFromString(@"AWECommentInputViewSwiftImpl.CommentInputContainerView");
     NSArray<UIView *> *containerViews = [DYYYUtils findAllSubviewsOfClass:containerViewClass inContainer:self.view];
@@ -11361,6 +11460,7 @@ static void DYYYUpdateDetailInputTransparency(UIView *root) {
             }
         }
     }
+    DYYYSyncCompactInputsInView(self.view);
 }
 
 %end
@@ -11462,6 +11562,11 @@ static void DYYYUpdateDetailInputTransparency(UIView *root) {
         return;
     }
 
+    if (objc_getAssociatedObject(self, &kDYYYCompactInputAppearanceKey) &&
+        DYYYGetBool(@"DYYYEnableFloatingCommentInput") && backgroundColor && CGColorGetAlpha(backgroundColor.CGColor) >= 0.98) {
+        %orig(UIColor.clearColor);
+        return;
+    }
     if (DYYYShouldClearAvatarActionViewChrome(self)) {
         %orig([UIColor clearColor]);
         return;
@@ -13218,6 +13323,7 @@ static void findTargetViewInView(UIView *view) {
 }
 
 %ctor {
+    DYYYInstallAdaptiveInputLifecycle();
     // 恢复原 DYYY 悬浮按钮分组后，保留用户原有配置。
     NSUserDefaults *dyyyDefaults = [NSUserDefaults standardUserDefaults];
     DYYYDebugInspectorInstall();
