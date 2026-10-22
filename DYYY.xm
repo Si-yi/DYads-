@@ -11534,9 +11534,10 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
 %group DYYYFloatingInputGeometryHooks
 %hook DYYYCommentInputMiddleContainer
 - (void)layoutSubviews {
+    UIView *middleView = (UIView *)self;
     // 先撤回上次平移，让原生约束始终从原始几何开始，避免 setFrame 与 transform 相互抵消。
     if (NSThread.isMainThread) {
-        NSMutableArray<UIView *> *pending = [NSMutableArray arrayWithArray:self.subviews];
+        NSMutableArray<UIView *> *pending = [NSMutableArray arrayWithArray:middleView.subviews];
         NSUInteger visited = 0;
         while (pending.count && visited++ < 500) {
             UIView *view = pending.lastObject;
@@ -11552,7 +11553,7 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
     }
     %orig;
     if (!NSThread.isMainThread) return;
-    UIView *container = self.superview;
+    UIView *container = middleView.superview;
     while (container && ![NSStringFromClass(container.class) isEqualToString:@"AWECommentInputViewSwiftImpl.CommentInputContainerView"])
         container = container.superview;
     if (container) DYYYUpdateDetailInputTransparency(container);
