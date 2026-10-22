@@ -195,7 +195,7 @@ jobs:
           if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$SKIP_COOLDOWN" == "true" ]]; then
             export RELEASE_MIN_INTERVAL_SECONDS=0
           else
-            export RELEASE_MIN_INTERVAL_SECONDS=43200
+            export RELEASE_MIN_INTERVAL_SECONDS=0
           fi
           .github/scripts/release-coordinator.sh
 
