@@ -212,6 +212,50 @@ static UIImage *DYYYLoadCustomImage(NSString *fileName, CGSize targetSize) {
     return resultImage;
 }
 
+// 参考 DYK：在详情页计算行高前撑高视频表，HUD 保留原生高度。
+static char kDYYYDetailNativeHeightKey;
+static char kDYYYDetailBottomReserveKey;
+
+static CGRect DYYYDetailTableFrame(UITableView *table, CGRect frame, CGFloat target) {
+    if (!NSThread.isMainThread || !DYYYGetBool(@"DYYYEnableFullScreen")) return frame;
+    CGFloat native = CGRectGetHeight(frame);
+    if (!CGAffineTransformIsIdentity(table.transform) || !isfinite(native) || !isfinite(target) ||
+        native <= 0 || target <= native + 0.5 || native < target * 0.5 || target - native > 160) return frame;
+    objc_setAssociatedObject(table, &kDYYYDetailNativeHeightKey, @(native), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    objc_setAssociatedObject(table, &kDYYYDetailBottomReserveKey, @(target - native), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    frame.size.height = target;
+    return frame;
+}
+
+static void DYYYPrepareDetailTable(AWEAwemeDetailTableViewController *controller, UITableView *table) {
+    if (!NSThread.isMainThread || !table || !controller.isViewLoaded) return;
+    UIView *root = controller.viewIfLoaded;
+    if (table.superview && ![table isDescendantOfView:root]) return;
+    if (root.window && root.window.windowLevel != UIWindowLevelNormal) return;
+    CGFloat target = CGRectGetHeight(table.superview ? table.superview.bounds : root.bounds);
+    CGRect frame = table.frame;
+    if (!DYYYGetBool(@"DYYYEnableFullScreen")) {
+        NSNumber *reserve = objc_getAssociatedObject(table, &kDYYYDetailBottomReserveKey);
+        objc_setAssociatedObject(table, &kDYYYDetailNativeHeightKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(table, &kDYYYDetailBottomReserveKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        if (reserve && fabs(CGRectGetHeight(frame) - target) < 0.5) frame.size.height = target - reserve.doubleValue;
+    } else {
+        frame = DYYYDetailTableFrame(table, frame, target);
+    }
+    if (!CGRectEqualToRect(frame, table.frame)) table.frame = frame;
+}
+
+static double DYYYDetailPageHeight(UITableView *table, double native) {
+    if (!NSThread.isMainThread || !DYYYGetBool(@"DYYYEnableFullScreen")) return native;
+    NSNumber *original = objc_getAssociatedObject(table, &kDYYYDetailNativeHeightKey);
+    CGFloat target = CGRectGetHeight(table.bounds);
+    if (!original || !isfinite(native) || native <= 0 || target <= original.doubleValue + 0.5) return native;
+    // 只接管整页行，广告特殊行、自动尺寸保持原逻辑。
+    if (fabs(native - original.doubleValue) > 0.5 && fabs(native - target) > 0.5) return native;
+    return target;
+}
+
+
 static BOOL DYYYShouldHandleSpeedFeatures(void) {
     if (NO /* 已移除快捷倍速悬浮按钮 */) {
         return YES;
@@ -11106,6 +11150,7 @@ static char kDYYYCompactInputBusyKey;
 static char kDYYYCompactInputChromeKey;
 static char kDYYYCompactInputAppearanceKey;
 static char kDYYYCompactInputGeometryKey;
+static char kDYYYCompactInputTransformKey;
 static BOOL dyyyCompactKeyboardDismissed;
 static __weak UIView *dyyyCompactEmoticonPanel;
 static CGRect dyyyCompactKeyboardScreenFrame;
@@ -11195,6 +11240,12 @@ static void DYYYUpdateDetailInputTransparency(UIView *root) {
         }
         BOOL clearBackground = floating || (DYYYGetBool(@"DYYYEnableFullScreen") && detail && atBottom && !editing);
         for (UIView *view in views) {
+            NSDictionary *shiftState = objc_getAssociatedObject(view, &kDYYYCompactInputTransformKey);
+            if ((!floating || expanded) && shiftState) {
+                if (CGAffineTransformEqualToTransform(view.transform, [shiftState[@"applied"] CGAffineTransformValue]))
+                    view.transform = [shiftState[@"base"] CGAffineTransformValue];
+                objc_setAssociatedObject(view, &kDYYYCompactInputTransformKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            }
             NSDictionary *geometry = objc_getAssociatedObject(view, &kDYYYCompactInputGeometryKey);
             if ((!floating || expanded) && geometry) {
                 if (CGRectEqualToRect(view.frame, [geometry[@"applied"] CGRectValue])) view.frame = [geometry[@"base"] CGRectValue];
@@ -11263,7 +11314,7 @@ static void DYYYUpdateDetailInputTransparency(UIView *root) {
         pill.size.height = MAX(36, pill.size.height);
         if (!chrome) {
             chrome = [[UIView alloc] initWithFrame:pill];
-            chrome.accessibilityIdentifier = @"DYYY.AdaptiveCommentInput.r5";
+            chrome.accessibilityIdentifier = @"DYYY.AdaptiveCommentInput.r6";
             chrome.userInteractionEnabled = NO;
             chrome.accessibilityElementsHidden = YES;
             UIVisualEffect *material = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterialDark];
@@ -11303,52 +11354,49 @@ static void DYYYUpdateDetailInputTransparency(UIView *root) {
         DYYYCompactClearEmoticonPanel(dyyyCompactEmoticonPanel);
         // 展开期间保留原生文字换行、图片预览和发送区布局，仅让玻璃外壳跟随其尺寸。
         if (expanded) return;
-        // 作品详情页会多套一层宿主，按 middle 坐标计算，兼容嵌套的文字和按钮组。
+        // 原生约束反复重写 frame；用平移保留其排版和点击区域，避免下一次布局把内边距冲掉。
         CGFloat contentLeft = CGRectGetMinX(fieldPill) + 18;
         CGFloat contentRight = CGRectGetMaxX(fieldPill) - 18;
-        CGFloat textRight = contentRight;
         NSMutableSet<UIView *> *movedGroups = [NSMutableSet set];
         for (UIView *view in views) {
             if (view == middle || ![view isDescendantOfView:middle] || view.hidden || view.alpha <= 0.01) continue;
             NSString *name = NSStringFromClass(view.class);
-            if (![name isEqualToString:@"AWEElementStackView"] && ![view isKindOfClass:UIStackView.class]) continue;
-            BOOL insideGroup = NO;
+            BOOL group = [name isEqualToString:@"AWEElementStackView"] || [view isKindOfClass:UIStackView.class];
+            BOOL text = [name isEqualToString:@"AWECommentInputViewSwiftImpl.CommentInputTextView"] ||
+                [view isKindOfClass:UITextView.class] || [view isKindOfClass:UITextField.class] || [view isKindOfClass:UILabel.class];
+            if (!group && !text) continue;
+            BOOL nested = NO;
             for (UIView *parent = view.superview; parent && parent != middle; parent = parent.superview) {
-                if ([movedGroups containsObject:parent]) { insideGroup = YES; break; }
+                if ([movedGroups containsObject:parent]) { nested = YES; break; }
             }
-            if (insideGroup) continue;
-            CGRect base = DYYYCompactInputBaseFrame(view);
-            CGRect rect = [middle convertRect:base fromView:view.superview];
-            if (rect.size.width <= 0 || rect.size.height < 20 || rect.origin.x <= width * 0.55) continue;
-            rect.origin.x = MIN(rect.origin.x, contentRight - rect.size.width);
-            rect.origin.y = CGRectGetMidY(fieldPill) - rect.size.height / 2;
-            DYYYCompactInputSetFrame(view, [view.superview convertRect:rect fromView:middle]);
+            if (nested) continue;
+            NSDictionary *state = objc_getAssociatedObject(view, &kDYYYCompactInputTransformKey);
+            CGAffineTransform base = state ? [state[@"base"] CGAffineTransformValue] : view.transform;
+            if (state && !CGAffineTransformEqualToTransform(view.transform, [state[@"applied"] CGAffineTransformValue])) {
+                base = view.transform;
+                state = nil;
+            }
+            CGRect rect = [middle convertRect:view.bounds fromView:view];
+            // 已施加的平移不作为下一轮基线，防止越移越远。
+            rect.origin.x -= [state[@"shift"] doubleValue];
+            if (rect.size.width <= 0 || rect.size.height <= 0) continue;
+            CGFloat shift;
+            if (group && rect.origin.x > width * 0.55 && rect.size.height >= 20) {
+                shift = MIN(0, contentRight - CGRectGetMaxX(rect));
+            } else if (text && rect.origin.x < width * 0.5) {
+                shift = MAX(0, contentLeft - CGRectGetMinX(rect));
+            } else continue;
+            // 向量转换兼容父级的缩放；不改变原生按钮大小。
+            CGPoint zero = [view.superview convertPoint:CGPointZero fromView:middle];
+            CGPoint shifted = [view.superview convertPoint:CGPointMake(shift, 0) fromView:middle];
+            CGAffineTransform applied = base;
+            applied.tx += shifted.x - zero.x;
+            applied.ty += shifted.y - zero.y;
+            objc_setAssociatedObject(view, &kDYYYCompactInputTransformKey,
+                @{ @"base": [NSValue valueWithCGAffineTransform:base], @"applied": [NSValue valueWithCGAffineTransform:applied], @"shift": @(shift) },
+                OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            if (!CGAffineTransformEqualToTransform(view.transform, applied)) view.transform = applied;
             [movedGroups addObject:view];
-            textRight = MIN(textRight, CGRectGetMinX(rect) - 10);
-        }
-        for (UIView *view in views) {
-            if (view == middle || ![view isDescendantOfView:middle] || view.hidden || view.alpha <= 0.01) continue;
-            NSString *name = NSStringFromClass(view.class);
-            BOOL inputText = [name isEqualToString:@"AWECommentInputViewSwiftImpl.CommentInputTextView"] ||
-                [view isKindOfClass:UITextView.class] || [view isKindOfClass:UITextField.class];
-            if (!inputText && ![view isKindOfClass:UILabel.class]) continue;
-            BOOL insideTextOrGroup = NO;
-            for (UIView *parent = view.superview; parent && parent != middle; parent = parent.superview) {
-                if ([movedGroups containsObject:parent] || [parent isKindOfClass:UITextView.class] ||
-                    [parent isKindOfClass:UITextField.class] ||
-                    [NSStringFromClass(parent.class) isEqualToString:@"AWECommentInputViewSwiftImpl.CommentInputTextView"]) {
-                    insideTextOrGroup = YES; break;
-                }
-            }
-            if (insideTextOrGroup) continue;
-            CGRect base = DYYYCompactInputBaseFrame(view);
-            CGRect rect = [middle convertRect:base fromView:view.superview];
-            if (rect.size.height <= 0 || rect.size.height > CGRectGetHeight(middle.bounds) ||
-                rect.origin.x >= width / 2) continue;
-            rect.origin.x = contentLeft;
-            rect.origin.y = CGRectGetMidY(fieldPill) - rect.size.height / 2;
-            rect.size.width = MAX(0, MIN(rect.size.width, textRight - rect.origin.x));
-            DYYYCompactInputSetFrame(view, [view.superview convertRect:rect fromView:middle]);
         }
     } @finally {
         objc_setAssociatedObject(root, &kDYYYCompactInputBusyKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -11438,12 +11486,80 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
 }
 %end
 
+%hook AWEAwemeDetailTableView
+- (void)setFrame:(CGRect)frame {
+    frame = DYYYDetailTableFrame(self, frame, CGRectGetHeight(self.superview.bounds));
+    %orig(frame);
+}
+%end
+
 %hook AWEAwemeDetailTableViewController
-- (void)viewDidLayoutSubviews {
+- (void)setupDetailTableView {
     %orig;
+    DYYYPrepareDetailTable(self, self.tableView);
+}
+- (void)viewWillLayoutSubviews {
+    DYYYPrepareDetailTable(self, self.tableView);
+    %orig;
+    DYYYPrepareDetailTable(self, self.tableView);
+}
+- (double)fixedCellHeight {
+    DYYYPrepareDetailTable(self, self.tableView);
+    double native = %orig;
+    return DYYYDetailPageHeight(self.tableView, native);
+}
+- (double)cellHeightAtIndex:(long long)index {
+    DYYYPrepareDetailTable(self, self.tableView);
+    double native = %orig;
+    return DYYYDetailPageHeight(self.tableView, native);
+}
+- (double)tableView:(UITableView *)table heightForRowAtIndexPath:(NSIndexPath *)indexPath {
+    DYYYPrepareDetailTable(self, table);
+    double native = %orig;
+    return DYYYDetailPageHeight(table, native);
+}
+- (double)contentOffsetYForCellAtIndex:(long long)index {
+    DYYYPrepareDetailTable(self, self.tableView);
+    return %orig;
+}
+- (void)viewDidLayoutSubviews {
+    DYYYPrepareDetailTable(self, self.tableView);
+    %orig;
+    DYYYPrepareDetailTable(self, self.tableView);
     DYYYSyncCompactInputsInView(self.view);
 }
 %end
+
+// 原生 middle 会在父容器之后重排文字/按钮；在它的布局完成后同步才能保持内边距。
+%group DYYYFloatingInputGeometryHooks
+%hook DYYYCommentInputMiddleContainer
+- (void)layoutSubviews {
+    // 先撤回上次平移，让原生约束始终从原始几何开始，避免 setFrame 与 transform 相互抵消。
+    if (NSThread.isMainThread) {
+        NSMutableArray<UIView *> *pending = [NSMutableArray arrayWithArray:self.subviews];
+        NSUInteger visited = 0;
+        while (pending.count && visited++ < 500) {
+            UIView *view = pending.lastObject;
+            [pending removeLastObject];
+            NSDictionary *state = objc_getAssociatedObject(view, &kDYYYCompactInputTransformKey);
+            if (state) {
+                if (CGAffineTransformEqualToTransform(view.transform, [state[@"applied"] CGAffineTransformValue]))
+                    view.transform = [state[@"base"] CGAffineTransformValue];
+                objc_setAssociatedObject(view, &kDYYYCompactInputTransformKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            }
+            [pending addObjectsFromArray:view.subviews];
+        }
+    }
+    %orig;
+    if (!NSThread.isMainThread) return;
+    UIView *container = self.superview;
+    while (container && ![NSStringFromClass(container.class) isEqualToString:@"AWECommentInputViewSwiftImpl.CommentInputContainerView"])
+        container = container.superview;
+    if (container) DYYYUpdateDetailInputTransparency(container);
+}
+%end
+%end
+
 
 %hook AWECommentInputBackgroundView
 - (void)layoutSubviews {
@@ -11840,6 +11956,17 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
         Class detailClass = NSClassFromString(@"AWEAwemeDetailTableViewController");
         for (int depth = 0; detailClass && detailCandidate && depth < 5; depth++) {
             if ([detailCandidate isKindOfClass:detailClass]) {
+                // 视频铺到整屏，文案和进度保持在输入栏上方；沿用 DYK 的 HUD 钉位规则。
+                if (DYYYGetBool(@"DYYYEnableFullScreen")) {
+                    UITableView *table = ((AWEAwemeDetailTableViewController *)detailCandidate).tableView;
+                    NSNumber *native = objc_getAssociatedObject(table, &kDYYYDetailNativeHeightKey);
+                    CGRect hud = self.view.frame;
+                    if (native && CGRectGetHeight(hud) > native.doubleValue + 0.5) {
+                        hud.origin.y = 0;
+                        hud.size.height = native.doubleValue;
+                        self.view.frame = hud;
+                    }
+                }
                 return;
             }
             detailCandidate = detailCandidate.parentViewController;
@@ -13454,6 +13581,8 @@ static void findTargetViewInView(UIView *view) {
         dispatch_once(&onceToken, ^{
           Class wSwiftImpl = objc_getClass("AWECommentInputViewSwiftImpl.CommentInputContainerView");
           %init(CommentInputContainerView = wSwiftImpl);
+          Class middleClass = NSClassFromString(@"AWECommentInputViewSwiftImpl.CommentInputViewMiddleContainer");
+          if (middleClass) { %init(DYYYFloatingInputGeometryHooks, DYYYCommentInputMiddleContainer = middleClass); }
         });
         BOOL isAutoPlayEnabled = DYYYGetBool(@"DYYYEnableAutoPlay");
         if (isAutoPlayEnabled) {
@@ -13518,3 +13647,4 @@ static void findTargetViewInView(UIView *view) {
                                                     }];
     }
 }
+

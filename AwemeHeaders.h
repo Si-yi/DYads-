@@ -537,6 +537,9 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @interface CommentInputContainerView : UIView
 @end
 
+@interface DYYYCommentInputMiddleContainer : UIView
+@end
+
 @interface AWELongPressPanelTableViewController : UIViewController
 @property(nonatomic, strong) AWEAwemeModel *awemeModel;
 @end
@@ -1269,6 +1272,12 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 - (BOOL)prefersStatusBarHidden;
 @end
 @interface AWEAwemeDetailTableViewController : UIViewController
+@property(nonatomic, strong) UITableView *tableView;
+- (void)setupDetailTableView;
+- (double)fixedCellHeight;
+- (double)cellHeightAtIndex:(long long)index;
+- (double)tableView:(UITableView *)table heightForRowAtIndexPath:(NSIndexPath *)indexPath;
+- (double)contentOffsetYForCellAtIndex:(long long)index;
 - (BOOL)prefersStatusBarHidden;
 @end
 @interface AWEAwemeHotSpotTableViewController : UIViewController
@@ -1954,3 +1963,4 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 // 顶栏选中指示线
 @interface AWEFeedMultiTabSelectedContainerView : UIView
 @end
+
