@@ -931,28 +931,6 @@ static AWESettingItemModel *DYYYMakePageEntry(UIViewController *rootVC, NSString
     return entry;
 }
 
-// 每个原有区块只生成一层同名子菜单；叶子页仍复用原设置模型和回调。
-static NSArray *DYYYNestNamedSections(UIViewController *rootVC, NSString *category, NSArray *sections) {
-    NSMutableArray *entries = [NSMutableArray array];
-    for (AWESettingSectionModel *section in sections) {
-        if (section.itemArray.count == 0) continue;
-        NSString *title = section.sectionHeaderTitle.length ? section.sectionHeaderTitle : @"其他设置";
-        NSString *path = [NSString stringWithFormat:@"%@ · %@", category, title];
-        AWESettingItemModel *entry = DYYYMakePageEntry(rootVC, title, @"ic_gearsimplify_outlined_20", path, @[ section ]);
-        entry.identifier = [@"DYYYGroup." stringByAppendingString:path];
-        [entries addObject:entry];
-    }
-    return @[ [DYYYSettingsHelper createSectionWithTitle:@"功能分组" items:entries] ];
-}
-
-static void DYYYIndexNestedGroups(NSArray *sections) {
-    if (!DYYYBuildingSettingsSearchIndex) return;
-    for (AWESettingSectionModel *section in sections) {
-        for (AWESettingItemModel *item in section.itemArray) {
-            if (objc_getAssociatedObject(item, &kDYYYPageEntryKey) && item.cellTappedBlock) item.cellTappedBlock();
-        }
-    }
-}
 // 「媒体保存」「内容过滤」从原来的页面里单独拿出来做成主菜单入口：
 // 同一段建页代码，按 gDYYYPageMode 决定是只显示被拿出来的那一节，还是显示除它以外的部分。
 static NSString *gDYYYPageMode = nil;
@@ -1588,9 +1566,8 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"二次确认" items:securityItems]];
 
       NSString *basicTitle = gDYYYPageMode ? @"内容过滤" : @"基本设置";
-      NSArray *basicShown = DYYYNestNamedSections(rootVC, basicTitle, DYYYModeSections(sections, @"过滤与屏蔽"));
+      NSArray *basicShown = DYYYModeSections(sections, @"过滤与屏蔽");
       DYYYRegisterSearchSections(basicTitle, basicShown);
-      DYYYIndexNestedGroups(basicShown);
       if (DYYYBuildingSettingsSearchIndex) {
           return;
       }
@@ -1845,9 +1822,7 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"输入栏" items:@[
           [DYYYSettingsHelper createSettingItem:@{ @"identifier": @"DYYYEnableFloatingCommentInput", @"title": @"悬浮评论输入栏", @"subTitle": @"评论区及作品详情页使用紧凑玻璃输入胶囊", @"detail": @"", @"cellType": @6, @"imageName": @"ic_comment_outlined_20" }]
       ]]];
-      sections = [DYYYNestNamedSections(rootVC, @"界面设置", sections) mutableCopy];
       DYYYRegisterSearchSections(@"界面设置", sections);
-      DYYYIndexNestedGroups(sections);
       if (DYYYBuildingSettingsSearchIndex) {
           return;
       }
@@ -2691,9 +2666,7 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"直播界面净化" items:livestreamItems]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"长按面板" items:modernpanels]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"长按评论" items:commentpanel]];
-      sections = [DYYYNestNamedSections(rootVC, @"隐藏设置", sections) mutableCopy];
       DYYYRegisterSearchSections(@"隐藏设置", sections);
-      DYYYIndexNestedGroups(sections);
       if (DYYYBuildingSettingsSearchIndex) {
           for (AWESettingSectionModel *section in sections) {
               for (AWESettingItemModel *item in section.itemArray) {
@@ -2828,10 +2801,7 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
 
       NSMutableArray *sections = [NSMutableArray array];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"顶栏选项" items:removeSettingsItems]];
-
-      sections = [DYYYNestNamedSections(rootVC, @"顶栏移除", sections) mutableCopy];
       DYYYRegisterSearchSections(@"顶栏移除", sections);
-      DYYYIndexNestedGroups(sections);
       if (DYYYBuildingSettingsSearchIndex) {
           return;
       }
@@ -3850,9 +3820,8 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
                                                          footerTitle:@"允许用户导出或导入抖音的 ABTest 配置。远程配置由 Nathalie 维护，在应用启动时自动更新远程配置。"
                                                                items:hotUpdateItems]];
       NSString *enhanceTitle = gDYYYPageMode ?: @"增强设置";
-      NSArray *enhanceShown = DYYYNestNamedSections(rootVC, enhanceTitle, DYYYModeSections(sections, @"媒体保存"));
+      NSArray *enhanceShown = DYYYModeSections(sections, @"媒体保存");
       DYYYRegisterSearchSections(enhanceTitle, enhanceShown);
-      DYYYIndexNestedGroups(enhanceShown);
       if (DYYYBuildingSettingsSearchIndex) {
           return;
       }
@@ -4196,10 +4165,7 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
       NSMutableArray *sections = [NSMutableArray array];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"快捷倍速" items:speedButtonItems]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"一键清屏" items:clearButtonItems]];
-
-      sections = [DYYYNestNamedSections(rootVC, @"悬浮按钮", sections) mutableCopy];
       DYYYRegisterSearchSections(@"悬浮按钮", sections);
-      DYYYIndexNestedGroups(sections);
       if (DYYYBuildingSettingsSearchIndex) {
           return;
       }
