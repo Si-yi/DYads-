@@ -3,6 +3,7 @@
 本项目是基于 Theos/Logos 的抖音 UI 调整 Tweak。当前仓库 README 标注仅在 **抖音 36.5.0** 版本测试；回答需求时请以仓库现状为准，不要沿用旧版本描述。
 
 ## 工程关键点
+- **评论输入区与表情面板**：展开玻璃依原生 middle 的完整内容计算高度，工具栏下留白 10 点，与面板间隔 8 点；用整个输入容器的可恢复 transform 抬升，禁止裁短玻璃盖住工具栏。原生 setFrame/layout 前撤回抬升，避免累计位移；背景视图补足抬升区域的点击范围。跟踪弱引用表情面板集合，包括快捷栏、整页评论面板和输入控件的自定义 inputView；可见面板优先于切换中残留的键盘 frame。关闭功能或收起时恢复 transform、裁切和背景。
 - **博主主页返回首页**：玻璃底栏的显隐保护仅作用于此前底栏可见、且从 `AWEUserDetailViewControllerV2` 返回 `AWEFeedRootViewController` 的过渡。手势取消必须恢复原先 hidden/alpha；不要全局强制显示底栏，不要在 setHidden/setAlpha 内触发完整布局。
 - **玻璃底栏启动与诊断**：`DYYYGlassTabBar.xm` 在原生按钮尚未创建时可用缓存外观预显示，原生按钮就绪后才启用点击。子视图镜像回调只同步内容，签名改变才请求布局，禁止每次回调直接完整重排。`DYYYGlassTabBar.h` 暴露只读布局状态，普通调试导出与录制脉冲可读取计数，不得为诊断主动触发布局。
 - **Hook 入口**：`DYYY.xm` 负责 Feed、浮窗、全局透明度与 Tab Bar 高度等通用 Hook；`DYYYSettings.xm` 负责抖音设置页相关 Hook（`AWESettingBaseViewController`、`AWELeftSideBarWeatherLabel` 等）并构造 DYYY 自定义设置。

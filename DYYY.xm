@@ -11298,14 +11298,19 @@ static char kDYYYCompactInputChromeKey;
 static char kDYYYCompactInputAppearanceKey;
 static char kDYYYCompactInputGeometryKey;
 static char kDYYYCompactInputTransformKey;
+static char kDYYYCompactInputLiftKey;
+static char kDYYYCompactInputClipKey;
+static char kDYYYCompactInputHitRectKey;
+static NSHashTable<UIView *> *dyyyCompactEmoticonPanels;
 static BOOL dyyyCompactKeyboardDismissed;
-static __weak UIView *dyyyCompactEmoticonPanel;
 static CGRect dyyyCompactKeyboardScreenFrame;
 
 // 快捷表情属于键盘附件窗口，不能放进评论输入容器的玻璃里。
 static void DYYYCompactClearEmoticonPanel(UIView *panel) {
     if (!panel || !NSThread.isMainThread) return;
     BOOL enabled = DYYYGetBool(@"DYYYEnableFloatingCommentInput");
+    if (!dyyyCompactEmoticonPanels) dyyyCompactEmoticonPanels = [NSHashTable weakObjectsHashTable];
+    [dyyyCompactEmoticonPanels addObject:panel];
     NSMutableArray<UIView *> *pending = [NSMutableArray arrayWithObject:panel];
     NSUInteger visited = 0;
     while (pending.count && visited++ < 250) {
@@ -11368,11 +11373,37 @@ static void DYYYUpdateDetailInputTransparency(UIView *root) {
             if (view.isFirstResponder) editing = YES;
             [pending addObjectsFromArray:view.subviews];
         }
+        // 每轮从原生位置计算，避免把上轮抬升量再次当成输入区原始坐标。
+        NSDictionary *liftState = container ? objc_getAssociatedObject(container, &kDYYYCompactInputLiftKey) : nil;
+        if (liftState && CGAffineTransformEqualToTransform(container.transform, [liftState[@"applied"] CGAffineTransformValue]))
+            container.transform = [liftState[@"base"] CGAffineTransformValue];
+        if (container) objc_setAssociatedObject(container, &kDYYYCompactInputLiftKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(root, &kDYYYCompactInputHitRectKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        for (UIView *view in views) {
+            NSNumber *clips = objc_getAssociatedObject(view, &kDYYYCompactInputClipKey);
+            if (clips) {
+                view.clipsToBounds = clips.boolValue;
+                objc_setAssociatedObject(view, &kDYYYCompactInputClipKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            }
+            NSString *name = NSStringFromClass(view.class);
+            BOOL panel = ([name hasPrefix:@"AWEComment"] || [name hasPrefix:@"AWEIM"]) &&
+                ([name containsString:@"Emoticon"] || [name containsString:@"Emoji"] || [name containsString:@"Sticker"]) &&
+                ([name containsString:@"Panel"] || [name containsString:@"Keyboard"]);
+            if (panel) DYYYCompactClearEmoticonPanel(view);
+            if (view.isFirstResponder && ([view isKindOfClass:UITextView.class] || [view isKindOfClass:UITextField.class])) {
+                UIView *inputView = [(id)view inputView];
+                if (inputView && inputView != container && ![container isDescendantOfView:inputView]) DYYYCompactClearEmoticonPanel(inputView);
+            }
+        }
         UIWindow *window = root.window;
+        BOOL ancestorsVisible = YES;
+        for (UIView *parent = container; parent; parent = parent.superview) {
+            if (parent.hidden || parent.alpha <= 0.01) { ancestorsVisible = NO; break; }
+        }
         CGRect screenRect = window ? [root convertRect:root.bounds toView:window] : CGRectZero;
         BOOL atBottom = window && CGRectGetMinY(screenRect) > CGRectGetHeight(window.bounds) * 0.65 &&
             CGRectGetHeight(root.bounds) > 0 && CGRectGetHeight(root.bounds) < CGRectGetHeight(window.bounds) * 0.2;
-        BOOL visibleInput = window && !container.hidden && container.alpha > 0.01 &&
+        BOOL visibleInput = window && ancestorsVisible && !container.hidden && container.alpha > 0.01 &&
             CGRectIntersectsRect(screenRect, window.bounds);
         BOOL floating = DYYYGetBool(@"DYYYEnableFloatingCommentInput") && visibleInput && container && middle &&
             CGRectGetHeight(middle.bounds) >= 36 && CGRectGetWidth(middle.bounds) > 160;
@@ -11464,30 +11495,63 @@ static void DYYYUpdateDetailInputTransparency(UIView *root) {
         CGRect fieldPill = CGRectMake(12, (CGRectGetHeight(middle.bounds) - 36) / 2, width - 24, 36);
         CGRect pill = expanded ? CGRectInset(container.bounds, 8, 6) : [middle convertRect:fieldPill toView:container];
         if (expanded) {
-            // 底边下延 6 点，增加工具按钮下面的留白，表情仍在框外。
-            CGFloat bottom = CGRectGetMaxY(container.bounds) - 2;
-            UIView *panel = dyyyCompactEmoticonPanel;
-            if (panel.window && !panel.hidden && panel.alpha > 0.01 &&
-                panel.window.windowScene == window.windowScene && CGRectGetHeight(panel.bounds) > 0) {
-                CGRect rect = [panel convertRect:panel.bounds toView:panel.window];
-                rect = [window convertRect:rect fromWindow:panel.window];
-                rect = [container convertRect:rect fromView:window];
-                if (CGRectGetMinY(rect) > CGRectGetMinY(pill) + 36)
-                    bottom = MIN(bottom, CGRectGetMinY(rect) - 2);
+            // 以原生文字、图片和工具栏的完整 middle 为基准，给按钮下方留 10 点。
+            // 不能直接把玻璃裁到面板边缘；应把输入区整体抬高，保留完整下圆角。
+            CGRect middleRect = [middle convertRect:middle.bounds toView:container];
+            CGFloat bottom = CGRectGetMaxY(middleRect) + 10;
+            CGFloat boundary = CGRectGetMaxY(container.bounds);
+            BOOL panelBoundary = NO;
+            for (UIView *panel in dyyyCompactEmoticonPanels.allObjects) {
+                if (!panel.window || panel.window.windowScene != window.windowScene || panel == container ||
+                    [container isDescendantOfView:panel] || [panel isDescendantOfView:container]) continue;
+                BOOL visible = YES;
+                for (UIView *parent = panel; parent; parent = parent.superview)
+                    if (parent.hidden || parent.alpha <= 0.01) { visible = NO; break; }
+                if (!visible || CGRectGetHeight(panel.bounds) < 20) continue;
+                CGRect windowRect = [panel convertRect:panel.bounds toView:panel.window];
+                windowRect = [window convertRect:windowRect fromWindow:panel.window];
+                if (!CGRectIntersectsRect(windowRect, window.bounds)) continue;
+                CGRect rect = [container convertRect:windowRect fromView:window];
+                CGFloat overlapWidth = MIN(CGRectGetMaxX(rect), CGRectGetMaxX(container.bounds)) - MAX(CGRectGetMinX(rect), CGRectGetMinX(container.bounds));
+                if (CGRectGetMinY(rect) > CGRectGetMinY(pill) + 36 &&
+                    CGRectGetWidth(rect) >= CGRectGetWidth(container.bounds) * 0.60 &&
+                    overlapWidth >= CGRectGetWidth(container.bounds) * 0.50) {
+                    boundary = MIN(boundary, CGRectGetMinY(rect));
+                    panelBoundary = YES;
+                }
             }
-            if (!dyyyCompactKeyboardDismissed && !CGRectIsEmpty(dyyyCompactKeyboardScreenFrame)) {
+            // 表情面板已显示时忽略切换途中尚未消失的旧键盘 frame。
+            if (!panelBoundary && !dyyyCompactKeyboardDismissed && !CGRectIsEmpty(dyyyCompactKeyboardScreenFrame)) {
                 CGRect keyboard = [window convertRect:dyyyCompactKeyboardScreenFrame fromCoordinateSpace:window.screen.coordinateSpace];
                 keyboard = [container convertRect:keyboard fromView:window];
                 if (CGRectGetMinY(keyboard) > CGRectGetMinY(pill) + 36 &&
                     CGRectGetWidth(keyboard) >= CGRectGetWidth(container.bounds) * 0.75)
-                    bottom = MIN(bottom, CGRectGetMinY(keyboard) - 2);
+                    boundary = MIN(boundary, CGRectGetMinY(keyboard));
             }
             pill.size.height = bottom - CGRectGetMinY(pill);
+            CGFloat lift = MAX(0, bottom - (boundary - 8));
+            if (lift > 0.1) {
+                CGAffineTransform base = container.transform;
+                CGAffineTransform applied = CGAffineTransformTranslate(base, 0, -lift);
+                objc_setAssociatedObject(container, &kDYYYCompactInputLiftKey,
+                    @{ @"base": [NSValue valueWithCGAffineTransform:base], @"applied": [NSValue valueWithCGAffineTransform:applied] },
+                    OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                container.transform = applied;
+                // 只改变输入区外壳和整体位置，原生换行、图片、按钮和点击区域一起移动。
+                objc_setAssociatedObject(container, &kDYYYCompactInputClipKey, @(container.clipsToBounds), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                container.clipsToBounds = NO;
+                if (root != container) {
+                    objc_setAssociatedObject(root, &kDYYYCompactInputClipKey, @(root.clipsToBounds), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                    root.clipsToBounds = NO;
+                    CGRect hitRect = [container convertRect:container.bounds toView:root];
+                    objc_setAssociatedObject(root, &kDYYYCompactInputHitRectKey, [NSValue valueWithCGRect:hitRect], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                }
+            }
         }
         pill.size.height = MAX(36, pill.size.height);
         if (!chrome) {
             chrome = [[UIView alloc] initWithFrame:pill];
-            chrome.accessibilityIdentifier = @"DYYY.AdaptiveCommentInput.r7";
+            chrome.accessibilityIdentifier = @"DYYY.AdaptiveCommentInput.r8";
             chrome.userInteractionEnabled = NO;
             chrome.accessibilityElementsHidden = YES;
             UIVisualEffect *material = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterialDark];
@@ -11514,7 +11578,7 @@ static void DYYYUpdateDetailInputTransparency(UIView *root) {
             [chrome addSubview:effect];
             objc_setAssociatedObject(container, &kDYYYCompactInputChromeKey, chrome, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         }
-        chrome.frame = pill;
+        if (!CGRectEqualToRect(chrome.frame, pill)) chrome.frame = pill;
         for (UIView *effect in chrome.subviews) {
             effect.overrideUserInterfaceStyle = commentStyle;
 
@@ -11526,7 +11590,7 @@ static void DYYYUpdateDetailInputTransparency(UIView *root) {
         }
         if (chrome.superview != container) [container insertSubview:chrome atIndex:0];
         else if (container.subviews.firstObject != chrome) [container sendSubviewToBack:chrome];
-        DYYYCompactClearEmoticonPanel(dyyyCompactEmoticonPanel);
+        for (UIView *panel in dyyyCompactEmoticonPanels.allObjects) DYYYCompactClearEmoticonPanel(panel);
         // 展开期间保留原生文字换行、图片预览和发送区布局，仅让玻璃外壳跟随其尺寸。
         if (expanded) return;
         // 原生约束反复重写 frame；用平移保留其排版和点击区域，避免下一次布局把内边距冲掉。
@@ -11584,19 +11648,37 @@ static void DYYYSyncCompactInputsInView(UIView *view) {
     Class inputClass = NSClassFromString(@"AWECommentInputViewSwiftImpl.CommentInputContainerView");
     if (!inputClass) return;
     NSMutableArray *pending = [NSMutableArray arrayWithObject:view];
+    NSMutableArray<UIView *> *inputs = [NSMutableArray array];
     NSUInteger visited = 0;
     while (pending.count && visited++ < 2500) {
         UIView *candidate = pending.lastObject;
         [pending removeLastObject];
-        if ([candidate isKindOfClass:inputClass]) {
-            UIView *root = candidate;
-            for (UIView *parent = candidate.superview; parent && parent != view.superview; parent = parent.superview) {
-                if ([NSStringFromClass(parent.class) isEqualToString:@"AWECommentInputBackgroundView"]) { root = parent; break; }
+        NSString *name = NSStringFromClass(candidate.class);
+        BOOL panel = ([name hasPrefix:@"AWEComment"] || [name hasPrefix:@"AWEIM"]) &&
+            ([name containsString:@"Emoticon"] || [name containsString:@"Emoji"] || [name containsString:@"Sticker"]) &&
+            ([name containsString:@"Panel"] || [name containsString:@"Keyboard"]);
+        if (panel && ![name hasPrefix:@"AWEComment"]) {
+            panel = NO;
+            UIViewController *controller = [DYYYUtils firstAvailableViewControllerFromView:candidate];
+            for (NSUInteger n = 0; controller && n < 10; n++, controller = controller.parentViewController) {
+                NSString *owner = NSStringFromClass(controller.class);
+                if ([owner hasPrefix:@"AWECommentInput"] || [owner hasPrefix:@"AWECommentContainer"]) { panel = YES; break; }
             }
-            DYYYUpdateDetailInputTransparency(root);
+        }
+        if (panel) DYYYCompactClearEmoticonPanel(candidate);
+        if ([candidate isKindOfClass:inputClass]) {
+            [inputs addObject:candidate];
             continue;
         }
         [pending addObjectsFromArray:candidate.subviews];
+    }
+    // 先发现同层级的面板，再同步输入框，避免依赖子视图遍历顺序而慢一帧。
+    for (UIView *candidate in inputs) {
+        UIView *root = candidate;
+        for (UIView *parent = candidate.superview; parent && parent != view.superview; parent = parent.superview) {
+            if ([NSStringFromClass(parent.class) isEqualToString:@"AWECommentInputBackgroundView"]) { root = parent; break; }
+        }
+        DYYYUpdateDetailInputTransparency(root);
     }
 }
 
@@ -11610,7 +11692,7 @@ static void DYYYScheduleAdaptiveInputSync(void) {
     scheduled = YES;
     dispatch_async(dispatch_get_main_queue(), ^{
         scheduled = NO;
-        DYYYCompactClearEmoticonPanel(dyyyCompactEmoticonPanel);
+        for (UIView *panel in dyyyCompactEmoticonPanels.allObjects) DYYYCompactClearEmoticonPanel(panel);
         for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
             if (![scene isKindOfClass:UIWindowScene.class] || scene.activationState != UISceneActivationStateForegroundActive) continue;
             for (UIWindow *window in ((UIWindowScene *)scene).windows) {
@@ -11650,7 +11732,6 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
 %hook AWECommentMiniEmoticonPanelView
 - (void)layoutSubviews {
     %orig;
-    dyyyCompactEmoticonPanel = self;
     DYYYCompactClearEmoticonPanel(self);
     DYYYScheduleAdaptiveInputSync();
 }
@@ -11744,6 +11825,14 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
 
 
 %hook AWECommentInputBackgroundView
+- (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
+    if (%orig) return YES;
+    NSValue *hitRect = objc_getAssociatedObject(self, &kDYYYCompactInputHitRectKey);
+    if (!DYYYGetBool(@"DYYYEnableFloatingCommentInput") || !hitRect || !CGRectContainsPoint(hitRect.CGRectValue, point)) return NO;
+    for (UIView *child in ((UIView *)self).subviews)
+        if (!child.hidden && child.alpha > 0.01 && objc_getAssociatedObject(child, &kDYYYCompactInputLiftKey)) return YES;
+    return NO;
+}
 - (void)layoutSubviews {
     %orig;
 
@@ -13366,7 +13455,31 @@ static Class TagViewClass = nil;
 
 %hook CommentInputContainerView
 
+- (void)setFrame:(CGRect)frame {
+    UIView *view = (UIView *)self;
+    NSDictionary *state = NSThread.isMainThread ? objc_getAssociatedObject(view, &kDYYYCompactInputLiftKey) : nil;
+    if (state) {
+        CGRect appliedFrame = view.frame;
+        if (CGAffineTransformEqualToTransform(view.transform, [state[@"applied"] CGAffineTransformValue])) {
+            view.transform = [state[@"base"] CGAffineTransformValue];
+            // 原生若读取当前 frame 再改高度，要撤回其中已有的位移，避免越移越高。
+            if (CGPointEqualToPoint(frame.origin, appliedFrame.origin)) {
+                frame.origin.x += view.frame.origin.x - appliedFrame.origin.x;
+                frame.origin.y += view.frame.origin.y - appliedFrame.origin.y;
+            }
+        }
+        objc_setAssociatedObject(view, &kDYYYCompactInputLiftKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    %orig(frame);
+}
 - (void)layoutSubviews {
+    UIView *view = (UIView *)self;
+    NSDictionary *state = NSThread.isMainThread ? objc_getAssociatedObject(view, &kDYYYCompactInputLiftKey) : nil;
+    if (state) {
+        if (CGAffineTransformEqualToTransform(view.transform, [state[@"applied"] CGAffineTransformValue]))
+            view.transform = [state[@"base"] CGAffineTransformValue];
+        objc_setAssociatedObject(view, &kDYYYCompactInputLiftKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
     %orig;
     UIViewController *parentVC = nil;
     if ([self respondsToSelector:@selector(viewController)]) {
