@@ -7,6 +7,9 @@
 @interface DYYYAutoMessage : NSObject
 + (NSMutableArray<NSMutableDictionary *> *)messageConfigs;
 + (void)saveMessageConfigs:(NSArray *)configs;
++ (NSMutableArray<NSMutableDictionary *> *)noSendTimePeriods;
++ (void)saveNoSendTimePeriods:(NSArray *)periods;
++ (NSString *)noSendTimeSummary;
 + (NSString *)imageDirectory;
 + (void)resolveRecipient:(NSString *)input completion:(void (^)(NSDictionary *recipient, NSString *error))completion;
 + (NSString *)renderMessageForConfig:(NSDictionary *)config;
@@ -21,5 +24,6 @@
 + (void)scanFriendSharesWithToast:(BOOL)showToast;
 
 @end
+
 
 

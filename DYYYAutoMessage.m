@@ -1,5 +1,6 @@
 #import "DYYYAutoMessage.h"
 #import "DYYYAutoMessagePanel.h"
+#import "DYYYAutoMessageQuietHoursPanel.h"
 #import "DYYYAutoMessageEditor.h"
 #import "DYYYIMService.h"
 #import "DYYYFriendShareService.h"
@@ -242,17 +243,76 @@ static NSString *const kDYYYFriendShareFriends = @"DYYYFriendShareFeedFriends";
     }];
 }
 
+#pragma mark - 不发送时间段
+
++ (NSNumber *)noSendHour:(id)value {
+    if ([value isKindOfClass:NSNumber.class]) {
+        NSInteger hour = [value integerValue];
+        return hour >= 0 && hour <= 23 && [value doubleValue] == hour ? @(hour) : nil;
+    }
+    if (![value isKindOfClass:NSString.class]) return nil;
+    NSString *text = [value stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    NSArray *time = [text componentsSeparatedByString:@":"];
+    if (time.count == 2 && [time[1] isEqualToString:@"00"]) text = time[0];
+    else if (time.count != 1) return nil;
+    NSCharacterSet *invalid = [[NSCharacterSet characterSetWithCharactersInString:@"0123456789"] invertedSet];
+    if (!text.length || text.length > 2 || [text rangeOfCharacterFromSet:invalid].location != NSNotFound) return nil;
+    NSInteger hour = text.integerValue;
+    return hour <= 23 ? @(hour) : nil;
+}
++ (NSMutableArray<NSMutableDictionary *> *)normalizedNoSendTimePeriods:(id)value {
+    NSMutableArray *periods = [NSMutableArray array];
+    NSArray *rows = [value isKindOfClass:NSArray.class] ? value : @[];
+    if ([value isKindOfClass:NSString.class]) {
+        NSArray *parts = [value componentsSeparatedByString:@"-"];
+        if (parts.count == 2) rows = @[@{ @"startHour": parts[0], @"endHour": parts[1], @"enabled": @YES }];
+    }
+    for (id row in rows) {
+        if (![row isKindOfClass:NSDictionary.class]) continue;
+        NSNumber *start = [self noSendHour:row[@"startHour"]];
+        NSNumber *end = [self noSendHour:row[@"endHour"]];
+        if (!start || !end || [start isEqual:end]) continue;
+        BOOL enabled = [row[@"enabled"] respondsToSelector:@selector(boolValue)] ? [row[@"enabled"] boolValue] : YES;
+        NSString *identifier = [row[@"id"] isKindOfClass:NSString.class] && [row[@"id"] length] ? row[@"id"] : NSUUID.UUID.UUIDString;
+        [periods addObject:[@{ @"id": identifier, @"startHour": start, @"endHour": end, @"enabled": @(enabled) } mutableCopy]];
+    }
+    return periods;
+}
++ (NSMutableArray<NSMutableDictionary *> *)noSendTimePeriods {
+    NSUserDefaults *defaults = [self defaults];
+    @synchronized (defaults) {
+        id stored = [defaults objectForKey:kDYYYAutoMessageNoSendTime];
+        NSMutableArray *periods = [self normalizedNoSendTimePeriods:stored];
+        // 沿用原偏好键，将旧版单个字符串无损迁移为已启用的一段；空数组表示用户已清空。
+        if (stored && ![stored isEqual:periods]) [defaults setObject:periods forKey:kDYYYAutoMessageNoSendTime];
+        return periods;
+    }
+}
++ (void)saveNoSendTimePeriods:(NSArray *)periods {
+    NSUserDefaults *defaults = [self defaults];
+    @synchronized (defaults) {
+        [defaults setObject:[self normalizedNoSendTimePeriods:periods] forKey:kDYYYAutoMessageNoSendTime];
+    }
+}
++ (NSString *)noSendTimeSummary {
+    NSArray *periods = [self noSendTimePeriods];
+    if (!periods.count) return @"未设置";
+    NSMutableArray *enabled = [NSMutableArray array];
+    for (NSDictionary *period in periods) if ([period[@"enabled"] boolValue]) [enabled addObject:period];
+    if (periods.count == 1 && enabled.count == 1) {
+        NSDictionary *period = enabled.firstObject;
+        return [NSString stringWithFormat:@"%02ld:00 - %02ld:00", (long)[period[@"startHour"] integerValue], (long)[period[@"endHour"] integerValue]];
+    }
+    return enabled.count ? [NSString stringWithFormat:@"已启用 %lu 个时段", (unsigned long)enabled.count] : @"均已关闭";
+}
 + (BOOL)isNoSendTime {
-    NSString *range = [[[self defaults] stringForKey:kDYYYAutoMessageNoSendTime] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-    if (range.length == 0) return NO;
-    NSArray<NSString *> *parts = [range componentsSeparatedByString:@"-"];
-    if (parts.count != 2) return NO;
-    NSInteger start = [[parts[0] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet] integerValue];
-    NSInteger end = [[parts[1] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet] integerValue];
-    if (start < 0 || start > 23 || end < 0 || end > 23 || start == end) return NO;
-    NSCalendar *calendar = [NSCalendar currentCalendar];
-    NSInteger hour = [calendar component:NSCalendarUnitHour fromDate:[NSDate date]];
-    return start < end ? (hour >= start && hour < end) : (hour >= start || hour < end);
+    NSInteger hour = [NSCalendar.currentCalendar component:NSCalendarUnitHour fromDate:NSDate.date];
+    for (NSDictionary *period in [self noSendTimePeriods]) {
+        if (![period[@"enabled"] boolValue]) continue;
+        NSInteger start = [period[@"startHour"] integerValue], end = [period[@"endHour"] integerValue];
+        if (start < end ? (hour >= start && hour < end) : (hour >= start || hour < end)) return YES;
+    }
+    return NO;
 }
 
 #pragma mark - 发送与扫描
@@ -478,9 +538,20 @@ static NSString *const kDYYYFriendShareFriends = @"DYYYFriendShareFeedFriends";
     AWESettingItemModel *keyword = [self setting:@{ @"identifier" : kDYYYAutoMessageQueryKeyword, @"title" : @"ID 查询关键词", @"detail" : @"查询id", @"cellType" : @26, @"imageName" : @"ic_pensketch_outlined_20" }];
     keyword.detail = [[self defaults] stringForKey:kDYYYAutoMessageQueryKeyword] ?: @"查询id";
     keyword.cellTappedBlock = ^{ [DYYYSettingsHelper showTextInputAlert:@"ID 查询关键词" defaultText:keyword.detail placeholder:@"例如：查询id" onConfirm:^(NSString *text) { [[self defaults] setObject:text ?: @"查询id" forKey:kDYYYAutoMessageQueryKeyword]; keyword.detail = text ?: @"查询id"; [keyword refreshCell]; } onCancel:nil]; };
-    AWESettingItemModel *noSend = [self setting:@{ @"identifier" : kDYYYAutoMessageNoSendTime, @"title" : @"不发送时间段", @"detail" : @"", @"cellType" : @26, @"imageName" : @"ic_eyeslash_outlined_20" }];
-    noSend.detail = [[self defaults] stringForKey:kDYYYAutoMessageNoSendTime] ?: @"未设置";
-    noSend.cellTappedBlock = ^{ [DYYYSettingsHelper showTextInputAlert:@"不发送时间段" defaultText:[[self defaults] stringForKey:kDYYYAutoMessageNoSendTime] placeholder:@"格式：00-08" onConfirm:^(NSString *text) { [[self defaults] setObject:text ?: @"" forKey:kDYYYAutoMessageNoSendTime]; noSend.detail = text.length ? text : @"未设置"; [noSend refreshCell]; } onCancel:nil]; };
+    AWESettingItemModel *noSend = [[NSClassFromString(@"AWESettingItemModel") alloc] init];
+    noSend.identifier = kDYYYAutoMessageNoSendTime;
+    noSend.title = @"不发送时间段";
+    noSend.detail = [self noSendTimeSummary];
+    noSend.type = 0; noSend.cellType = 26; noSend.colorStyle = 0; noSend.isEnable = YES;
+    noSend.svgIconImageName = @"ic_eyeslash_outlined_20";
+    __weak AWESettingItemModel *weakNoSend = noSend;
+    __weak UIViewController *weakQuietRoot = root;
+    noSend.cellTappedBlock = ^{
+        [DYYYAutoMessageQuietHoursPanel showFrom:topView() ?: weakQuietRoot onChange:^{
+            weakNoSend.detail = [self noSendTimeSummary];
+            [weakNoSend refreshCell];
+        }];
+    };
     AWESettingItemModel *toast = [self setting:@{ @"identifier" : kDYYYAutoMessageToast, @"title" : @"显示发送提示", @"detail" : @"", @"cellType" : @6, @"imageName" : @"ic_bell_outlined_20" }];
     AWESettingItemModel *allToast = [self setting:@{ @"identifier" : kDYYYAutoMessageAllSentToast, @"title" : @"显示已全部发送提示", @"detail" : @"", @"cellType" : @6, @"imageName" : @"ic_bell_outlined_20" }];
 
@@ -509,6 +580,7 @@ static NSString *const kDYYYFriendShareFriends = @"DYYYFriendShareFeedFriends";
 }
 
 @end
+
 
 
 
