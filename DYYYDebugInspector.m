@@ -317,7 +317,7 @@ static NSData *DYYYDebugLightScreenshot(NSData *png) {
     return UIImageJPEGRepresentation(image, 0.70);
 }
 
-static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *window, BOOL detailed) {
+static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *window, BOOL detailed, BOOL messageInterfaces) {
     if (!presenter || !window) return;
     DKDebugExportContext *context = DKDebugCaptureContext(window, CGPointZero, nil);
     NSString *base = [NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"DYYY_Debug_%@", NSUUID.UUID.UUIDString]];
@@ -335,8 +335,63 @@ static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *wi
       if (data && [data writeToFile:path atomically:YES]) [files addObject:path];
     };
     NSMutableDictionary *metadata = [DYYYDebugMetadata() mutableCopy];
-    metadata[@"exportMode"] = detailed ? @"complete" : @"lightweight";
+    metadata[@"exportMode"] = messageInterfaces ? @"message-interfaces" : (detailed ? @"complete" : @"lightweight");
     writeJSON(@"metadata.json", metadata);
+    if (messageInterfaces) {
+        // 仅导出抖音自身的运行时声明，不执行联系人查询、消息读取或发送方法。
+        // 独立实现需要真实参数签名；普通页面树不包含底层 IM 服务接口。
+        NSArray<NSString *> *priority = @[
+            @"AWEIMUserDBManager", @"AWEIMUserManager", @"AWEIMSDKManager", @"AWEIMService",
+            @"TIMXOSendMessage", @"TIMXSenderMessageTemplate", @"TIMXOMessageManager",
+            @"TIMXOConversationManager", @"TIMXOConversation", @"TIMXOMessage", @"TIMXOUser",
+            @"IESIMSendMessageModel", @"IESIMMessageSender", @"IESIMConversationDataManager",
+            @"IESIMService", @"AWEUserModel", @"AWEUser", @"AWEAwemeModel"
+        ];
+        NSMutableOrderedSet<NSString *> *names = [NSMutableOrderedSet orderedSet];
+        NSMutableArray<NSString *> *missing = [NSMutableArray array];
+        for (NSString *name in priority) {
+            if (NSClassFromString(name)) [names addObject:name]; else [missing addObject:name];
+        }
+        unsigned int classCount = 0;
+        Class *classes = objc_copyClassList(&classCount);
+        NSMutableArray<NSString *> *candidates = [NSMutableArray array];
+        NSArray<NSString *> *terms = @[@"message", @"conversation", @"contact", @"user", @"sender", @"sdk", @"session", @"account"];
+        for (unsigned int index = 0; index < classCount; index++) {
+            NSString *name = NSStringFromClass(classes[index]);
+            if (![name hasPrefix:@"TIMX"] && ![name hasPrefix:@"IESIM"] && ![name hasPrefix:@"AWEIM"]) continue;
+            if (DKClassNameIsRuntimeGenerated(name)) continue;
+            if ([name containsString:@"View"] || [name containsString:@"Controller"] || [name containsString:@"Cell"]) continue;
+            NSString *lower = name.lowercaseString;
+            for (NSString *term in terms) {
+                if ([lower containsString:term]) { [candidates addObject:name]; break; }
+            }
+        }
+        free(classes);
+        [candidates sortUsingSelector:@selector(compare:)];
+        NSUInteger matchingCount = candidates.count;
+        for (NSString *name in candidates) {
+            if (names.count >= 120) break;
+            [names addObject:name];
+        }
+        NSString *folder = [base stringByAppendingPathComponent:@"im-interfaces"];
+        [manager createDirectoryAtPath:folder withIntermediateDirectories:YES attributes:nil error:nil];
+        NSMutableArray *written = [NSMutableArray array];
+        NSMutableArray *unavailable = [NSMutableArray array];
+        for (NSString *name in names) {
+            Class cls = NSClassFromString(name);
+            NSString *header = cls ? DKClassDumpHeaderForClass(cls) : nil;
+            NSString *path = [folder stringByAppendingPathComponent:[name stringByAppendingPathExtension:@"h"]];
+            if (header.length && [header writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil]) {
+                [files addObject:path];
+                const char *imageName = class_getImageName(cls);
+                [written addObject:@{ @"name":name, @"image":imageName ? [[NSString stringWithUTF8String:imageName] lastPathComponent] : @"" }];
+            } else [unavailable addObject:name];
+        }
+        writeJSON(@"im-interfaces/index.json", @{ @"formatVersion":@1, @"classes":written,
+            @"missingPriorityClasses":missing, @"unavailableClasses":unavailable,
+            @"matchingClassCount":@(matchingCount), @"classLimit":@120,
+            @"collection":@"runtime-declarations-only" });
+    }
     if (DYYYDebugStartedAt && !DYYYDebugRecording) {
         NSDictionary *session;
         @synchronized (DYYYDebugInstalledHooks) {
@@ -405,16 +460,17 @@ static void DYYYDebugShowActions(UIWindow *window) {
     if (DYYYDebugRecording) {
         [menu addAction:[UIAlertAction actionWithTitle:@"停止记录并导出（轻量）" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
             DYYYDebugStopRecording();
-            DYYYDebugExportCurrentPage(presenter, window, NO);
+            DYYYDebugExportCurrentPage(presenter, window, NO, NO);
         }]];
     } else {
         [menu addAction:[UIAlertAction actionWithTitle:@"开始记录（覆盖上一段）" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { DYYYDebugStartRecording(window); }]];
         if (DYYYDebugStoppedAt) {
-            [menu addAction:[UIAlertAction actionWithTitle:@"重新导出上次记录（轻量）" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { DYYYDebugExportCurrentPage(presenter, window, NO); }]];
+            [menu addAction:[UIAlertAction actionWithTitle:@"重新导出上次记录（轻量）" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { DYYYDebugExportCurrentPage(presenter, window, NO, NO); }]];
         }
     }
-    [menu addAction:[UIAlertAction actionWithTitle:@"导出当前页（轻量）" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { DYYYDebugExportCurrentPage(presenter, window, NO); }]];
-    [menu addAction:[UIAlertAction actionWithTitle:@"完整导出（含图层和类头文件）" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { DYYYDebugExportCurrentPage(presenter, window, YES); }]];
+    [menu addAction:[UIAlertAction actionWithTitle:@"导出当前页（轻量）" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { DYYYDebugExportCurrentPage(presenter, window, NO, NO); }]];
+    [menu addAction:[UIAlertAction actionWithTitle:@"导出消息接口（独立开发）" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { DYYYDebugExportCurrentPage(presenter, window, NO, YES); }]];
+    [menu addAction:[UIAlertAction actionWithTitle:@"完整导出（含图层和类头文件）" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { DYYYDebugExportCurrentPage(presenter, window, YES, NO); }]];
     [menu addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
     UIPopoverPresentationController *popover = menu.popoverPresentationController;
     if (popover) { popover.sourceView = presenter.view; popover.sourceRect = CGRectMake(CGRectGetMidX(presenter.view.bounds), CGRectGetMidY(presenter.view.bounds), 1, 1); }
@@ -567,5 +623,6 @@ void DYYYDebugInspectorInstall(void) {
     });
     dispatch_async(dispatch_get_main_queue(), ^{ DYYYDebugInspectorRefreshOverlay(); });
 }
+
 
 
