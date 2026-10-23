@@ -25,6 +25,7 @@ SOFTWARE.
 */
 
 #import "DYYYSearchClean.h"
+#import "DYYYArticleBackdrop.h"
 #import "AwemeHeaders.h"
 #import "DYYYConstants.h"
 #import <objc/runtime.h>
@@ -142,6 +143,8 @@ SOFTWARE.
     if (!NSThread.isMainThread) {
         dispatch_async(dispatch_get_main_queue(), ^{ [self installHooks]; }); return;
     }
+    // 复用搜索框架延迟加载通知，文章 Hook 仅安装一次。
+    [DYYYArticleBackdrop installHooks];
     static BOOL ranksInstalled, propsInstalled, voiceInstalled, permissionInstalled, legacyInstalled, topBarInstalled, footerInstalled;
     Class ranks = NSClassFromString(@"AWESearchMiddleNATabViewComponent");
     if (!ranksInstalled && class_getClassMethod(ranks, @selector(filerTabDataModel:))) {

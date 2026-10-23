@@ -47,6 +47,7 @@ DYYY_FILES += DYYYDebugAppearance.m
 DYYY_FILES += DYYYDebugMenuView.m DYYYCommentMenuPalette.m
 DYYY_FILES += DYYYCommentHeaderLayout.m DYYYCommentHeaderLayoutHooks.xm
 DYYY_FILES += DYYYSearchClean.m DYYYSearchCleanHooks.xm
+DYYY_FILES += DYYYArticleBackdrop.m DYYYArticleBackdropHooks.xm
 DYYY_CFLAGS = -fobjc-arc -w
 DYYY_LDFLAGS = -weak_framework AVFAudio -lz
 DYYY_FRAMEWORKS = CoreAudio PhotosUI

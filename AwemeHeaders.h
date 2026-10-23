@@ -1100,6 +1100,13 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @interface DYYYCommentMenuRecentShareCell : UICollectionViewCell
 @end
 
+// 运行时绑定 AWESearchFeedArticleViewController；仅处理首页文章卡片背景。
+@interface DYYYFeedArticleViewController : UIViewController
+- (void)lynxEngineDidMount:(id)engine;
+- (void)updateModel:(id)model;
+- (void)prepareForReuse;
+@end
+
 @protocol AFDPrivacyHalfScreenViewControllerProtocol <NSObject>
 @end
 
