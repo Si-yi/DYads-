@@ -42,6 +42,7 @@ DYYY_FILES += DYYYIMService.m
 DYYY_FILES += DYYYFriendShareService.m
 DYYY_FILES += DYYYFriendShareBadgeView.m DYYYChatVideoLayout.m
 DYYY_FILES += DYYYCollectionRows.m
+DYYY_FILES += DYYYCommentMenuTheme.m DYYYCommentMenuThemeHooks.xm
 DYYY_FILES += DYYYSearchClean.m DYYYSearchCleanHooks.xm
 DYYY_CFLAGS = -fobjc-arc -w
 DYYY_LDFLAGS = -weak_framework AVFAudio -lz

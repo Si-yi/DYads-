@@ -1084,6 +1084,10 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @property(retain, nonatomic) UIView *fullScreenView;
 @end
 
+// 运行时绑定到 AWECommentLongPressPanelSwiftImpl.CommentLongPressPanelSheet。
+@interface DYYYCommentLongPressPanelSheet : DUXContentSheet
+@end
+
 @protocol AFDPrivacyHalfScreenViewControllerProtocol <NSObject>
 @end
 
