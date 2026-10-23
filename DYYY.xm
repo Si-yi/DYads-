@@ -11826,7 +11826,8 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
 
 %hook AWECommentInputBackgroundView
 - (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
-    if (%orig) return YES;
+    BOOL nativeInside = %orig(point, event);
+    if (nativeInside) return YES;
     NSValue *hitRect = objc_getAssociatedObject(self, &kDYYYCompactInputHitRectKey);
     if (!DYYYGetBool(@"DYYYEnableFloatingCommentInput") || !hitRect || !CGRectContainsPoint(hitRect.CGRectValue, point)) return NO;
     for (UIView *child in ((UIView *)self).subviews)
