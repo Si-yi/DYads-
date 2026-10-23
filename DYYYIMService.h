@@ -10,4 +10,6 @@
 + (void)observeMessage:(id)message conversation:(id)conversation error:(id)error;
 + (void)sendText:(NSString *)text toUserID:(NSString *)userID completion:(void (^)(BOOL success, NSString *reason))completion;
 + (NSString *)dailyStateForUserID:(NSString *)userID;
++ (NSArray<NSDictionary *> *)unreadSharesForUsers:(NSArray<NSString *> *)userIDs error:(NSString **)error;
 @end
+

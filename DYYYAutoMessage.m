@@ -1,6 +1,7 @@
 #import "DYYYAutoMessage.h"
 #import "DYYYAutoMessagePanel.h"
 #import "DYYYIMService.h"
+#import "DYYYFriendShareService.h"
 
 #import "AwemeHeaders.h"
 #import "DYYYSettingsHelper.h"
@@ -16,7 +17,6 @@ static NSString *const kDYYYAutoMessageAllSentToast = @"DYYYAutoMessageAllSentTo
 static NSString *const kDYYYFriendShareEnabled = @"DYYYFriendShareFeedEnabled";
 static NSString *const kDYYYFriendShareAutoRefresh = @"DYYYFriendShareAutoRefreshEnabled";
 static NSString *const kDYYYFriendShareFriends = @"DYYYFriendShareFeedFriends";
-static NSString *const kDYYYFriendShareWatchedIDs = @"DYYYFriendShareWatchedItemIDs";
 
 @implementation DYYYAutoMessage
 
@@ -122,8 +122,7 @@ static NSString *const kDYYYFriendShareWatchedIDs = @"DYYYFriendShareWatchedItem
 }
 
 + (void)scanFriendSharesWithToast:(BOOL)showToast {
-    // 分享作品的详情获取和推荐流插入需要单独适配，不回退到已卸载插件的服务。
-    if (showToast) [DYYYUtils showToast:@"好友来源选择已独立接入，分享扫描与推荐流插入仍在适配"];
+    [DYYYFriendShareService scanWithToast:showToast];
 }
 
 #pragma mark - 互关好友数据
@@ -274,7 +273,7 @@ static NSString *const kDYYYFriendShareWatchedIDs = @"DYYYFriendShareWatchedItem
     AWESettingItemModel *allToast = [self setting:@{ @"identifier" : kDYYYAutoMessageAllSentToast, @"title" : @"显示已全部发送提示", @"detail" : @"", @"cellType" : @6, @"imageName" : @"ic_bell_outlined_20" }];
 
     AWESettingItemModel *feedEnabled = [self setting:@{ @"identifier" : kDYYYFriendShareEnabled, @"title" : @"启用好友分享进推荐", @"detail" : @"", @"cellType" : @6, @"imageName" : @"ic_video_outlined_20" }];
-    AWESettingItemModel *autoRefresh = [self setting:@{ @"identifier" : kDYYYFriendShareAutoRefresh, @"title" : @"自动刷新推荐", @"detail" : @"", @"cellType" : @6, @"imageName" : @"ic_circlearrowin_outlined_20" }];
+    AWESettingItemModel *autoRefresh = [self setting:@{ @"identifier" : kDYYYFriendShareAutoRefresh, @"title" : @"每次打开抖音刷新", @"subTitle" : @"新分享置顶，原首条接在后面", @"detail" : @"", @"cellType" : @6, @"imageName" : @"ic_circlearrowin_outlined_20" }];
     AWESettingItemModel *sourceFriends = [self setting:@{ @"identifier" : kDYYYFriendShareFriends, @"title" : @"选择分享来源好友", @"detail" : @"", @"cellType" : @26, @"imageName" : @"ic_user_outlined_20" }];
     sourceFriends.detail = [NSString stringWithFormat:@"%lu 人", (unsigned long)[[[self defaults] arrayForKey:kDYYYFriendShareFriends] count]];
     sourceFriends.cellTappedBlock = ^{
@@ -289,15 +288,16 @@ static NSString *const kDYYYFriendShareWatchedIDs = @"DYYYFriendShareWatchedItem
     AWESettingItemModel *scan = [self setting:@{ @"identifier" : @"DYYYFriendShareScan", @"title" : @"立即扫描好友分享", @"detail" : @"扫描", @"cellType" : @26, @"imageName" : @"ic_videosearch_outlined_20" }];
     scan.cellTappedBlock = ^{ [self scanFriendSharesWithToast:YES]; };
     AWESettingItemModel *clear = [self setting:@{ @"identifier" : @"DYYYFriendShareClear", @"title" : @"清除已刷记录", @"detail" : @"", @"cellType" : @26, @"imageName" : @"ic_trash_outlined_20" }];
-    clear.cellTappedBlock = ^{ [[self defaults] removeObjectForKey:kDYYYFriendShareWatchedIDs]; [DYYYUtils showToast:@"已清除好友分享已刷记录"]; };
+    clear.cellTappedBlock = ^{ [DYYYFriendShareService clearWatched]; [DYYYUtils showToast:@"已清除当前账户的已刷记录"]; };
 
     return @[
         [DYYYSettingsHelper createSectionWithTitle:@"自动消息" footerTitle:@"开启后在抖音启动时处理配置；不发送时间段内不会触发。" items:@[enabled, configs, status, keyword, noSend, toast, allToast]],
-        [DYYYSettingsHelper createSectionWithTitle:@"好友分享进推荐" footerTitle:@"仅处理所选好友的分享来源，并记录已处理作品。" items:@[feedEnabled, autoRefresh, sourceFriends, scan, clear]]
+        [DYYYSettingsHelper createSectionWithTitle:@"好友分享进推荐" footerTitle:@"冷启动或从后台返回时，新分享排在原首条之前；播放结束或手动滑走后记为已刷，聊天未读也不会重复推送。" items:@[feedEnabled, autoRefresh, sourceFriends, scan, clear]]
     ];
 }
 
 @end
+
 
 
 

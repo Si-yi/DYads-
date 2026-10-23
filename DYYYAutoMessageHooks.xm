@@ -1,6 +1,7 @@
 #import "AwemeHeaders.h"
 #import "DYYYAutoMessage.h"
 #import "DYYYIMService.h"
+#import "DYYYFriendShareService.h"
 
 // 复用抖音创建并配置好的实例，不自己 new 消息 SDK，也不调用其他插件。
 %hook AWEIMUserDBManager
@@ -8,6 +9,51 @@
     id result = %orig;
     [DYYYIMService captureService:result role:@"contacts"];
     return result;
+}
+%end
+
+%hook AWEFeedTableViewController
+- (void)viewDidAppear:(BOOL)animated {
+    %orig;
+    [DYYYFriendShareService bindHomeFeed:self];
+}
+- (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView {
+    %orig;
+    [DYYYFriendShareService homeDidScroll:self];
+}
+- (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView {
+    %orig;
+    [DYYYFriendShareService homeWillDrag:self];
+}
+- (void)scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate {
+    %orig;
+    if (!decelerate) [DYYYFriendShareService homeDidScroll:self];
+}
+- (void)scrollViewDidEndScrollingAnimation:(UIScrollView *)scrollView {
+    %orig;
+    [DYYYFriendShareService homeDidScroll:self];
+}
+- (void)videoControllerWillStartNextLoop:(id)controller {
+    %orig;
+    [DYYYFriendShareService homeWillLoop:self];
+}
+%end
+
+%hook AWEListDataController
+- (void)setDataSource:(NSMutableArray *)data {
+    NSArray *ordered = [DYYYFriendShareService arrangeData:data controller:self];
+    %orig(ordered == data ? data : [ordered mutableCopy]);
+}
+%end
+
+%hook AWEHotListDataController
+- (id)_refreshDataSourceWithArray:(id)data cleanRefresh:(BOOL)clean requestId:(id)requestID {
+    NSArray *ordered = [DYYYFriendShareService arrangeData:data controller:self];
+    return %orig(ordered, clean, requestID);
+}
+- (void)updateAwemeList:(id)data {
+    NSArray *ordered = [DYYYFriendShareService arrangeData:data controller:self];
+    %orig(ordered);
 }
 %end
 
@@ -60,9 +106,19 @@
 %end
 
 %ctor {
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    if (![defaults boolForKey:@"DYYYFriendShareLaunchRefreshConfigured"]) {
+        [defaults setBool:YES forKey:@"DYYYFriendShareAutoRefreshEnabled"];
+        [defaults setBool:YES forKey:@"DYYYFriendShareLaunchRefreshConfigured"];
+    }
     [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
+        [DYYYFriendShareService applicationBecameActive];
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
             [DYYYAutoMessage runDailyMessageCheckIfNeeded];
         });
     }];
+    [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidEnterBackgroundNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
+        [DYYYFriendShareService applicationEnteredBackground];
+    }];
 }
+

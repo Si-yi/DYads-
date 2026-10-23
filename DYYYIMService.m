@@ -10,6 +10,90 @@
 
 @implementation DYYYIMService
 
+#pragma mark - 本地未读分享
+
++ (void)collectSharedIDs:(id)object into:(NSMutableOrderedSet *)ids depth:(NSUInteger)depth budget:(NSUInteger *)budget {
+    if (!object || depth > 7 || *budget == 0) return;
+    (*budget)--;
+    if ([object isKindOfClass:NSDictionary.class]) {
+        for (id rawKey in object) {
+            if (![rawKey isKindOfClass:NSString.class]) continue;
+            NSString *key = [[rawKey lowercaseString] stringByReplacingOccurrencesOfString:@"_" withString:@""];
+            id value = object[rawKey];
+            if ([key isEqual:@"itemid"] || [key isEqual:@"awemeid"]) {
+                NSString *itemID = [value isKindOfClass:NSString.class] ? value : ([value isKindOfClass:NSNumber.class] ? [value stringValue] : nil);
+                if (itemID.length >= 8 && itemID.length <= 22 && [itemID rangeOfCharacterFromSet:NSCharacterSet.decimalDigitCharacterSet.invertedSet].location == NSNotFound) [ids addObject:itemID];
+            } else [self collectSharedIDs:value into:ids depth:depth + 1 budget:budget];
+        }
+    } else if ([object isKindOfClass:NSArray.class]) {
+        for (id value in object) [self collectSharedIDs:value into:ids depth:depth + 1 budget:budget];
+    } else if ([object isKindOfClass:NSString.class] && [object length] < 65536) {
+        NSString *text = [object stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        if ([text hasPrefix:@"{"] || [text hasPrefix:@"["]) {
+            id value = [NSJSONSerialization JSONObjectWithData:[text dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+            [self collectSharedIDs:value into:ids depth:depth + 1 budget:budget];
+        }
+    }
+}
+
++ (NSArray<NSDictionary *> *)unreadSharesForUsers:(NSArray<NSString *> *)userIDs error:(NSString **)error {
+    NSString *account = [self accountID];
+    TIMXOConversationManager *manager = [[self shared].services objectForKey:@"conversations"];
+    TIMXOMessageManager *messages = [[self shared].services objectForKey:@"messages"];
+    id root = [self value:manager key:@"r"];
+    if (!account.length || !manager || !messages || !root || [self value:messages key:@"r"] != root || ![self shared].historyArgument.length) {
+        if (error) *error = @"本地消息服务尚未就绪，请先打开好友聊天再返回扫描";
+        return @[];
+    }
+    Class convClass = NSClassFromString(@"TIMXOConversation");
+    if (![convClass respondsToSelector:@selector(instanceWithRootObject:identifier:)]) {
+        if (error) *error = @"当前版本的会话读取入口不可用";
+        return @[];
+    }
+    NSMutableArray *rows = [NSMutableArray array];
+    NSMutableSet *seen = [NSMutableSet set];
+    @try {
+        for (NSString *peer in userIDs) {
+            if (![peer isKindOfClass:NSString.class] || peer.longLongValue <= 0 || [peer isEqual:account]) continue;
+            NSString *cid = [manager conversationIDFor1to1ChatWithOtherUserID:peer.longLongValue inbox:0];
+            if (!cid.length || ![manager conversationExitsInDB:cid]) continue;
+            TIMXOConversation *conv = [(id)convClass instanceWithRootObject:root identifier:cid];
+            if (conv.ownerID != account.longLongValue || [manager otherUserIDFor1to1ChatWithConversationID:cid] != peer.longLongValue) continue;
+            unsigned long long unread = conv.unreadCount;
+            if (!unread) continue;
+            id argument = [[self shared].historyArgument isEqual:@"identifier"] ? (id)cid : conv;
+            id result = [messages messagesInConversation:argument excludeMessageTypes:@[] limit:MIN(MAX(unread, 100ULL), 1000ULL)];
+            if (![result isKindOfClass:NSArray.class]) continue;
+            // 先按时间排序，避免底层返回顺序变化时取到旧的已读消息。
+            NSArray *history = [result sortedArrayUsingComparator:^NSComparisonResult(TIMXOMessage *a, TIMXOMessage *b) {
+                NSDate *da = a.createdAt, *db = b.createdAt;
+                return [da isKindOfClass:NSDate.class] && [db isKindOfClass:NSDate.class] ? [db compare:da] : NSOrderedSame;
+            }];
+            NSString *boundary = conv.firstUnreadMessageID;
+            NSUInteger incoming = 0;
+            for (TIMXOMessage *message in history) {
+                BOOL lastUnread = boundary.length && [message.identifier isEqual:boundary];
+                if (incoming >= unread) break;
+                if (message.sender != peer.longLongValue) { if (lastUnread) break; else continue; }
+                incoming++;
+                NSMutableOrderedSet *itemIDs = [NSMutableOrderedSet orderedSet];
+                NSUInteger budget = 500;
+                [self collectSharedIDs:message.content into:itemIDs depth:0 budget:&budget];
+                for (NSString *itemID in itemIDs) {
+                    if ([seen containsObject:itemID]) continue;
+                    [seen addObject:itemID];
+                    [rows addObject:@{@"itemID":itemID, @"friendID":peer}];
+                }
+                if (lastUnread) break;
+            }
+        }
+    } @catch (__unused NSException *exception) {
+        if (error) *error = @"读取本地未读消息失败，未修改会话或推荐列表";
+        return @[];
+    }
+    return rows;
+}
+
 + (instancetype)shared {
     static DYYYIMService *instance;
     static dispatch_once_t once;
@@ -37,6 +121,19 @@
 }
 
 + (id)contactDatabase {
+    // 使用抖音自己的服务容器获取已配置的联系人数据库，而不是构造新实例。
+    Class centerClass = NSClassFromString(@"HTSServiceCenter");
+    Class databaseClass = NSClassFromString(@"AWEIMUserDBManager");
+    if (databaseClass && [centerClass respondsToSelector:@selector(defaultCenter)]) {
+        @try {
+            HTSServiceCenter *center = [(id)centerClass defaultCenter];
+            id database = [center getService:databaseClass];
+            if ([database respondsToSelector:@selector(currentDataBaseUid)] && [database respondsToSelector:@selector(fetchFriendUsersWithLimits:readScene:)]) {
+                [self captureService:database role:@"contacts"];
+                return database;
+            }
+        } @catch (__unused NSException *exception) {}
+    }
     Class cls = NSClassFromString(@"AWEIMContactDataManager");
     if ([cls respondsToSelector:@selector(sharedInstance)]) {
         AWEIMContactDataManager *contacts = [(id)cls sharedInstance];
@@ -207,3 +304,4 @@
     });
 }
 @end
+

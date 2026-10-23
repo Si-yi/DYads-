@@ -171,6 +171,8 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @end
 
 @interface AWEHotListDataController : NSObject
+- (void)updateAwemeList:(id)array;
+- (id)_refreshDataSourceWithArray:(id)array cleanRefresh:(BOOL)clean requestId:(id)requestID;
 - (NSNumber *)dyyy_numberValueForLowLikesFilter:(id)rawValue;
 - (NSNumber *)dyyy_resolvedDiggCountForAweme:(AWEAwemeModel *)aweme;
 @end
@@ -458,6 +460,16 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @end
 
 @interface AWEFeedTableViewController : UIViewController
+- (void)awe_refreshForceRequestWithoutAnimation;
+- (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView;
+- (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView;
+- (void)scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate;
+- (void)scrollViewDidEndScrollingAnimation:(UIScrollView *)scrollView;
+- (void)videoControllerWillStartNextLoop:(id)controller;
+@property (nonatomic, strong) id dataController;
+@property (nonatomic, readonly, strong) id currentAweme;
+- (void)insertVideosToFeedWithAwemeIDs:(id)identifiers extraInfo:(id)info;
+- (void)scrollToRowAtIndexPath:(id)indexPath atScrollPosition:(long long)position animated:(BOOL)animated;
 @end
 
 @interface AWEFeedTableView : UIView
@@ -1965,6 +1977,11 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @end
 
 // 抖音 39.5.0 运行时导出的 IM 接口；DYYY 独立消息服务只使用这些已确认的方法。
+@interface HTSServiceCenter : NSObject
++ (instancetype)defaultCenter;
+- (id)getService:(Class)serviceClass;
+@end
+
 @interface AWEIMContactDataManager : NSObject
 + (instancetype)sharedInstance;
 - (id)userManager;
@@ -1981,9 +1998,12 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 + (instancetype)instanceWithRootObject:(id)root identifier:(id)identifier;
 @property (nonatomic, readonly) long long ownerID;
 @property (nonatomic, readonly, strong) TIMXOMessage *lastMessage;
+@property (nonatomic, readonly) unsigned long long unreadCount;
+@property (nonatomic, copy) NSString *firstUnreadMessageID;
 @end
 
 @interface TIMXOMessage : NSObject
+@property (nonatomic, readonly, copy) NSString *identifier;
 @property (nonatomic, readonly, copy) NSDictionary *content;
 @property (nonatomic, readonly, strong) NSDate *createdAt;
 @property (nonatomic, readonly) long long sender;
@@ -2015,5 +2035,6 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 - (void)message:(id)message inConversation:(id)conversation didReceiveResponse:(id)response error:(id)error;
 - (void)message:(id)message inConversation:(id)conversation didReceiveAsyncResponse:(id)response error:(id)error;
 @end
+
 
 
