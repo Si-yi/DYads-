@@ -1369,6 +1369,7 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 
 @interface AWESearchViewController : UIViewController
 @property(nonatomic, strong) UITabBarController *tabBarController;
+- (UIButton *)scanButton;
 @end
 
 @interface AWEIMCommentShareUserHorizontalSectionController : UIViewController
@@ -2064,4 +2065,48 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 - (id)awemeWithItemId:(NSString *)itemID;
 - (void)requestAwemeModelsForItemIds:(NSArray *)itemIDs requestScene:(NSString *)scene results:(void (^)(id))results;
 - (void)tryRequestAwemeItemsWithIds:(NSArray *)itemIDs requestScene:(NSString *)scene;
+@end
+
+
+// 搜索页精简：移植 DYKiller 搜索模块使用的抖音原生接口。
+@interface AWESearchMiddleNASingleTabModel : NSObject
+@property (nonatomic, copy) NSString *tabId;
+@property (nonatomic, copy) NSString *tabName;
+@end
+
+@interface AWESearchMiddleNATabDataModel : NSObject <NSCopying>
+@property (nonatomic, copy) NSArray<AWESearchMiddleNASingleTabModel *> *tabs;
+@property (nonatomic, copy) NSString *landingTab;
+@end
+
+@interface AWESearchMiddleNATabViewComponent : NSObject
++ (id)filerTabDataModel:(id)viewModel;
+@end
+
+@interface BDXLynxKitParams : NSObject
+@property (nonatomic, copy) NSString *originURL;
+- (NSDictionary *)globalProps;
+@end
+
+@interface AWEVoiceSearchManager : NSObject
+- (BOOL)isVoiceSearchMiddlePagePosition:(long long)position;
+- (BOOL)isVoiceSearchSugPagePosition:(long long)position;
+- (BOOL)shouldHiddenWithPagePositionType:(long long)position;
+@end
+
+@interface AWESearchRootStateContext : NSObject
+- (BOOL)allowShowScanButton;
+@end
+
+@interface AWESearchTopBarScanElement : NSObject
+- (UIButton *)scanButton;
+- (void)hostViewDidLayoutSubviews;
+@end
+
+@interface LynxUI : NSObject
+@property (nonatomic, readonly) UIView *view;
+@property (nonatomic, readonly) id context;
+- (void)setAccessibilityLabel:(NSString *)label requestReset:(BOOL)reset;
+- (void)propsDidUpdate;
+- (BOOL)shouldHitTest:(CGPoint)point withEvent:(UIEvent *)event;
 @end

@@ -23,6 +23,7 @@
 #import "DYYYBackupTools.h"
 #import "DYYYDebugInspector.h"
 #import "DYYYAutoMessage.h"
+#import "DYYYSearchClean.h"
 #import "DYYYUtils.h"
 
 @class DYYYIconOptionsDialogView;
@@ -2660,6 +2661,7 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"首页顶栏" items:homeTopItems]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"主界面元素" items:mainUiItems]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"视频播放界面" items:videoUiItems]];
+      [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"搜索页" footerTitle:@"修改后重启抖音生效；单独移除榜单需先打开一次搜索页收录目录。" items:[DYYYSearchClean settingsItemsWithRootViewController:rootVC]]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"侧边栏" items:sidebarItems]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"消息页与我的页" items:messageAndMineItems]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"提示与位置信息" items:infoItems]];
@@ -4039,4 +4041,5 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
     return originalSections;
 }
 %end
+
 

@@ -21,4 +21,16 @@
 #define DYYYGeonamesErrorDomain @"com.dyyy.geonames.api.error"
 #define DYYYGeonamesStatusUserInfoKey @"com.dyyy.geonames.api.status"
 
+// 隐藏设置：搜索页（独立于 DYKiller 的配置与运行时实现）
+#define DYYY_SEARCH_REMOVE_HISTORY_KEY @"DYYYSearchRemoveHistory"
+#define DYYY_SEARCH_REMOVE_GUESS_KEY @"DYYYSearchRemoveGuess"
+#define DYYY_SEARCH_REMOVE_ALL_RANKS_KEY @"DYYYSearchRemoveAllRanks"
+#define DYYY_SEARCH_RANKS_KEY @"DYYYSearchRanks"
+#define DYYY_SEARCH_RANK_CATALOG_KEY @"DYYYSearchRankCatalog"
+#define DYYY_SEARCH_RANK_HIDE_PREFIX @"DYYYHideSearchRank."
+#define DYYY_SEARCH_REMOVE_RANK_FOOTER_KEY @"DYYYSearchRemoveRankFooter"
+#define DYYY_SEARCH_REMOVE_VOICE_KEY @"DYYYSearchRemoveVoice"
+#define DYYY_SEARCH_CAMERA_MODE_KEY @"DYYYSearchCameraMode"
+
 #endif
+
