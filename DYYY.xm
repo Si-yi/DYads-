@@ -256,6 +256,32 @@ static double DYYYDetailPageHeight(UITableView *table, double native) {
 }
 
 
+// 评论区的输入页会重建 trait，先保存进入输入前的应用主题，避免只在经验页变浅色。
+static char kDYYYCommentInputThemeKey;
+static char kDYYYCommentInputOriginalThemeKey;
+
+static UIView *DYYYCommentInputThemeHost(UIView *view) {
+    for (UIView *parent = view; parent; parent = parent.superview) {
+        if ([NSStringFromClass(parent.class) isEqualToString:@"AWECommentInputViewSwiftImpl.CommentInputContainerView"]) return parent;
+    }
+    return nil;
+}
+
+static UIUserInterfaceStyle DYYYCommentInputTheme(UIView *view) {
+    if (!NSThread.isMainThread || !DYYYGetBool(@"DYYYEnableFloatingCommentInput")) return UIUserInterfaceStyleUnspecified;
+    UIView *host = DYYYCommentInputThemeHost(view);
+    if (!host) return UIUserInterfaceStyleUnspecified;
+    NSNumber *saved = objc_getAssociatedObject(host, &kDYYYCommentInputThemeKey);
+    if (saved) return (UIUserInterfaceStyle)saved.integerValue;
+    BOOL dark = [DYYYUtils isDarkMode];
+    if (host.window.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark) dark = YES;
+    UIUserInterfaceStyle style = dark ? UIUserInterfaceStyleDark : UIUserInterfaceStyleLight;
+    objc_setAssociatedObject(host, &kDYYYCommentInputOriginalThemeKey, @(host.overrideUserInterfaceStyle), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    objc_setAssociatedObject(host, &kDYYYCommentInputThemeKey, @(style), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    return style;
+}
+
+
 static BOOL DYYYShouldHandleSpeedFeatures(void) {
     if (NO /* 已移除快捷倍速悬浮按钮 */) {
         return YES;
@@ -10552,15 +10578,24 @@ static NSHashTable *processedParentViews = nil;
     %orig;
 
     if (newWindow) {
-        BOOL isDarkMode = [DYYYUtils isDarkMode];
+        UIUserInterfaceStyle style = DYYYCommentInputTheme((UIView *)self);
+    BOOL isDarkMode = style == UIUserInterfaceStyleUnspecified ? [DYYYUtils isDarkMode] : style == UIUserInterfaceStyleDark;
         self.keyboardAppearance = isDarkMode ? UIKeyboardAppearanceDark : UIKeyboardAppearanceLight;
     }
 }
 
 - (BOOL)becomeFirstResponder {
-    BOOL isDarkMode = [DYYYUtils isDarkMode];
+    UIUserInterfaceStyle style = DYYYCommentInputTheme((UIView *)self);
+    BOOL isDarkMode = style == UIUserInterfaceStyleUnspecified ? [DYYYUtils isDarkMode] : style == UIUserInterfaceStyleDark;
     self.keyboardAppearance = isDarkMode ? UIKeyboardAppearanceDark : UIKeyboardAppearanceLight;
     return %orig;
+}
+
+
+- (void)setKeyboardAppearance:(UIKeyboardAppearance)appearance {
+    UIUserInterfaceStyle style = DYYYCommentInputTheme((UIView *)self);
+    if (style != UIUserInterfaceStyleUnspecified) appearance = style == UIUserInterfaceStyleDark ? UIKeyboardAppearanceDark : UIKeyboardAppearanceLight;
+    %orig(appearance);
 }
 
 %end
@@ -10571,15 +10606,24 @@ static NSHashTable *processedParentViews = nil;
     %orig;
 
     if (newWindow) {
-        BOOL isDarkMode = [DYYYUtils isDarkMode];
+        UIUserInterfaceStyle style = DYYYCommentInputTheme((UIView *)self);
+    BOOL isDarkMode = style == UIUserInterfaceStyleUnspecified ? [DYYYUtils isDarkMode] : style == UIUserInterfaceStyleDark;
         self.keyboardAppearance = isDarkMode ? UIKeyboardAppearanceDark : UIKeyboardAppearanceLight;
     }
 }
 
 - (BOOL)becomeFirstResponder {
-    BOOL isDarkMode = [DYYYUtils isDarkMode];
+    UIUserInterfaceStyle style = DYYYCommentInputTheme((UIView *)self);
+    BOOL isDarkMode = style == UIUserInterfaceStyleUnspecified ? [DYYYUtils isDarkMode] : style == UIUserInterfaceStyleDark;
     self.keyboardAppearance = isDarkMode ? UIKeyboardAppearanceDark : UIKeyboardAppearanceLight;
     return %orig;
+}
+
+
+- (void)setKeyboardAppearance:(UIKeyboardAppearance)appearance {
+    UIUserInterfaceStyle style = DYYYCommentInputTheme((UIView *)self);
+    if (style != UIUserInterfaceStyleUnspecified) appearance = style == UIUserInterfaceStyleDark ? UIKeyboardAppearanceDark : UIKeyboardAppearanceLight;
+    %orig(appearance);
 }
 
 %end
@@ -11239,6 +11283,32 @@ static void DYYYUpdateDetailInputTransparency(UIView *root) {
             }
         }
         BOOL clearBackground = floating || (DYYYGetBool(@"DYYYEnableFullScreen") && detail && atBottom && !editing);
+        UIUserInterfaceStyle commentStyle = DYYYCommentInputTheme(container);
+        if (container && !DYYYGetBool(@"DYYYEnableFloatingCommentInput")) {
+            NSNumber *originalStyle = objc_getAssociatedObject(container, &kDYYYCommentInputOriginalThemeKey);
+            if (originalStyle) {
+                objc_setAssociatedObject(container, &kDYYYCommentInputThemeKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                objc_setAssociatedObject(container, &kDYYYCommentInputOriginalThemeKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                container.overrideUserInterfaceStyle = (UIUserInterfaceStyle)originalStyle.integerValue;
+            }
+        }
+        if (floating && commentStyle != UIUserInterfaceStyleUnspecified) {
+            if (container.overrideUserInterfaceStyle != commentStyle) container.overrideUserInterfaceStyle = commentStyle;
+            container.tintColor = UIColor.labelColor;
+            for (UIView *input in views) {
+                if ([input isKindOfClass:UITextView.class]) {
+                    UITextView *textView = (UITextView *)input;
+                    UIKeyboardAppearance appearance = commentStyle == UIUserInterfaceStyleDark ? UIKeyboardAppearanceDark : UIKeyboardAppearanceLight;
+                    if (textView.keyboardAppearance != appearance) textView.keyboardAppearance = appearance;
+                    if (!textView.text.length) textView.textColor = UIColor.labelColor;
+                } else if ([input isKindOfClass:UITextField.class]) {
+                    ((UITextField *)input).keyboardAppearance = commentStyle == UIUserInterfaceStyleDark ? UIKeyboardAppearanceDark : UIKeyboardAppearanceLight;
+                } else if (input.superview == middle && [input isKindOfClass:UILabel.class]) {
+                    ((UILabel *)input).textColor = UIColor.secondaryLabelColor;
+                }
+            }
+        }
+
         for (UIView *view in views) {
             NSDictionary *shiftState = objc_getAssociatedObject(view, &kDYYYCompactInputTransformKey);
             if ((!floating || expanded) && shiftState) {
@@ -11343,6 +11413,8 @@ static void DYYYUpdateDetailInputTransparency(UIView *root) {
         }
         chrome.frame = pill;
         for (UIView *effect in chrome.subviews) {
+            effect.overrideUserInterfaceStyle = commentStyle;
+
             effect.layer.cornerRadius = expanded ? 20 : 18;
 #if __IPHONE_OS_VERSION_MAX_ALLOWED >= 260000
             if (@available(iOS 26.0, *)) effect.cornerConfiguration = expanded ?
@@ -11704,6 +11776,12 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
 %end
 
 %hook UIView
+
+- (void)setOverrideUserInterfaceStyle:(UIUserInterfaceStyle)style {
+    UIUserInterfaceStyle inputStyle = DYYYCommentInputTheme((UIView *)self);
+    if (inputStyle != UIUserInterfaceStyleUnspecified) style = inputStyle;
+    %orig(style);
+}
 
 - (void)setHidden:(BOOL)hidden {
     BOOL shouldForceHidden = DYYYShouldForceAvatarActionViewHidden(self) || DYYYShouldForceAvatarSurroundingViewHidden(self);
@@ -13648,4 +13726,5 @@ static void findTargetViewInView(UIView *view) {
                                                     }];
     }
 }
+
 

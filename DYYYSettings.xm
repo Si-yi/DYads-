@@ -2813,7 +2813,7 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
 
 
     NSArray<AWESettingSectionModel *> *autoMessageSections = [DYYYAutoMessage settingsSectionsWithRootViewController:rootVC];
-    AWESettingItemModel *autoMessageEntry = DYYYMakePageEntry(rootVC, @"自动消息", @"ic_message_outlined_20", @"增强设置 · 自动消息", @[ autoMessageSections.firstObject ]);
+    AWESettingItemModel *autoMessageEntry = DYYYMakePageEntry(rootVC, @"自动消息", @"ic_comment_outlined_20", @"增强设置 · 自动消息", @[ autoMessageSections.firstObject ]);
     AWESettingItemModel *friendShareEntry = DYYYMakePageEntry(rootVC, @"好友分享进推荐", @"ic_video_outlined_20", @"增强设置 · 好友分享进推荐", @[ autoMessageSections.lastObject ]);
 
     // 创建增强设置分类项
@@ -4039,3 +4039,4 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
     return originalSections;
 }
 %end
+

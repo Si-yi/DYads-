@@ -21,6 +21,7 @@
 - **通用工具/常量**
   - `DYYYUtils.(h/m)`：窗口/颜色/路径等工具。
   - `DYYYConstants.h`：Keys、URL、通知名。
+- **自动消息弹窗**：`DYYYAutoMessagePanel.(h/m)` 展示配置开关列表与互关好友搜索多选，配置读写和联系人适配由 `DYYYAutoMessage` 负责。
 - **设置页复用 UI（按交互类型）**
   - 列表/选择：`DYYYKeywordListView.(h/m)`、`DYYYOptionsSelectionView.(h/m)`、`DYYYFilterSettingsView.(h/m)`。
   - 输入/图标配置：`DYYYCustomInputView.(h/m)`、`DYYYIconOptionsDialogView.(h/m)`、`DYYYImagePickerDelegate.(h/m)`、`DYYYBackupPickerDelegate.(h/m)`。
