@@ -545,7 +545,7 @@ static NSString *const kDYYYFriendShareFriends = @"DYYYFriendShareFeedFriends";
     noSend.type = 0; noSend.cellType = 26; noSend.colorStyle = 0; noSend.isEnable = YES;
     noSend.svgIconImageName = @"ic_eyeslash_outlined_20";
     __weak AWESettingItemModel *weakNoSend = noSend;
-    __weak UIViewController *weakQuietRoot = root;
+    __weak UIViewController *weakQuietRoot = rootViewController;
     noSend.cellTappedBlock = ^{
         [DYYYAutoMessageQuietHoursPanel showFrom:topView() ?: weakQuietRoot onChange:^{
             weakNoSend.detail = [self noSendTimeSummary];
