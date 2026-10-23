@@ -86,6 +86,7 @@ NS_ASSUME_NONNULL_BEGIN
 + (BOOL)containsSubviewOfClass:(Class)targetClass inContainer:(id)container;
 
 + (void)applyBlurEffectToView:(UIView *)view transparency:(float)userTransparency blurViewTag:(NSInteger)tag;
++ (CGFloat)sharedBlurTransparency;
 + (void)clearBackgroundRecursivelyInView:(UIView *)view;
 
 /**

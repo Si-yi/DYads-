@@ -3500,10 +3500,7 @@ static void DYYYDisableAVPlayerItemHDRMetadata(AVPlayerItem *item) {
 - (void)applyBlurEffectIfNeeded {
     if (DYYYGetBool(@"DYYYEnableCommentBlur") && [self isKindOfClass:NSClassFromString(@"AWECommentPanelContainerSwiftImpl.CommentContainerInnerViewController")]) {
         // 动态获取用户设置的透明度
-        float userTransparency = [[[NSUserDefaults standardUserDefaults] objectForKey:@"DYYYCommentBlurTransparent"] floatValue];
-        if (userTransparency <= 0 || userTransparency > 1) {
-            userTransparency = 0.9;
-        }
+        float userTransparency = [DYYYUtils sharedBlurTransparency];
 
         // 应用毛玻璃效果
         [DYYYUtils applyBlurEffectToView:self.view transparency:userTransparency blurViewTag:999];
@@ -4343,10 +4340,7 @@ static NSString *const kDYYYLongPressCopyEnabledKey = @"DYYYLongPressCopyTextEna
       blurView.layer.cornerRadius = userRadius;
       blurView.layer.masksToBounds = YES;
 
-      float userTransparency = [[[NSUserDefaults standardUserDefaults] objectForKey:@"DYYYCommentBlurTransparent"] floatValue];
-      if (userTransparency <= 0 || userTransparency > 1) {
-          userTransparency = 0.5;
-      }
+      float userTransparency = [DYYYUtils sharedBlurTransparency];
 
       blurView.alpha = userTransparency;
 
@@ -11884,10 +11878,7 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
     for (UIView *containerView in containerViews) {
         for (UIView *subview in containerView.subviews) {
             if (subview.hidden == NO && subview.backgroundColor && CGColorGetAlpha(subview.backgroundColor.CGColor) == 1) {
-                float userTransparency = [[[NSUserDefaults standardUserDefaults] objectForKey:@"DYYYCommentBlurTransparent"] floatValue];
-                if (userTransparency <= 0 || userTransparency > 1) {
-                    userTransparency = 0.8;
-                }
+                float userTransparency = [DYYYUtils sharedBlurTransparency];
                 [DYYYUtils applyBlurEffectToView:subview transparency:userTransparency blurViewTag:999];
             }
         }

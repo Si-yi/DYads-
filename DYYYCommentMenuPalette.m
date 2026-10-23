@@ -25,6 +25,7 @@
 */
 #import "DYYYCommentMenuPalette.h"
 #import "DYYYCommentMenuTheme.h"
+#import "DYYYPanelBlur.h"
 #import "AwemeHeaders.h"
 #import <QuartzCore/QuartzCore.h>
 #import <objc/runtime.h>
@@ -145,6 +146,7 @@ static char kDYYYMenuPaletteReportKey;
     UIViewController *controller = [DYYYCommentMenuTheme controllerForView:cell];
     if (controller && cell.window) [self applyInView:cell controller:controller];
     else [self restoreView:cell];
+    [DYYYPanelBlur synchronizeView:cell];
 }
 
 + (BOOL)applyCard:(UIView *)cell controller:(UIViewController *)controller {
@@ -219,6 +221,7 @@ static char kDYYYMenuPaletteReportKey;
         NSUInteger backgrounds = 0, labels = 0, cards = 0;
         for (NSUInteger index = 0; index < queue.count && index < 400; index++) {
             UIView *view = queue[index];
+            if ([DYYYPanelBlur isManagedEffectView:view]) continue;
             if (cardClass && [view isKindOfClass:cardClass] && [self applyCard:view controller:controller]) cards++;
             if ([view isKindOfClass:UIImageView.class]) continue;
             if (view.overrideUserInterfaceStyle == UIUserInterfaceStyleLight)

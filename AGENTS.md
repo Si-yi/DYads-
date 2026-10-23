@@ -3,6 +3,7 @@
 本项目是基于 Theos/Logos 的抖音 UI 调整 Tweak。当前仓库 README 标注仅在 **抖音 36.5.0** 版本测试；回答需求时请以仓库现状为准，不要沿用旧版本描述。
 
 ## 工程关键点
+- **分享与评论长按毛玻璃**：`DYYYPanelBlur.(h/m)` 和 Hooks 分别使用 `DYYYEnableSharePanelBlur`、`DYYYEnableCommentMenuBlur` 两个独立开关，默认关闭；位于界面设置的透明度设置内。与评论区、通知栏共用 `DYYYCommentBlurTransparent`，由 `DYYYUtils.sharedBlurTransparency` 统一校验（默认 0.9，允许 0–1）。只在面板外壳内铺一层普通毛玻璃并清理中性底板，不能修改整个面板或文字图标的 alpha；保留好友头像、彩色图标与外部遮罩。复用/关闭/离页时先恢复毛玻璃接管值，再恢复菜单调色值，避免残留底色。共享原生 Cell 的布局时只处理当前面板，不挂全局 UIView/CALayer 写入 Hook。
 - **首页文章底栏黑边**：`DYYYArticleBackdrop.(h/m)` 与 Hooks 仅处理首页 `AWEFeedGeneralArticleCellViewController` 下的文章页。保留原生 Lynx 视口与正文位置，用内容底边的不透明像素行延展背景至全高宿主底部；不改全局窗口、正文 Frame 或交互层。取样合并为短延迟与一次补取样，换模型/复用/离页移除，关闭全屏或尺寸不符时恢复。Hook 复用搜索框架延迟加载安装入口；参考 DYKiller 的 DKFeedCardFit 并保留 MIT 声明。
 - **评论菜单文字对比度**：`DYYYCommentMenuPalette` 在深色评论长按菜单中将中性正文调整为 96% 白、半透明辅助文字调整为不透明的 78% 灰；富文本逐段处理，保留彩色火花与透明占位文字。好友横排的 `ShareContactListTargetCell`、`ShareContactListRecentShareCell` 在布局/进入窗口时局部同步，复用或离开评论菜单恢复；禁止对所有 UILabel 或普通分享面板全局提亮。功能图标仅在功能行内识别，不能处理好友头像。
 - **菜单实际底色与调试面板**：评论长按菜单的深色 trait 不会自动改写原生白卡片；`DYYYCommentMenuPalette.(h/m)` 只在该菜单内部改中性色背景、功能行 `contentShapeLayer`、文字及专用图标，保存原值，退出/复用恢复，不改好友头像和识图缩略图。功能行布局与外壳布局同步，不挂全局 UIView/CALayer 写入钩子。调试操作和导出错误提示使用 `DYYYDebugMenuView.(h/m)` 自绘材质和文字按钮；`DYYYDebugAppearance` 读取屏幕/场景系统主题并记录诊断，文件分享仍由系统负责。

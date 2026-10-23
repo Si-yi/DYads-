@@ -3,6 +3,7 @@
 #import <objc/runtime.h>
 #import "DYYYImagePickerDelegate.h"
 #import "DYYYUtils.h"
+#import "DYYYPanelBlur.h"
 
 #import "DYYYAboutDialogView.h"
 #import "DYYYCustomInputView.h"
@@ -18,6 +19,9 @@
 // 设置用户默认设置
 + (void)setUserDefaults:(id)object forKey:(NSString *)key {
     [[NSUserDefaults standardUserDefaults] setObject:object forKey:key];
+    if ([@[ @"DYYYEnableSharePanelBlur", @"DYYYEnableCommentMenuBlur", @"DYYYCommentBlurTransparent" ] containsObject:key]) {
+        [DYYYPanelBlur refreshVisiblePanels];
+    }
 }
 
 // 显示自定义关于弹窗
@@ -65,7 +69,7 @@
           // ===== 条件依赖配置 =====
           // 一些设置项依赖于多个其他设置项的复杂条件
           @"conditionalDependencies" : @{
-              @"DYYYCommentBlurTransparent" : @{@"condition" : @"OR", @"settings" : @[ @"DYYYEnableCommentBlur", @"DYYYEnableNotificationTransparency" ]},
+              @"DYYYCommentBlurTransparent" : @{@"condition" : @"OR", @"settings" : @[ @"DYYYEnableCommentBlur", @"DYYYEnableNotificationTransparency", @"DYYYEnableSharePanelBlur", @"DYYYEnableCommentMenuBlur" ]},
           },
 
           // ===== 冲突配置 =====

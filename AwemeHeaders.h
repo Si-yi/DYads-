@@ -1107,6 +1107,16 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 - (void)prepareForReuse;
 @end
 
+// 分享面板的外壳和实际内容，私有声明集中在此处。
+@interface AWESharePanelContainerViewController : UIViewController
+@end
+
+@interface AWESharePanelViewController : UIViewController
+@end
+
+@interface AWESharePanelFunctionCell : UICollectionViewCell
+@end
+
 @protocol AFDPrivacyHalfScreenViewControllerProtocol <NSObject>
 @end
 

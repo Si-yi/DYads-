@@ -973,6 +973,15 @@ static void DYYYApplyDisplayLocationToLabel(UILabel *label, NSString *displayLoc
     return [self findSubviewOfClass:targetClass inContainer:container] != nil;
 }
 
++ (CGFloat)sharedBlurTransparency {
+    id value = [NSUserDefaults.standardUserDefaults objectForKey:@"DYYYCommentBlurTransparent"];
+    if (![value isKindOfClass:NSString.class] && ![value isKindOfClass:NSNumber.class]) return 0.9;
+    NSScanner *scanner = [NSScanner scannerWithString:[value description]];
+    double alpha = 0;
+    if (![scanner scanDouble:&alpha] || !scanner.isAtEnd || !isfinite(alpha) || alpha < 0 || alpha > 1) return 0.9;
+    return (CGFloat)alpha;
+}
+
 + (void)applyBlurEffectToView:(UIView *)view transparency:(float)userTransparency blurViewTag:(NSInteger)tag {
     if (!view)
         return;

@@ -1,5 +1,6 @@
 #import "DYYYCommentMenuTheme.h"
 #import "DYYYCommentMenuPalette.h"
+#import "DYYYPanelBlur.h"
 #import "AwemeHeaders.h"
 #import "DYYYUtils.h"
 #import <objc/runtime.h>
@@ -15,7 +16,7 @@ static char kDYYYCommentMenuOriginalViewStyleKey;
 + (BOOL)canManageController:(UIViewController *)controller {
     return NSThread.isMainThread &&
         [NSStringFromClass(controller.class) isEqualToString:@"AWECommentLongPressPanelSwiftImpl.CommentLongPressPanelSheet"] &&
-        (DYYYGetBool(@"DYYYEnableCommentBlur") || DYYYGetBool(@"DYYYEnableFloatingCommentInput"));
+        (DYYYGetBool(@"DYYYEnableCommentBlur") || DYYYGetBool(@"DYYYEnableFloatingCommentInput") || DYYYGetBool(@"DYYYEnableCommentMenuBlur"));
 }
 
 + (UIUserInterfaceStyle)styleForController:(UIViewController *)controller {
@@ -54,11 +55,13 @@ static char kDYYYCommentMenuOriginalViewStyleKey;
         }
         if (view.overrideUserInterfaceStyle != style) view.overrideUserInterfaceStyle = style;
         [DYYYCommentMenuPalette applyInView:view controller:controller];
+        [DYYYPanelBlur synchronizeController:controller];
     }
 }
 
 + (void)restoreController:(UIViewController *)controller {
     if (!NSThread.isMainThread || !controller) return;
+    [DYYYPanelBlur restoreController:controller];
     [DYYYCommentMenuPalette restoreController:controller];
     NSNumber *original = objc_getAssociatedObject(controller, &kDYYYCommentMenuOriginalControllerStyleKey);
     objc_setAssociatedObject(controller, &kDYYYCommentMenuStyleKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);

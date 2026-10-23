@@ -1,6 +1,7 @@
 #import "AwemeHeaders.h"
 #import "DYYYCommentMenuTheme.h"
 #import "DYYYCommentMenuPalette.h"
+#import "DYYYPanelBlur.h"
 
 %group DYYYCommentMenuThemeHooks
 %hook DYYYCommentLongPressPanelSheet
@@ -65,6 +66,7 @@
     [DYYYCommentMenuPalette synchronizeCell:(UIView *)self];
 }
 - (void)prepareForReuse {
+    [DYYYPanelBlur restoreView:(UIView *)self];
     [DYYYCommentMenuPalette restoreView:(UIView *)self];
     %orig;
 }
@@ -84,6 +86,7 @@
     [DYYYCommentMenuPalette synchronizeCell:(UIView *)self];
 }
 - (void)prepareForReuse {
+    [DYYYPanelBlur restoreView:(UIView *)self];
     [DYYYCommentMenuPalette restoreView:(UIView *)self];
     %orig;
 }
@@ -101,6 +104,7 @@
     [DYYYCommentMenuPalette synchronizeCell:(UIView *)self];
 }
 - (void)prepareForReuse {
+    [DYYYPanelBlur restoreView:(UIView *)self];
     [DYYYCommentMenuPalette restoreView:(UIView *)self];
     %orig;
 }
