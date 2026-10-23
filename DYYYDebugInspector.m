@@ -1,4 +1,5 @@
 #import "DYYYDebugInspector.h"
+#import "DYYYGlassTabBar.h"
 #import "DYYYIMService.h"
 #import "DKDebugCapture.h"
 #import "DKClassDump.h"
@@ -215,7 +216,14 @@ static void DYYYDebugStartRecording(UIWindow *window) {
     DYYYDebugRecordEvent(@"recordingStarted", @{ @"installedHooks": DYYYDebugHookStatus }, NO);
     DYYYDebugSamplePage();
     [DYYYDebugRecordTimer invalidate];
-    DYYYDebugRecordTimer = [NSTimer timerWithTimeInterval:0.75 repeats:YES block:^(__unused NSTimer *timer) { DYYYDebugSamplePage(); }];
+    __block NSTimeInterval previousTick = NSProcessInfo.processInfo.systemUptime;
+    DYYYDebugRecordTimer = [NSTimer timerWithTimeInterval:0.75 repeats:YES block:^(__unused NSTimer *timer) {
+        NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
+        DYYYDebugRecordEvent(@"mainQueuePulse", @{ @"intervalSeconds":@(now - previousTick),
+            @"floatingTabBar":DKGlassGeometryStatus() ?: @"" }, NO);
+        previousTick = now;
+        DYYYDebugSamplePage();
+    }];
     [NSRunLoop.mainRunLoop addTimer:DYYYDebugRecordTimer forMode:NSRunLoopCommonModes];
     DYYYDebugInspectorRefreshOverlay();
 }
@@ -292,7 +300,8 @@ static NSDictionary *DYYYDebugMetadata(void) {
         @"systemName": UIDevice.currentDevice.systemName ?: @"",
         @"systemVersion": UIDevice.currentDevice.systemVersion ?: @"",
         @"deviceModel": UIDevice.currentDevice.model ?: @"",
-        @"debugImplementation": @"global-overlay-r4-keyboard-theme",
+        @"debugImplementation": @"global-overlay-r5-layout-pulse",
+        @"floatingTabBar": DKGlassGeometryStatus() ?: @"",
         @"loadedPluginImages": pluginImages,
         @"inputSettings": @{
             @"DYYYEnableFloatingCommentInput": [defaults objectForKey:@"DYYYEnableFloatingCommentInput"] ?: NSNull.null,
@@ -644,6 +653,7 @@ void DYYYDebugInspectorInstall(void) {
     });
     dispatch_async(dispatch_get_main_queue(), ^{ DYYYDebugInspectorRefreshOverlay(); });
 }
+
 
 
 

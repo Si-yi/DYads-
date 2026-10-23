@@ -3,6 +3,7 @@
 本项目是基于 Theos/Logos 的抖音 UI 调整 Tweak。当前仓库 README 标注仅在 **抖音 36.5.0** 版本测试；回答需求时请以仓库现状为准，不要沿用旧版本描述。
 
 ## 工程关键点
+- **玻璃底栏启动与诊断**：`DYYYGlassTabBar.xm` 在原生按钮尚未创建时可用缓存外观预显示，原生按钮就绪后才启用点击。子视图镜像回调只同步内容，签名改变才请求布局，禁止每次回调直接完整重排。`DYYYGlassTabBar.h` 暴露只读布局状态，普通调试导出与录制脉冲可读取计数，不得为诊断主动触发布局。
 - **Hook 入口**：`DYYY.xm` 负责 Feed、浮窗、全局透明度与 Tab Bar 高度等通用 Hook；`DYYYSettings.xm` 负责抖音设置页相关 Hook（`AWESettingBaseViewController`、`AWELeftSideBarWeatherLabel` 等）并构造 DYYY 自定义设置。
 - **业务核心**：`DYYYManager` 统一处理媒体下载、批量任务、Live Photo/GIF/WebP 转换及保存流程，内部维护 `NSOperationQueue` 与下载任务/回调映射；`DYYYSettingsHelper` 管理设置依赖、入口查找、用户协议弹窗；`DYYYUtils` 处理 IP 属地、颜色、窗口查找、缓存路径等可复用逻辑。
 - **UI 组件**：所有自定义视图/弹窗（如 `DYYYBottomAlertView`、`DYYYFloatSpeedButton`、`DYYYAboutDialogView` 等）都有 `.h/.m` 配对文件，并在设置控制器中组合使用。

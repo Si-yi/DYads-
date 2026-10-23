@@ -16,6 +16,7 @@
 
 #import "AwemeHeaders.h"
 #import "DYYYUtils.h"
+#import "DYYYGlassTabBar.h"
 #import "DYYYPlusIcon.h"
 #import "DKTabBarIcons.h"
 
@@ -128,6 +129,10 @@ static const CGFloat kDKTabButtonFallbackPad = 4.0;
 #pragma mark - 状态
 
 static UITabBar *gBar = nil;
+static BOOL gBootstrapActive = NO;
+static BOOL gBootstrapHasPlus = NO;
+static NSUInteger gMirrorRuns = 0;
+static NSUInteger gLayoutRuns = 0;
 static id gProxy = nil;
 // 每个 item 对应的 tab 序号（validIndex）。与 items 同序等长。
 static NSArray<NSNumber *> *gItemKinds = nil;
@@ -783,7 +788,54 @@ static BOOL DKGlassSyncItems(UITabBarController *controller, NSArray *buttons) {
 
     gPlusButton = plus;
 
-    if (mirrored.count == 0) return NO;
+    if (mirrored.count == 0) {
+        // 冷启动原生按钮会晚于首个视频出现。只缓存外观，不缓存按钮或点击对象。
+        if (gBar.items.count) return NO;
+        NSDictionary *cached = [NSUserDefaults.standardUserDefaults dictionaryForKey:@"DYYYGlassTabBarBootstrap_v1"];
+        NSArray *cachedTitles = cached[@"titles"];
+        NSArray *cachedKinds = cached[@"kinds"];
+        NSMutableArray *initialTitles = [NSMutableArray array];
+        NSMutableArray *initialKinds = [NSMutableArray array];
+        if ([cachedTitles isKindOfClass:NSArray.class] && [cachedKinds isKindOfClass:NSArray.class] &&
+            cachedTitles.count == cachedKinds.count && cachedTitles.count <= 6) {
+            for (NSUInteger i = 0; i < cachedTitles.count; i++) {
+                if (![cachedTitles[i] isKindOfClass:NSString.class] || ![cachedTitles[i] length] ||
+                    ![cachedKinds[i] isKindOfClass:NSNumber.class]) continue;
+                [initialTitles addObject:cachedTitles[i]];
+                [initialKinds addObject:cachedKinds[i]];
+            }
+        }
+        // 首次安装尚无缓存时，读取已经存在的原生 UITabBarItem，不创建假按钮。
+        if (!initialTitles.count) for (UITabBarItem *nativeItem in controller.tabBar.items) {
+            if (initialTitles.count >= 6) break;
+            NSString *title = nativeItem.title.length ? nativeItem.title : nativeItem.accessibilityLabel;
+            if (!title.length) continue;
+            [initialKinds addObject:@(initialTitles.count)];
+            [initialTitles addObject:title];
+        }
+        if (!initialTitles.count) return NO;
+        NSMutableArray *items = [NSMutableArray array];
+        for (NSUInteger i = 0; i < initialTitles.count; i++) {
+            UITabBarItem *item = [[UITabBarItem alloc] initWithTitle:nil image:nil tag:i];
+            item.accessibilityLabel = initialTitles[i];
+            [items addObject:item];
+        }
+        gBootstrapActive = YES;
+        gBootstrapHasPlus = [cached[@"hasPlus"] boolValue];
+        gItemKinds = initialKinds;
+        gItemButtons = @[];
+        gItemTabIDs = nil;
+        gBar.items = items;
+        gBar.userInteractionEnabled = NO;
+        gPlusHit.enabled = NO;
+        DKGlassApplyItemImages();
+        NSUInteger selected = [initialKinds indexOfObject:@((NSInteger)controller.selectedIndex)];
+        if (selected != NSNotFound) gBar.selectedItem = items[selected];
+        return YES;
+    }
+    gBootstrapActive = NO;
+    gBar.userInteractionEnabled = YES;
+    gPlusHit.enabled = YES;
     // 按钮引用每次都刷新：抖音可能重建出标题相同的新按钮，签名察觉不到，
     // 拿着旧对象转发点击就会落空。items 与它同序等长，只在签名变化时才重建。
     gItemButtons = mirrored;
@@ -804,6 +856,8 @@ static BOOL DKGlassSyncItems(UITabBarController *controller, NSArray *buttons) {
         gItemTabIDs = tabIDs;
         gSignature = [signature copy];
         DKGlassApplyItemImages();
+        [NSUserDefaults.standardUserDefaults setObject:@{@"titles":titles, @"kinds":kinds, @"hasPlus":@(plus != nil)}
+                                               forKey:@"DYYYGlassTabBarBootstrap_v1"];
     }
 
     NSUInteger current = [gItemKinds indexOfObject:@((NSInteger)controller.selectedIndex)];
@@ -832,8 +886,13 @@ static void DKGlassScheduleMirror(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
         gPendingMirror = NO;
         AWENormalModeTabBar *bar = gDouyinBar;
-        if (!bar || !bar.window) return;
-        if (@available(iOS 26.0, *)) DKGlassUpdate(bar);
+        UITabBarController *controller = bar ? DKGlassControllerForView(bar) : nil;
+        if (!bar || !bar.window || !gBar || !controller) return;
+        gMirrorRuns++;
+        // 子视图布局只同步内容；签名变化时才请求父视图布局，不直接进行完整几何重排。
+        NSArray *buttons = DKGlassValue(bar, @"tabBarButtons");
+        DKGlassApplyInk(DKGlassInkStyleFor(buttons, (NSInteger)controller.selectedIndex, gGlassStyle));
+        if (DKGlassSyncItems(controller, buttons)) [bar setNeedsLayout];
     });
 }
 
@@ -939,7 +998,7 @@ static CGFloat DKGlassCapsuleWidth(NSUInteger count, NSUInteger reference, CGFlo
     reference = MAX(reference, count);
     if (count <= 1 || reference <= 1) return single;
 
-    CGFloat available = MAX(0.0, barWidth - (gPlusButton ? gMetrics.height + kDKPlusKeyGap : 0.0) - 2.0 * gMetrics.inset);
+    CGFloat available = MAX(0.0, barWidth - ((gPlusButton || (gBootstrapActive && gBootstrapHasPlus)) ? gMetrics.height + kDKPlusKeyGap : 0.0) - 2.0 * gMetrics.inset);
     CGFloat referenceWidth = MIN(available, single + (reference - 1) * naturalPitch);
     CGFloat pitch = MIN(MAX((referenceWidth - single) / (reference - 1), 0.0), naturalPitch);
     return single + (count - 1) * pitch;
@@ -948,7 +1007,8 @@ static CGFloat DKGlassCapsuleWidth(NSUInteger count, NSUInteger reference, CGFlo
 NSString *DKGlassGeometryStatus(void) {
     if (!gBar) return @"未建立（功能关闭或尚未布局）";
     return [NSString stringWithFormat:
-            @"项目 %lu / 参考 %lu · 胶囊目标 %.1f 实测 %.1f · 按钮宽 %.1f 首距 %.1f 高 %.1f · 内缩 %.1f（%@）",
+            @"同步 %lu / 布局 %lu / 预显示 %@ · 项目 %lu / 参考 %lu · 胶囊目标 %.1f 实测 %.1f · 按钮宽 %.1f 首距 %.1f 高 %.1f · 内缩 %.1f（%@）",
+            (unsigned long)gMirrorRuns, (unsigned long)gLayoutRuns, gBootstrapActive ? @"YES" : @"NO",
             (unsigned long)gGeometryCount, (unsigned long)gGeometryReference, gGeometryTarget, gGeometryMeasured,
             gMetrics.buttonWidth, gMetrics.buttonPad, gMetrics.height, gMetrics.inset,
             gInsetMeasured ? @"实测" : @"兜底"];
@@ -968,7 +1028,7 @@ static void DKGlassLayoutGlass(AWENormalModeTabBar *douyinBar, NSUInteger refere
     }
 
     // 拍摄按钮被移除时圆键一并隐藏。
-    BOOL available = gPlusButton != nil;
+    BOOL available = gPlusButton != nil || (gBootstrapActive && gBootstrapHasPlus);
     if (gPlusKey.isHidden == available) gPlusKey.hidden = !available;
 
     NSUInteger count = gBar.items.count;
@@ -1066,6 +1126,7 @@ static void DKGlassUpdate(AWENormalModeTabBar *douyinBar) API_AVAILABLE(ios(26.0
     static BOOL updating = NO;
     if (!douyinBar || updating) return;
     updating = YES;
+    gLayoutRuns++;
     @try {
     // 抖音换过底栏实例时，先把旧那条的内容还原——玻璃底栏只会跟着新实例走，
     // 旧实例的按钮若停在 opacity=0，它再次出现时就是一条空底栏。
@@ -1095,6 +1156,8 @@ static void DKGlassUpdate(AWENormalModeTabBar *douyinBar) API_AVAILABLE(ios(26.0
         gItemButtons = nil;
         gItemTabIDs = nil;
         gSignature = nil;
+        gBootstrapActive = NO;
+        gBootstrapHasPlus = NO;
         // 重新开启时材质与 platter 玻璃都要能重新装上；探测结果不复位，那是设备能力，一次为准。
         gGlassStyle = UIUserInterfaceStyleUnspecified;
         gInkStyle = UIUserInterfaceStyleUnspecified;
@@ -1269,6 +1332,8 @@ static void DYYYGlassSettingsChanged(void) {
 
 // SDK 不带 iOS 26 玻璃 API 时没有悬浮底栏，刷新是空操作（拍摄图标设置页仍要链接到它）。
 void DKGlassTabBarRefresh(void) {}
+NSString *DKGlassGeometryStatus(void) { return @"当前 SDK 不支持玻璃底栏"; }
 
 #endif /* __IPHONE_OS_VERSION_MAX_ALLOWED >= 260000 */
+
 
