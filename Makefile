@@ -40,6 +40,7 @@ DYYY_FILES = DYYY.xm DYYYFloatClearButton.xm DYYYFloatSpeedButton.m DYYYSettings
 DYYY_FILES += DYYYAutoMessageEditor.m DYYYAutoMessageQuietHoursPanel.m
 DYYY_FILES += DYYYIMService.m
 DYYY_FILES += DYYYFriendShareService.m
+DYYY_FILES += DYYYFriendShareBadgeView.m DYYYChatVideoLayout.m
 DYYY_FILES += DYYYSearchClean.m DYYYSearchCleanHooks.xm
 DYYY_CFLAGS = -fobjc-arc -w
 DYYY_LDFLAGS = -weak_framework AVFAudio -lz
@@ -79,8 +80,3 @@ after-package::
 	else \
         echo -e "\033[33m==>\033[0m Skipping installation (GitHub Actions environment or INSTALL!=1)"; \
 	fi
-
-
-
-
-

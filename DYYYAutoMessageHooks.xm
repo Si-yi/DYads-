@@ -2,6 +2,30 @@
 #import "DYYYAutoMessage.h"
 #import "DYYYIMService.h"
 #import "DYYYFriendShareService.h"
+#import "DYYYFriendShareBadgeView.h"
+#import "DYYYChatVideoLayout.h"
+#import "DYYYUtils.h"
+
+%hook AWEPlayInteractionViewController
+- (void)setModel:(AWEAwemeModel *)model {
+    [DYYYFriendShareBadgeView resetForController:self];
+    %orig(model);
+}
+- (void)viewDidLayoutSubviews {
+    %orig;
+    [DYYYChatVideoLayout layoutInteractionController:self];
+    [DYYYFriendShareBadgeView updateForController:self];
+}
+%end
+
+%hook AWEElementStackView
+- (void)layoutSubviews {
+    %orig;
+    if (![NSUserDefaults.standardUserDefaults boolForKey:@"DYYYFriendShareFeedEnabled"]) return;
+    UIViewController *controller = [DYYYUtils firstAvailableViewControllerFromView:self];
+    if ([controller isKindOfClass:NSClassFromString(@"AWEPlayInteractionViewController")]) [DYYYFriendShareBadgeView updateForController:controller];
+}
+%end
 
 // 复用抖音创建并配置好的实例，不自己 new 消息 SDK，也不调用其他插件。
 %hook AWEIMUserDBManager

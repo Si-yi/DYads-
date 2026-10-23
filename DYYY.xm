@@ -25,6 +25,7 @@
 #import "AWMSafeDispatchTimer.h"
 #import "DYYYConstants.h"
 #import "DYYYDebugInspector.h"
+#import "DYYYChatVideoLayout.h"
 
 extern "C" void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed);
 #import "DYYYFloatClearButton.h"
@@ -6391,6 +6392,8 @@ static void DYYYApplyAvatarFollowPromptSettingsWithRetry(id owner) {
 - (void)viewDidLayoutSubviews {
     %orig;
 
+    [DYYYChatVideoLayout updateReplyBackground:self];
+
     if (DYYYGetBool(@"DYYYHideReply")) {
         [self.view removeFromSuperview];
         return;
@@ -12066,6 +12069,10 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
         %orig(UIColor.clearColor);
         return;
     }
+    if ([DYYYChatVideoLayout ownsReplyBackground:self]) {
+        %orig(UIColor.clearColor);
+        return;
+    }
     if (DYYYShouldClearAvatarActionViewChrome(self)) {
         %orig([UIColor clearColor]);
         return;
@@ -12124,6 +12131,12 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
     Class PlayVCClass1 = NSClassFromString(@"AWEAwemePlayVideoViewController");
     Class PlayVCClass2 = NSClassFromString(@"AWEDPlayerFeedPlayerViewController");
     Class PlayVCClass3 = NSClassFromString(@"AWEDPlayerViewController_Merge");
+
+    CGRect chatFrame = [DYYYChatVideoLayout adjustedFrame:frame view:self controller:vc];
+    if (!CGRectEqualToRect(chatFrame, frame)) {
+        %orig(chatFrame);
+        return;
+    }
 
     BOOL isDetailVC = (DetailVCClass && [vc isKindOfClass:DetailVCClass]);
     BOOL isPlayVC = ((PlayVCClass1 && [vc isKindOfClass:PlayVCClass1]) ||
@@ -13520,22 +13533,18 @@ static Class TagViewClass = nil;
 - (void)layoutSubviews {
     %orig;
 
-    if (DYYYGetBool(@"DYYYEnableFullScreen")) {
-        UIView *parentView = self.superview;
-        while (parentView) {
-            if ([NSStringFromClass([parentView class]) isEqualToString:@"UIView"]) {
-                dispatch_async(dispatch_get_main_queue(), ^{
-                  parentView.backgroundColor = [UIColor clearColor];
-                  parentView.layer.backgroundColor = [UIColor clearColor].CGColor;
-                  parentView.opaque = NO;
-                });
-                break;
-            }
-            parentView = parentView.superview;
-        }
-    }
+    UIViewController *controller = [DYYYUtils firstAvailableViewControllerFromView:self];
+    Class reply = NSClassFromString(@"AWEIMFeedVideoQuickReplayInputViewController");
+    if (reply && [controller isKindOfClass:reply]) [DYYYChatVideoLayout updateReplyBackground:controller];
 }
 
+%end
+
+%hook AWEAwemeDetailCellViewController
+- (void)viewDidLayoutSubviews {
+    %orig;
+    [DYYYChatVideoLayout layoutCellController:self];
+}
 %end
 
 // 隐藏上次看到
@@ -13963,6 +13972,3 @@ static void findTargetViewInView(UIView *view) {
                                                     }];
     }
 }
-
-
-

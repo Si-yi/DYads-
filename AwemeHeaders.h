@@ -1296,6 +1296,10 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 - (double)contentOffsetYForCellAtIndex:(long long)index;
 - (BOOL)prefersStatusBarHidden;
 @end
+@interface AWEAwemeIMDetailTableViewController : AWEAwemeDetailTableViewController
+@end
+@interface AWEAwemeDetailCellViewController : UIViewController
+@end
 @interface AWEAwemeHotSpotTableViewController : UIViewController
 - (BOOL)prefersStatusBarHidden;
 @end

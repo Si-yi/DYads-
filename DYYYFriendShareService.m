@@ -10,6 +10,7 @@
 @property (nonatomic, strong) NSMutableOrderedSet *queued;
 @property (nonatomic, strong) NSMutableOrderedSet *active;
 @property (nonatomic, strong) NSMutableDictionary *models;
+@property (nonatomic, strong) NSMutableDictionary *sources;
 @property (nonatomic, strong) NSMutableSet *inFlight;
 @property (nonatomic, strong) NSMutableSet *failed;
 @property (nonatomic, strong) NSMutableDictionary *state;
@@ -33,6 +34,7 @@
         service.queued = [NSMutableOrderedSet orderedSet];
         service.active = [NSMutableOrderedSet orderedSet];
         service.models = [NSMutableDictionary dictionary];
+        service.sources = [NSMutableDictionary dictionary];
         service.inFlight = [NSMutableSet set];
         service.failed = [NSMutableSet set];
         service.state = [NSMutableDictionary dictionary];
@@ -48,6 +50,7 @@
     state[@"loadingCount"] = @(s.inFlight.count);
     state[@"readyCount"] = @(s.models.count);
     state[@"insertedCount"] = @(s.active.count);
+    state[@"sourceCount"] = @(s.sources.count);
     return state;
 }
 + (BOOL)enabled { return [NSUserDefaults.standardUserDefaults boolForKey:@"DYYYFriendShareFeedEnabled"]; }
@@ -79,6 +82,9 @@
         s.generation++;
         [s.queued removeAllObjects]; [s.active removeAllObjects]; [s.models removeAllObjects];
         [s.inFlight removeAllObjects]; [s.failed removeAllObjects];
+        NSString *sourceKey = [self key:@"DYYYFriendShareSources"];
+        NSDictionary *storedSources = sourceKey ? [NSUserDefaults.standardUserDefaults dictionaryForKey:sourceKey] : nil;
+        s.sources = storedSources ? [storedSources mutableCopy] : [NSMutableDictionary dictionary];
         s.pool = nil; s.displayedID = nil;
     }
     return account.length > 0;
@@ -151,10 +157,49 @@
     if (![self syncAccount]) return;
     DYYYFriendShareService *s = [self shared];
     NSSet *watched = [self storedIDs:@"DYYYFriendShareWatchedItemIDs"];
-    for (NSDictionary *row in rows) if (row[@"itemID"] && ![s.active containsObject:row[@"itemID"]] && ![watched containsObject:row[@"itemID"]]) [s.queued addObject:row[@"itemID"]];
+    NSString *friendsKey = [@"DYYYMutualFriendsCache." stringByAppendingString:s.account];
+    NSArray *friends = [NSUserDefaults.standardUserDefaults arrayForKey:friendsKey] ?: @[];
+    NSMutableDictionary *friendsByID = [NSMutableDictionary dictionary];
+    for (NSDictionary *friend in friends) {
+        if ([friend isKindOfClass:NSDictionary.class] && [friend[@"userID"] isKindOfClass:NSString.class]) friendsByID[friend[@"userID"]] = friend;
+    }
+    for (NSDictionary *row in rows) {
+        NSString *itemID = row[@"itemID"], *friendID = row[@"friendID"];
+        if (![itemID isKindOfClass:NSString.class] || !itemID.length || [watched containsObject:itemID]) continue;
+        if ([friendID isKindOfClass:NSString.class] && friendID.length) {
+            NSDictionary *friend = friendsByID[friendID];
+            NSString *name = [friend[@"name"] isKindOfClass:NSString.class] ? friend[@"name"] : @"好友";
+            NSString *avatar = [friend[@"avatar"] isKindOfClass:NSString.class] ? friend[@"avatar"] : @"";
+            s.sources[itemID] = @{ @"friendID": friendID, @"name": name.length ? name : @"好友", @"avatar": avatar,
+                                  @"collectedAt": @(NSDate.date.timeIntervalSince1970) };
+        }
+        if (![s.active containsObject:itemID]) [s.queued addObject:itemID];
+    }
+    // 分享来源与聊天已读状态独立保存；只保留最近 256 条，避免缓存持续增长。
+    if (s.sources.count > 256) {
+        NSArray *oldest = [s.sources keysSortedByValueUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
+            return [@([a[@"collectedAt"] doubleValue]) compare:@([b[@"collectedAt"] doubleValue])];
+        }];
+        [s.sources removeObjectsForKeys:[oldest subarrayWithRange:NSMakeRange(0, s.sources.count - 256)]];
+    }
+    NSString *sourceKey = [self key:@"DYYYFriendShareSources"];
+    if (sourceKey) [NSUserDefaults.standardUserDefaults setObject:s.sources forKey:sourceKey];
     s.state[@"scanVideoCount"] = @(rows.count);
     [self insertQueued];
     if (toast) [DYYYUtils showToast:s.queued.count ? @"已找到未刷分享，正在加载真实视频；返回首页后插入" : @"没有新的未刷分享视频"];
+}
+
+// 标签仅属于这份首页数据，不能因相同视频 ID 出现在聊天或博主页就跟过去。
++ (NSDictionary *)shareSourceForItemID:(NSString *)itemID controller:(UIViewController *)controller {
+    DYYYFriendShareService *s = [self shared];
+    if (![self enabled] || !itemID.length || NSClassFromString(@"FriendShareFeedService") || ![s.account isEqual:[DYYYIMService accountID]]) return nil;
+    BOOL inHome = NO;
+    for (UIViewController *parent = controller; parent; parent = parent.parentViewController) {
+        if (parent == s.home) { inHome = YES; break; }
+    }
+    if (!inHome) return nil;
+    id source = s.sources[itemID];
+    return [source isKindOfClass:NSDictionary.class] ? source : nil;
 }
 
 #pragma mark - 使用抖音自己的视频缓存池获取真实模型

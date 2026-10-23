@@ -12,4 +12,5 @@
 + (void)homeWillDrag:(UIViewController *)feed;
 + (void)homeWillLoop:(UIViewController *)feed;
 + (void)clearWatched;
++ (NSDictionary *)shareSourceForItemID:(NSString *)itemID controller:(UIViewController *)controller;
 @end
