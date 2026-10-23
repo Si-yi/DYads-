@@ -114,8 +114,14 @@ static NSString *const kDYYYFriendShareFriends = @"DYYYFriendShareFeedFriends";
     if (NSClassFromString(@"AutoMessageManager")) return;
     static BOOL processing;
     if (processing || ![DYYYIMService accountID].length) return;
-    processing = YES;
     NSString *account = [DYYYIMService accountID];
+    static NSString *lastAccount;
+    static NSTimeInterval lastCheck;
+    NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
+    if ([lastAccount isEqual:account] && now - lastCheck < 60) return;
+    lastAccount = account;
+    lastCheck = now;
+    processing = YES;
     NSMutableArray *configs = [NSMutableArray array];
     for (NSDictionary *config in [self messageConfigs]) if ([config[@"ownerID"] isEqual:account]) [configs addObject:config];
     [self processDailyConfigs:configs completion:^{ processing = NO; }];
@@ -134,6 +140,25 @@ static NSString *const kDYYYFriendShareFriends = @"DYYYFriendShareFeedFriends";
             if ([value isKindOfClass:NSString.class] && ![value length]) continue;
             if (value && value != NSNull.null) return value;
         } @catch (__unused NSException *exception) {}
+    }
+    return nil;
+}
+
++ (NSString *)avatarURL:(id)value depth:(NSUInteger)depth {
+    if (!value || depth > 5) return nil;
+    if ([value isKindOfClass:NSURL.class]) value = [value absoluteString];
+    if ([value isKindOfClass:NSString.class]) {
+        NSString *text = [value hasPrefix:@"//"] ? [@"https:" stringByAppendingString:value] : value;
+        NSString *scheme = [NSURL URLWithString:text].scheme.lowercaseString;
+        return ([scheme isEqual:@"https"] || [scheme isEqual:@"http"]) ? text : nil;
+    }
+    if ([value isKindOfClass:NSArray.class]) {
+        for (id item in value) { NSString *url = [self avatarURL:item depth:depth + 1]; if (url.length) return url; }
+        return nil;
+    }
+    for (NSString *key in @[@"urlList", @"url_list", @"originURLList", @"originURL", @"originUrl", @"URL", @"url", @"absoluteString"]) {
+        NSString *url = [self avatarURL:[self friendValue:value keys:@[key]] depth:depth + 1];
+        if (url.length) return url;
     }
     return nil;
 }
@@ -164,10 +189,26 @@ static NSString *const kDYYYFriendShareFriends = @"DYYYFriendShareFeedFriends";
             [self friendValue:flameInfo keys:@[@"days", @"streakDays", @"streakCount"]];
         NSInteger days = [daysValue respondsToSelector:@selector(integerValue)] ? [daysValue integerValue] : 0;
         id hasFlame = [self friendValue:row keys:@[@"hasFlame", @"isFlameFriend"]];
-        id avatar = [self friendValue:model keys:@[@"avatar", @"avatarThumb", @"avatarURL", @"avatarUrl", @"avatar_thumb", @"avatarSmallStrUrl", @"avatarStrUrls", @"avatarURLList"]];
-        if ([avatar isKindOfClass:NSArray.class]) avatar = [avatar firstObject];
-        if (avatar && ![avatar isKindOfClass:NSString.class]) avatar = [self friendValue:avatar keys:@[@"urlList", @"url_list", @"url"]];
-        if ([avatar isKindOfClass:NSArray.class]) avatar = [avatar firstObject];
+        NSString *avatar = nil;
+        for (id source in @[model, row]) {
+            for (NSString *key in @[@"avatarThumb", @"avatarSmall", @"avatarSmallStrURL", @"avatarSmallStrUrl", @"avatarURLSmall", @"avatarURL", @"avatarUrl", @"avatar_thumb", @"avatar", @"avatarMedium", @"avatarStrUrls", @"avatarURLList"]) {
+                avatar = [self avatarURL:[self friendValue:source keys:@[key]] depth:0];
+                if (avatar.length) break;
+            }
+            if (avatar.length) break;
+        }
+        if (!avatar.length) {
+            // 联系人数据库可能只存基础字段；复用抖音内存中已加载的完整用户，不发起逐人网络请求。
+            Class userManagerClass = NSClassFromString(@"AWEIMUserManager");
+            if ([userManagerClass respondsToSelector:@selector(sharedManager)]) {
+                AWEIMUserManager *userManager = [(id)userManagerClass sharedManager];
+                id cachedUser = [userManager respondsToSelector:@selector(localCachedUserForUserID:)] ? [userManager localCachedUserForUserID:uid] : nil;
+                for (NSString *key in @[@"avatarThumb", @"avatarURLSmall", @"avatarSmallStrUrl", @"avatarMedium", @"avatarStrUrls", @"avatarURL", @"avatar"]) {
+                    avatar = [self avatarURL:[self friendValue:cachedUser keys:@[key]] depth:0];
+                    if (avatar.length) break;
+                }
+            }
+        }
         [friends addObject:@{ @"userID":uid, @"name":name, @"displayID":display,
             @"avatar":[avatar isKindOfClass:NSString.class] ? avatar : @"",
             @"hasFlame":@([hasFlame respondsToSelector:@selector(boolValue)] ? [hasFlame boolValue] : days > 0), @"flameDays":@(MAX(0, days)) }];

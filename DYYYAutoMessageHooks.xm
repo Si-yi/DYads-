@@ -90,20 +90,18 @@
 %end
 
 %hook TIMXOMessageManager
+- (id)initWithRootObject:(id)root {
+    id result = %orig;
+    [DYYYIMService captureService:result role:@"messages"];
+    return result;
+}
 - (id)messagesInConversation:(id)conversation excludeMessageTypes:(id)types limit:(unsigned long long)limit {
     [DYYYIMService observeHistoryQuery:conversation manager:self];
     return %orig;
 }
 %end
 
-%hook AWENormalModeTabBarController
-- (void)viewDidAppear:(BOOL)animated {
-    %orig;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-        [DYYYAutoMessage runDailyMessageCheckIfNeeded];
-    });
-}
-%end
+// 自动消息仅由前台通知调度，不在切页和返回设置时重复执行。
 
 %ctor {
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;

@@ -1987,6 +1987,11 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 - (id)userManager;
 @end
 
+@interface AWEIMUserManager : NSObject
++ (instancetype)sharedManager;
+- (id)localCachedUserForUserID:(id)userID;
+@end
+
 @interface AWEIMUserDBManager : NSObject
 - (id)currentDataBaseUid;
 - (id)fetchFriendUsersWithLimits:(long long)limit readScene:(long long)scene;
@@ -1997,6 +2002,9 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @interface TIMXOConversation : NSObject
 + (instancetype)instanceWithRootObject:(id)root identifier:(id)identifier;
 @property (nonatomic, readonly) long long ownerID;
+@property (nonatomic, readonly, copy) NSString *identifier;
+@property (nonatomic, readonly, strong) NSDictionary *participantsMap;
+@property (nonatomic, readonly) BOOL isCurrentUserAParticipant;
 @property (nonatomic, readonly, strong) TIMXOMessage *lastMessage;
 @property (nonatomic, readonly) unsigned long long unreadCount;
 @property (nonatomic, copy) NSString *firstUnreadMessageID;
@@ -2005,6 +2013,7 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @interface TIMXOMessage : NSObject
 @property (nonatomic, readonly, copy) NSString *identifier;
 @property (nonatomic, readonly, copy) NSDictionary *content;
+@property (nonatomic, readonly, copy) NSString *belongingConversationIdentifier;
 @property (nonatomic, readonly, strong) NSDate *createdAt;
 @property (nonatomic, readonly) long long sender;
 @property (nonatomic, readonly) long long messageType;
@@ -2018,6 +2027,8 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @end
 
 @interface TIMXOMessageManager : NSObject
+- (id)initWithRootObject:(id)root;
+- (id)messagesBeforeTime:(double)time inTypes:(id)types limit:(unsigned long long)limit;
 - (id)messagesInConversation:(id)conversation excludeMessageTypes:(id)types limit:(unsigned long long)limit;
 @end
 

@@ -4,6 +4,7 @@
 @interface DYYYIMService : NSObject
 + (void)captureService:(id)service role:(NSString *)role;
 + (id)contactDatabase;
++ (NSDictionary *)diagnostics;
 + (NSString *)accountID;
 + (void)observeTextModel:(id)model sender:(id)sender;
 + (void)observeHistoryQuery:(id)conversation manager:(id)manager;

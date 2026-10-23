@@ -1,4 +1,5 @@
 #import "DYYYDebugInspector.h"
+#import "DYYYIMService.h"
 #import "DKDebugCapture.h"
 #import "DKClassDump.h"
 #import "DKZipWriter.h"
@@ -336,6 +337,7 @@ static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *wi
     };
     NSMutableDictionary *metadata = [DYYYDebugMetadata() mutableCopy];
     metadata[@"exportMode"] = messageInterfaces ? @"message-interfaces" : (detailed ? @"complete" : @"lightweight");
+    metadata[@"independentIM"] = [DYYYIMService diagnostics];
     writeJSON(@"metadata.json", metadata);
     if (messageInterfaces) {
         // 仅导出抖音自身的运行时声明，不执行联系人查询、消息读取或发送方法。
@@ -346,7 +348,7 @@ static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *wi
             @"TIMXOConversationManager", @"TIMXOConversation", @"TIMXOMessage", @"TIMXOUser",
             @"IESIMSendMessageModel", @"IESIMMessageSender", @"IESIMConversationDataManager",
             @"IESIMService", @"AWEUserModel", @"AWEUser", @"AWEAwemeModel",
-            @"HTSService", @"HTSServiceCenter", @"TIMXSDKInstance",
+            @"HTSService", @"HTSServiceCenter", @"TIMXSDKInstance", @"TIMXContext", @"TIMXConfig", @"TIMXSingletonsPage", @"AWEIMUser", @"IMUser", @"AWEURLModel",
             @"AWEHotListDataController", @"AWEListDataController", @"AWEFeedTableViewController",
             @"AWEAwemeDetailModel", @"AWEAwemeDetailRequestModel", @"AWEAwemeDetailRequest",
             @"AWEAwemeDetailAPI", @"AWEAwemeDetailService", @"TTNetworkManager"

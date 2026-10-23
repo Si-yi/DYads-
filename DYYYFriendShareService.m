@@ -15,6 +15,7 @@
 @property (nonatomic) BOOL openingPending;
 @property (nonatomic) NSUInteger generation;
 @property (nonatomic) NSUInteger attempts;
+@property (nonatomic) BOOL scanScheduled;
 @property (nonatomic, copy) NSString *displayedID;
 @property (nonatomic) NSTimeInterval displayedSince;
 @property (nonatomic) BOOL backgrounded;
@@ -80,6 +81,7 @@
     DYYYFriendShareService *s = [self shared];
     s.generation++;
     s.attempts = 0;
+    s.scanScheduled = NO;
     s.openingPending = YES;
     s.displayedID = nil;
     [self tryOpeningScan];
@@ -105,16 +107,25 @@
 }
 + (void)tryOpeningScan {
     DYYYFriendShareService *s = [self shared];
-    if (![self enabled] || ![self automatic] || !s.openingPending || ![self homeVisible] || s.attempts >= 8) return;
+    if (![self enabled] || ![self automatic] || !s.openingPending || ![self homeVisible] || s.attempts >= 8 || s.scanScheduled) return;
     if (NSClassFromString(@"FriendShareFeedService")) return;
     s.attempts++;
+    s.scanScheduled = YES;
     NSUInteger generation = s.generation;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 2), dispatch_get_main_queue(), ^{
+        if (generation != s.generation) return;
+        s.scanScheduled = NO;
         if (generation != s.generation || !s.openingPending || ![self enabled] || ![self automatic] || ![self homeVisible]) return;
-        [self cleanOpeningCache];
+        NSArray *users = [NSUserDefaults.standardUserDefaults arrayForKey:@"DYYYFriendShareFeedFriends"] ?: @[];
+        if (!users.count) { s.openingPending = NO; return; }
         NSString *failure = nil;
-        NSArray *rows = [DYYYIMService unreadSharesForUsers:[NSUserDefaults.standardUserDefaults arrayForKey:@"DYYYFriendShareFeedFriends"] ?: @[] error:&failure];
-        if (failure) { [self tryOpeningScan]; return; }
+        NSArray *rows = [DYYYIMService unreadSharesForUsers:users error:&failure];
+        if (failure) {
+            // 初始化未完成才重试；格式或参与者错误不能在启动阶段连续重读数据库。
+            if ([failure hasPrefix:@"本地消息服务尚未就绪"]) [self tryOpeningScan];
+            else s.openingPending = NO;
+            return;
+        }
         s.openingPending = NO;
         [self queueRows:rows toast:NO];
     });

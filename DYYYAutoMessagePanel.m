@@ -221,6 +221,21 @@
     if (!self.pickingFriends || !self.groups[section].count) return nil;
     return section == 0 ? @"🔥 火花好友" : @"互关好友";
 }
+- (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section {
+    NSString *title = [self tableView:tableView titleForHeaderInSection:section];
+    if (!title.length) return nil;
+    UIView *header = [UIView new];
+    UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(18, 0, MAX(0, tableView.bounds.size.width - 36), 34)];
+    label.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    label.text = title;
+    label.textColor = UIColor.secondaryLabelColor;
+    label.font = [UIFont systemFontOfSize:14];
+    [header addSubview:label];
+    return header;
+}
+- (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section {
+    return [self tableView:tableView titleForHeaderInSection:section].length ? 34 : 0.01;
+}
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath { return self.pickingFriends ? 64 : 58; }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
@@ -244,7 +259,11 @@
         cell.tintColor = UIColor.whiteColor;
         NSInteger days = [row[@"flameDays"] integerValue];
         cell.detailTextLabel.text = [NSString stringWithFormat:@"%@%@", days > 0 ? [NSString stringWithFormat:@"火花 %ld 天 · ", (long)days] : @"", row[@"displayID"] ?: row[@"userID"]];
-        cell.imageView.image = [UIImage systemImageNamed:@"person.crop.circle.fill"];
+        UIImage *placeholder = [UIImage systemImageNamed:@"person.crop.circle.fill"];
+        UIGraphicsImageRenderer *placeholderRenderer = [[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(36, 36)];
+        cell.imageView.image = [placeholderRenderer imageWithActions:^(UIGraphicsImageRendererContext *context) {
+            [placeholder drawInRect:CGRectMake(0, 0, 36, 36)];
+        }];
         NSString *url = row[@"avatar"];
         UIImage *cached = url.length ? [self.avatarCache objectForKey:url] : nil;
         if (cached) cell.imageView.image = cached;

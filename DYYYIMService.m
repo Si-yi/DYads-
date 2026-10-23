@@ -5,7 +5,11 @@
 @property (nonatomic, strong) NSMapTable *services;
 @property (nonatomic, strong) NSMutableDictionary *pending;
 @property (nonatomic, strong) NSMutableDictionary *textTypes;
-@property (nonatomic, copy) NSString *historyArgument;
+@property (nonatomic, strong) NSMapTable *historyArguments;
+@property (nonatomic, copy) NSDictionary *lastValidation;
+@property (nonatomic, strong) NSMutableDictionary<NSString *, NSHashTable *> *instances;
+@property (nonatomic) NSTimeInterval lastRegistryLookup;
+@property (nonatomic, copy) NSString *lastFailure;
 @end
 
 @implementation DYYYIMService
@@ -38,10 +42,13 @@
 
 + (NSArray<NSDictionary *> *)unreadSharesForUsers:(NSArray<NSString *> *)userIDs error:(NSString **)error {
     NSString *account = [self accountID];
-    TIMXOConversationManager *manager = [[self shared].services objectForKey:@"conversations"];
-    TIMXOMessageManager *messages = [[self shared].services objectForKey:@"messages"];
+    if (!userIDs.count) return @[];
+    id sender = [[self shared].services objectForKey:@"sender"];
+    TIMXOConversationManager *manager = [self serviceForRole:@"conversations" root:[self value:sender key:@"sdkRoot"]];
+    TIMXOMessageManager *messages = nil;
     id root = [self value:manager key:@"r"];
-    if (!account.length || !manager || !messages || !root || [self value:messages key:@"r"] != root || ![self shared].historyArgument.length) {
+    messages = [self serviceForRole:@"messages" root:root];
+    if (!account.length || !manager || !messages || !root || [self value:messages key:@"r"] != root) {
         if (error) *error = @"本地消息服务尚未就绪，请先打开好友聊天再返回扫描";
         return @[];
     }
@@ -50,19 +57,46 @@
         if (error) *error = @"当前版本的会话读取入口不可用";
         return @[];
     }
+    NSString *historyKind = [[self shared].historyArguments objectForKey:messages];
     NSMutableArray *rows = [NSMutableArray array];
     NSMutableSet *seen = [NSMutableSet set];
     @try {
+        // 未观察到旧查询接口时，使用签名明确的时间查询。一次扫描只读一次，按会话 ID 分流。
+        NSArray *recent = nil;
+        if (!historyKind.length) {
+            if (![messages respondsToSelector:@selector(messagesBeforeTime:inTypes:limit:)]) {
+                if (error) *error = @"当前版本的本地消息查询入口不可用";
+                return @[];
+            }
+            id result = [messages messagesBeforeTime:NSDate.distantFuture.timeIntervalSince1970 inTypes:nil limit:2000];
+            if (![result isKindOfClass:NSArray.class]) {
+                if (error) *error = @"本地消息查询未返回可读取的列表";
+                return @[];
+            }
+            recent = result;
+        }
         for (NSString *peer in userIDs) {
             if (![peer isKindOfClass:NSString.class] || peer.longLongValue <= 0 || [peer isEqual:account]) continue;
             NSString *cid = [manager conversationIDFor1to1ChatWithOtherUserID:peer.longLongValue inbox:0];
             if (!cid.length || ![manager conversationExitsInDB:cid]) continue;
             TIMXOConversation *conv = [(id)convClass instanceWithRootObject:root identifier:cid];
-            if (conv.ownerID != account.longLongValue || [manager otherUserIDFor1to1ChatWithConversationID:cid] != peer.longLongValue) continue;
+            if (![self validateConversation:conv manager:manager account:account peer:peer identifier:cid]) {
+                [self shared].lastFailure = @"scan: participant validation failed";
+                if (error) *error = @"会话参与者未就绪，请稍后重试扫描";
+                return @[];
+            }
             unsigned long long unread = conv.unreadCount;
             if (!unread) continue;
-            id argument = [[self shared].historyArgument isEqual:@"identifier"] ? (id)cid : conv;
-            id result = [messages messagesInConversation:argument excludeMessageTypes:@[] limit:MIN(MAX(unread, 100ULL), 1000ULL)];
+            id argument = [historyKind isEqual:@"identifier"] ? (id)cid : conv;
+            id result = recent ? [recent filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(id object, NSDictionary *bindings) {
+                TIMXOMessage *message = object;
+                if (![message respondsToSelector:@selector(belongingConversationIdentifier)]) return NO;
+                return [message.belongingConversationIdentifier isEqual:cid];
+            }]] : [messages messagesInConversation:argument excludeMessageTypes:@[] limit:MIN(MAX(unread, 100ULL), 1000ULL)];
+            if (recent.count == 2000 && [result count] < unread) {
+                if (error) *error = @"近期消息较多，当前窗口未覆盖该好友全部未读消息，请进入好友聊天后再扫描";
+                return @[];
+            }
             if (![result isKindOfClass:NSArray.class]) continue;
             // 先按时间排序，避免底层返回顺序变化时取到旧的已读消息。
             NSArray *history = [result sortedArrayUsingComparator:^NSComparisonResult(TIMXOMessage *a, TIMXOMessage *b) {
@@ -100,6 +134,8 @@
     dispatch_once(&once, ^{
         instance = [self new];
         instance.services = [NSMapTable strongToWeakObjectsMapTable];
+        instance.instances = [NSMutableDictionary dictionary];
+        instance.historyArguments = [NSMapTable weakToStrongObjectsMapTable];
         instance.pending = [NSMutableDictionary dictionary];
         instance.textTypes = [NSMutableDictionary dictionary];
     });
@@ -117,10 +153,58 @@
         dispatch_async(dispatch_get_main_queue(), ^{ [self captureService:service role:role]; });
         return;
     }
-    [[self shared].services setObject:service forKey:role];
+    DYYYIMService *s = [self shared];
+    [s.services setObject:service forKey:role];
+    NSHashTable *instances = s.instances[role];
+    if (!instances) { instances = [NSHashTable weakObjectsHashTable]; s.instances[role] = instances; }
+    [instances addObject:service];
+}
+
++ (id)serviceForRole:(NSString *)role root:(id)root {
+    id last = [[self shared].services objectForKey:role];
+    if (!root || [self value:last key:@"r"] == root) return last;
+    for (id service in [self shared].instances[role].allObjects)
+        if ([self value:service key:@"r"] == root) return service;
+    return nil;
+}
+
++ (BOOL)validateConversation:(TIMXOConversation *)conversation manager:(TIMXOConversationManager *)manager
+                    account:(NSString *)account peer:(NSString *)peer identifier:(NSString *)cid {
+    if (!conversation || ![conversation.identifier isEqual:cid] ||
+        [manager otherUserIDFor1to1ChatWithConversationID:cid] != peer.longLongValue) return NO;
+    // ownerID 是会话所有者，不能用来判断登录账户。校验一对一会话的双方参与者。
+    NSDictionary *participants = conversation.participantsMap;
+    if (![participants isKindOfClass:NSDictionary.class]) participants = @{};
+    BOOL hasAccount = participants[account] != nil || participants[@(account.longLongValue)] != nil;
+    BOOL hasPeer = participants[peer] != nil || participants[@(peer.longLongValue)] != nil;
+    NSArray *parts = [cid componentsSeparatedByCharactersInSet:NSCharacterSet.decimalDigitCharacterSet.invertedSet];
+    BOOL cidHasBoth = [parts containsObject:account] && [parts containsObject:peer];
+    BOOL currentParticipant = conversation.isCurrentUserAParticipant;
+    [self shared].lastValidation = @{@"accountInParticipants":@(hasAccount), @"peerInParticipants":@(hasPeer),
+        @"identifierHasBothUsers":@(cidHasBoth), @"currentUserParticipates":@(currentParticipant)};
+    if (hasAccount && hasPeer) return YES;
+    // 部分本地会话尚未展开参与者表；仅接受 ID 明确包含双方且原生确认当前用户在会话内的情况。
+    return currentParticipant && cidHasBoth;
+}
+
++ (NSDictionary *)diagnostics {
+    NSMutableDictionary *result = [NSMutableDictionary dictionary];
+    for (NSString *role in @[@"contacts", @"conversations", @"messages", @"sender"]) {
+        result[role] = @([self shared].instances[role].allObjects.count);
+    }
+    result[@"observedHistoryManagers"] = @([self shared].historyArguments.count);
+    result[@"lastValidation"] = [self shared].lastValidation ?: @{};
+    result[@"lastFailure"] = [self shared].lastFailure ?: @"";
+    return result;
 }
 
 + (id)contactDatabase {
+    id cached = [[self shared].services objectForKey:@"contacts"];
+    if ([cached respondsToSelector:@selector(currentDataBaseUid)] &&
+        [cached respondsToSelector:@selector(fetchFriendUsersWithLimits:readScene:)]) return cached;
+    NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
+    if (now - [self shared].lastRegistryLookup < 2) return cached;
+    [self shared].lastRegistryLookup = now;
     // 使用抖音自己的服务容器获取已配置的联系人数据库，而不是构造新实例。
     Class centerClass = NSClassFromString(@"HTSServiceCenter");
     Class databaseClass = NSClassFromString(@"AWEIMUserDBManager");
@@ -199,7 +283,7 @@
     if (!kind) return;
     dispatch_async(dispatch_get_main_queue(), ^{
         [self captureService:manager role:@"messages"];
-        [self shared].historyArgument = kind;
+        [[self shared].historyArguments setObject:kind forKey:manager];
     });
 }
 
@@ -228,13 +312,13 @@
         dispatch_async(dispatch_get_main_queue(), ^{ [self sendText:text toUserID:userID completion:completion]; });
         return;
     }
-    void (^fail)(NSString *) = ^(NSString *reason) { if (completion) completion(NO, reason); };
+    void (^fail)(NSString *) = ^(NSString *reason) { [self shared].lastFailure = reason; if (completion) completion(NO, reason); };
     NSString *account = [self accountID];
     if (!account.length || !text.length || !userID.length || userID.longLongValue <= 0) { fail(@"账户、用户 ID 或消息内容未就绪"); return; }
     NSString *stateKey = [self stateKey:userID];
     if ([self dailyStateForUserID:userID].length) { fail(@"该好友今天已有发送或待确认记录，不重复发送"); return; }
-    TIMXOConversationManager *manager = [[self shared].services objectForKey:@"conversations"];
     IESIMMessageSender *sender = [[self shared].services objectForKey:@"sender"];
+    TIMXOConversationManager *manager = [self serviceForRole:@"conversations" root:[self value:sender key:@"sdkRoot"]];
     if (!manager || !sender || ![manager respondsToSelector:@selector(conversationIDFor1to1ChatWithOtherUserID:inbox:)] || ![sender respondsToSelector:@selector(sendMessage:)]) { fail(@"消息服务尚未初始化，请先打开一次好友聊天"); return; }
     NSString *cid = [manager conversationIDFor1to1ChatWithOtherUserID:userID.longLongValue inbox:0];
     if (![cid isKindOfClass:NSString.class] || !cid.length || ![manager conversationExitsInDB:cid]) { fail(@"没有找到已有会话，请先打开一次该好友聊天"); return; }
@@ -244,14 +328,15 @@
     Class convClass = NSClassFromString(@"TIMXOConversation");
     if (![convClass respondsToSelector:@selector(instanceWithRootObject:identifier:)]) { fail(@"当前版本没有可用的会话读取入口"); return; }
     TIMXOConversation *conversation = [(id)convClass instanceWithRootObject:root identifier:cid];
-    if (![conversation respondsToSelector:@selector(ownerID)] || conversation.ownerID != account.longLongValue || [manager otherUserIDFor1to1ChatWithConversationID:cid] != userID.longLongValue) { fail(@"会话账户或接收人不匹配，已停止发送"); return; }
+    if (![self validateConversation:conversation manager:manager account:account peer:userID identifier:cid]) { fail(@"会话账户或接收人不匹配，已停止发送"); return; }
     TIMXOMessage *last = conversation.lastMessage;
     NSDictionary *content = last.content;
     NSNumber *type = [self shared].textTypes[account];
     // 参数是 ID 还是会话对象，必须先观察抖音自己的调用，不能根据 id 类型猜测。
-    TIMXOMessageManager *messages = [[self shared].services objectForKey:@"messages"];
-    if (messages && [self value:messages key:@"r"] == root && [self shared].historyArgument.length) {
-        id argument = [[self shared].historyArgument isEqual:@"identifier"] ? (id)cid : conversation;
+    TIMXOMessageManager *messages = [self serviceForRole:@"messages" root:root];
+    NSString *historyKind = messages ? [[self shared].historyArguments objectForKey:messages] : nil;
+    if (messages && [self value:messages key:@"r"] == root && historyKind.length) {
+        id argument = [historyKind isEqual:@"identifier"] ? (id)cid : conversation;
         @try {
             id history = [messages messagesInConversation:argument excludeMessageTypes:@[] limit:1000];
             if ([history isKindOfClass:NSArray.class]) {
