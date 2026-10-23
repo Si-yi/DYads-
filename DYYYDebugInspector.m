@@ -1,4 +1,5 @@
 #import "DYYYDebugInspector.h"
+#import "DYYYDebugAppearance.h"
 #import "DYYYGlassTabBar.h"
 #import "DYYYIMService.h"
 #import "DYYYFriendShareService.h"
@@ -55,6 +56,10 @@ static void DYYYDebugKeepOnlyOverlay(UIWindow *window, UIButton *keep) {
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
     DYYYDebugInspectorRefreshOverlay();
+}
+- (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection {
+    [super traitCollectionDidChange:previousTraitCollection];
+    [DYYYDebugAppearance refreshPresentedControllers];
 }
 - (BOOL)shouldAutorotate { return YES; }
 - (UIInterfaceOrientationMask)supportedInterfaceOrientations { return UIInterfaceOrientationMaskAll; }
@@ -272,6 +277,7 @@ static void DYYYDebugStopRecording(void) {
 static void DYYYDebugPresentAlert(UIViewController *presenter, NSString *title, NSString *message) {
     if (!presenter) return;
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
+    [DYYYDebugAppearance prepareController:alert sourceWindow:presenter.viewIfLoaded.window];
     [alert addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
     [presenter presentViewController:alert animated:YES completion:nil];
 }
@@ -328,7 +334,7 @@ static NSData *DYYYDebugLightScreenshot(NSData *png) {
     return UIImageJPEGRepresentation(image, 0.70);
 }
 
-static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *window, BOOL detailed, BOOL messageInterfaces) {
+static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *window, BOOL detailed) {
     if (!presenter || !window) return;
     DKDebugExportContext *context = DKDebugCaptureContext(window, CGPointZero, nil);
     NSString *base = [NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"DYYY_Debug_%@", NSUUID.UUID.UUIDString]];
@@ -346,13 +352,13 @@ static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *wi
       if (data && [data writeToFile:path atomically:YES]) [files addObject:path];
     };
     NSMutableDictionary *metadata = [DYYYDebugMetadata() mutableCopy];
-    metadata[@"exportMode"] = messageInterfaces ? @"message-interfaces" : (detailed ? @"complete" : @"lightweight");
+    metadata[@"exportMode"] = detailed ? @"complete" : @"lightweight";
     metadata[@"independentIM"] = [DYYYIMService diagnostics];
     metadata[@"friendShareFeed"] = [DYYYFriendShareService diagnostics];
     writeJSON(@"metadata.json", metadata);
-    if (messageInterfaces) {
+    if (detailed) {
         // 仅导出抖音自身的运行时声明，不执行联系人查询、消息读取或发送方法。
-        // 独立实现需要真实参数签名；普通页面树不包含底层 IM 服务接口。
+        // 接口声明合并进完整导出，轻量导出仅保留运行状态摘要。
         NSArray<NSString *> *priority = @[
             @"AWEIMFeedVideoCachePool", @"AWEIMUserDBManager", @"AWEIMUserManager", @"AWEIMSDKManager", @"AWEIMService",
             @"TIMXOSendMessage", @"TIMXSenderMessageTemplate", @"TIMXOMessageManager",
@@ -478,6 +484,7 @@ static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *wi
       dispatch_async(dispatch_get_main_queue(), ^{
         if (!success) { DYYYDebugPresentAlert(presenter, @"调试导出失败", zipError.localizedDescription ?: @"无法创建 ZIP"); return; }
         UIActivityViewController *share = [[UIActivityViewController alloc] initWithActivityItems:@[[NSURL fileURLWithPath:zipPath]] applicationActivities:nil];
+        [DYYYDebugAppearance prepareController:share sourceWindow:window];
         UIPopoverPresentationController *popover = share.popoverPresentationController;
         if (popover) { popover.sourceView = presenter.view; popover.sourceRect = CGRectMake(CGRectGetMidX(presenter.view.bounds), CGRectGetMidY(presenter.view.bounds), 1, 1); }
         [presenter presentViewController:share animated:YES completion:nil];
@@ -489,20 +496,20 @@ static void DYYYDebugShowActions(UIWindow *window) {
     UIViewController *presenter = DKDebugTopPresenter(window);
     if (!presenter) return;
     UIAlertController *menu = [UIAlertController alertControllerWithTitle:@"DYYY 调试工具" message:DYYYDebugRecording ? @"正在记录首页刷新、模型切换和页面状态。出现问题后停止并导出。" : @"手动开始记录，复现问题后停止并导出。每段最多保存 12000 个事件，超出数量会写入报告。" preferredStyle:UIAlertControllerStyleActionSheet];
+    [DYYYDebugAppearance prepareController:menu sourceWindow:window];
     if (DYYYDebugRecording) {
         [menu addAction:[UIAlertAction actionWithTitle:@"停止记录并导出（轻量）" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
             DYYYDebugStopRecording();
-            DYYYDebugExportCurrentPage(presenter, window, NO, NO);
+            DYYYDebugExportCurrentPage(presenter, window, NO);
         }]];
     } else {
         [menu addAction:[UIAlertAction actionWithTitle:@"开始记录（覆盖上一段）" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { DYYYDebugStartRecording(window); }]];
         if (DYYYDebugStoppedAt) {
-            [menu addAction:[UIAlertAction actionWithTitle:@"重新导出上次记录（轻量）" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { DYYYDebugExportCurrentPage(presenter, window, NO, NO); }]];
+            [menu addAction:[UIAlertAction actionWithTitle:@"重新导出上次记录（轻量）" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { DYYYDebugExportCurrentPage(presenter, window, NO); }]];
         }
     }
-    [menu addAction:[UIAlertAction actionWithTitle:@"导出当前页（轻量）" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { DYYYDebugExportCurrentPage(presenter, window, NO, NO); }]];
-    [menu addAction:[UIAlertAction actionWithTitle:@"导出消息与分享接口（独立开发）" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { DYYYDebugExportCurrentPage(presenter, window, NO, YES); }]];
-    [menu addAction:[UIAlertAction actionWithTitle:@"完整导出（含图层和类头文件）" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { DYYYDebugExportCurrentPage(presenter, window, YES, NO); }]];
+    [menu addAction:[UIAlertAction actionWithTitle:@"导出当前页（轻量）" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { DYYYDebugExportCurrentPage(presenter, window, NO); }]];
+    [menu addAction:[UIAlertAction actionWithTitle:@"完整导出（含图层和类头文件）" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { DYYYDebugExportCurrentPage(presenter, window, YES); }]];
     [menu addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
     UIPopoverPresentationController *popover = menu.popoverPresentationController;
     if (popover) { popover.sourceView = presenter.view; popover.sourceRect = CGRectMake(CGRectGetMidX(presenter.view.bounds), CGRectGetMidY(presenter.view.bounds), 1, 1); }
@@ -651,7 +658,10 @@ void DYYYDebugInspectorInstall(void) {
               DYYYDebugSamplePage();
           }];
       }
-      [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) { DYYYDebugInspectorRefreshOverlay(); }];
+      [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
+          [DYYYDebugAppearance refreshPresentedControllers];
+          DYYYDebugInspectorRefreshOverlay();
+      }];
     });
     dispatch_async(dispatch_get_main_queue(), ^{ DYYYDebugInspectorRefreshOverlay(); });
 }

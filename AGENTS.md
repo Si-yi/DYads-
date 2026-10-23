@@ -3,6 +3,7 @@
 本项目是基于 Theos/Logos 的抖音 UI 调整 Tweak。当前仓库 README 标注仅在 **抖音 36.5.0** 版本测试；回答需求时请以仓库现状为准，不要沿用旧版本描述。
 
 ## 工程关键点
+- **分享标签定位与调试弹层**：分享标签以 `AWEPlayInteractionAuthorElementProtocol` 对应的可见昵称行定位，保持昵称上方 6 点间距，不把整栈预留行计入；深色磨砂样式保持原样。`DYYYDebugAppearance.(h/m)` 只管理调试菜单、导出错误提示和文件分享面板，主题取 `UIWindowScene.traitCollection`，在系统外观变化/回到前台时更新，不继承抖音主窗口的固定浅色。弱引用跟踪弹层，不改全局窗口。消息/分享接口声明并入完整导出，普通轻量包仍包含 `independentIM` 和 `friendShareFeed` 状态摘要。
 - **评论长按菜单主题**：`DYYYCommentMenuTheme.(h/m)` 与 `DYYYCommentMenuThemeHooks.xm` 只绑定原生 `CommentLongPressPanelSheet`，在创建菜单及显示前同步抖音主题，并用同一 trait 执行原生颜色构造。仅在评论毛玻璃或悬浮输入开启时接管，关闭后恢复；不得强制修改主窗口、键盘或所有分享面板的主题。录制事件 `commentLongPressMenuThemeApplied` 记录应用后的主题，真机效果需安装确认。
 - **合集整行显隐**：`DYYYCollectionRows.(h/m)` 适配 DYK 的原生元素规则与布局顺序：识别 `AWEPlayInteractionNewMixVideoInfoElement` 和 `AWETemplateNewBottomElement/playlet_bar`，在元素栈原生布局前同步，`AWEBaseElementView.setHidden:` 只合并原生请求与隐藏规则。单项开关的模板分类在布局入口读取已存在的交互模型并缓存；显隐回调不得查找/创建容器、读取控制器模型、遍历文案、执行布局或发起刷新。行与栈均有重入保护，不添加全局偏好通知布局循环；不拦截 `mixInfo/playletInfoModel` 删除模型数据。保留 DYK 来源和 MIT 声明。
 - **好友分享来源与聊天视频**：`DYYYFriendShareBadgeView.(h/m)` 在首页文案栈上方展示头像、好友名及「分享给你」，使用深色薄磨砂材质；来源按账户与视频 ID 保存，最多 256 条，切换模型清除旧标签，不能修改视频原文案。`DYYYChatVideoLayout.(h/m)` 仅处理私信视频详情页：按原生快捷回复栏的实际高度补齐 Cell 与播放器，交互层继续停在回复栏上沿；键盘/横屏不补高，背景和受管 Frame 可在关闭全屏后恢复，禁止用首页 Tab Bar 高度猜测私信栏尺寸。

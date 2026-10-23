@@ -105,6 +105,19 @@ static char kDYYYFriendShareBadgeKey;
     }
     return nil;
 }
++ (UIView *)authorRowInStack:(UIView *)stack {
+    // 按原生作者协议识别昵称行，不能把上方分享/标签行的预留高度算进间距。
+    Protocol *authorProtocol = NSProtocolFromString(@"AWEPlayInteractionAuthorElementProtocol");
+    Class rowClass = NSClassFromString(@"AWEBaseElementView");
+    if (!authorProtocol || !rowClass) return nil;
+    for (UIView *row in stack.subviews) {
+        if (![row isKindOfClass:rowClass] || row.hidden || row.alpha <= 0.01 || CGRectIsEmpty(row.bounds)) continue;
+        id element = nil;
+        @try { element = [row valueForKey:@"element"]; } @catch (__unused NSException *exception) { continue; }
+        if ([element conformsToProtocol:authorProtocol]) return row;
+    }
+    return nil;
+}
 + (void)resetForController:(UIViewController *)controller {
     if (!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(), ^{ [self resetForController:controller]; }); return; }
     DYYYFriendShareBadgeView *badge = objc_getAssociatedObject(controller, &kDYYYFriendShareBadgeKey);
@@ -136,7 +149,9 @@ static char kDYYYFriendShareBadgeKey;
     }
     badge.anchor = anchor;
     [badge setSource:source];
-    CGRect caption = [anchor convertRect:anchor.bounds toView:controller.view];
+    UIView *authorRow = [self authorRowInStack:anchor];
+    UIView *captionAnchor = authorRow ?: anchor;
+    CGRect caption = [captionAnchor convertRect:captionAnchor.bounds toView:controller.view];
     CGFloat x = MAX(12, CGRectGetMinX(caption));
     CGFloat maxWidth = MIN(300, CGRectGetWidth(controller.view.bounds) - x - 84);
     CGSize size = [badge sizeThatFits:CGSizeMake(MAX(0, maxWidth), 30)];
