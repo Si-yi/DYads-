@@ -6,7 +6,6 @@
 #import "DYYYSettingsHelper.h"
 #import "DYYYUtils.h"
 #import <objc/message.h>
-#import <dlfcn.h>
 
 static NSString *const kDYYYAutoMessageEnabled = @"DYYYAutoMessageEnabled";
 static NSString *const kDYYYAutoMessageConfigs = @"DYYYAutoMessageConfigs";
@@ -23,47 +22,6 @@ static NSString *const kDYYYFriendShareFriends = @"DYYYFriendShareFeedFriends";
 static NSString *const kDYYYFriendShareWatchedIDs = @"DYYYFriendShareWatchedItemIDs";
 
 @implementation DYYYAutoMessage
-
-#pragma mark - 原版插件入口
-
-+ (void)showOriginalSettingsFrom:(UIViewController *)presenter friendShares:(BOOL)friendShares {
-    if (!NSThread.isMainThread) {
-        dispatch_async(dispatch_get_main_queue(), ^{ [self showOriginalSettingsFrom:presenter friendShares:friendShares]; });
-        return;
-    }
-    // 此无参入口由 AutoMessagePlugin 导出，原版在内部查找当前导航控制器。
-    // 保留它的设置模型、好友异步通知与持久化，不再维护另一套同名配置。
-    void (*openSettings)(void) = (void (*)(void))dlsym(RTLD_DEFAULT, "AMPushAutoMessageNativeSettingsPage");
-    if (!NSClassFromString(@"AutoMessageSettingsStore") || !openSettings) {
-        [DYYYUtils showToast:@"未找到原版自动消息服务，请保留并加载 AutoMessagePlugin 插件"];
-        return;
-    }
-    UIViewController *previous = topView();
-    openSettings();
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIViewController *page = topView();
-        if (!page || page == previous || ![page isKindOfClass:NSClassFromString(@"AWESettingBaseViewController")]) return;
-        AWESettingBaseViewController *settings = (AWESettingBaseViewController *)page;
-        id model = [settings viewModel];
-        if (![model respondsToSelector:@selector(sectionDataArray)]) return;
-        NSArray *sections = [(AWESettingsViewModel *)model sectionDataArray];
-        NSString *wanted = friendShares ? @"选择分享来源好友" : @"自动消息设置";
-        [settings.view layoutIfNeeded];
-        UITableView *table = settings.tableView;
-        for (NSUInteger sectionIndex = 0; sectionIndex < sections.count; sectionIndex++) {
-            AWESettingSectionModel *section = sections[sectionIndex];
-            for (NSUInteger rowIndex = 0; rowIndex < section.itemArray.count; rowIndex++) {
-                AWESettingItemModel *item = section.itemArray[rowIndex];
-                if (![item.title isEqualToString:wanted]) continue;
-                if (sectionIndex < (NSUInteger)table.numberOfSections && rowIndex < (NSUInteger)[table numberOfRowsInSection:sectionIndex]) {
-                    [table scrollToRowAtIndexPath:[NSIndexPath indexPathForRow:rowIndex inSection:sectionIndex]
-                                atScrollPosition:UITableViewScrollPositionMiddle animated:NO];
-                }
-                return;
-            }
-        }
-    });
-}
 
 #pragma mark - 配置存储
 
