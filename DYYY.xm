@@ -26,7 +26,6 @@
 #import "DYYYConstants.h"
 #import "DYYYDebugInspector.h"
 #import "DYYYChatVideoLayout.h"
-#import "DYYYCollectionVisibility.h"
 
 extern "C" void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed);
 #import "DYYYFloatClearButton.h"
@@ -9168,7 +9167,23 @@ static NSHashTable *processedParentViews = nil;
 	%orig;
 }
 
-// 合集入口改由 DYYYCollectionVisibility 按原生底部元素隐藏，保留模型以供选集与连播使用。
+// 屏蔽底部合集（只对推荐页生效）
+- (id)mixInfo {
+	BOOL DYYYHideTemplateVideo = DYYYGetBool(@"DYYYHideTemplateVideo");
+	if (DYYYHideTemplateVideo && [self.referString isEqualToString:@"homepage_hot"]) {
+		return nil;
+	}
+	return %orig;
+}
+
+// 屏蔽短剧信息（复用屏蔽合集开关，只对推荐页生效）
+- (id)playletInfoModel {
+	BOOL DYYYHideTemplatePlaylet = DYYYGetBool(@"DYYYHideTemplatePlaylet");
+	if (DYYYHideTemplatePlaylet && [self.referString isEqualToString:@"homepage_hot"]) {
+		return nil;
+	}
+	return %orig;
+}
 
 // 屏蔽锚点信息
 - (id)anchorInfo {
@@ -12755,27 +12770,6 @@ static Class GuideViewClass = nil;
 static Class MuteViewClass = nil;
 static Class TagViewClass = nil;
 
-%hook AWEBaseElementView
-- (void)setHidden:(BOOL)hidden {
-    %orig([DYYYCollectionVisibility hiddenForRow:self requested:hidden]);
-}
-- (void)layoutSubviews {
-    %orig;
-    [DYYYCollectionVisibility applyRow:self];
-}
-%end
-
-%hook AWEAntiAddictedNoticeBarView
-- (void)layoutSubviews {
-    %orig;
-    [DYYYCollectionVisibility applyBar:self];
-}
-- (void)didMoveToSuperview {
-    %orig;
-    [DYYYCollectionVisibility applyBar:self];
-}
-%end
-
 %hook AWEElementStackView
 
 - (void)setAlpha:(CGFloat)alpha {
@@ -12900,8 +12894,6 @@ static Class TagViewClass = nil;
 
 - (void)layoutSubviews {
     %orig;
-
-    [DYYYCollectionVisibility applyStack:self];
 
     UIViewController *viewController = [DYYYUtils firstAvailableViewControllerFromView:self];
 
