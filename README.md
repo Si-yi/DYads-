@@ -7,7 +7,9 @@
   <img src="https://img.shields.io/badge/App-%E6%8A%96%E9%9F%B3%2036.5.0-black?style=flat&labelColor=black" />
 </p>
 
-# DYYY
+# DYads-
+
+基于 DYYY 的个人整合与修改版本，由 [Lies（Si-yi）](https://github.com/Si-yi) 维护。部分功能移植自 DYKiller，仅供个人使用与学习，按自身需求维护。
 
 用于调整抖音 UI 的 Theos/Logos Tweak，仅在 **36.5.0 版本** 中测试。  
 **仅供学习交流，禁止用于商业用途。**
@@ -15,6 +17,7 @@
 ## 目录
 - [功能亮点](#功能亮点)
 - [使用方式](#使用方式)
+- [维护与致谢](#维护与致谢)
 - [贡献者](#贡献者)
 - [远程配置](#远程配置)
 - [解析下载接口](#解析下载接口)
@@ -28,7 +31,17 @@
 
 ## 使用方式
 - 打开抖音后 **双指长按** 进入设置
-- 或在 **抖音设置** 中找到 DYYY 入口
+- 或在 **抖音设置** 中找到 DYads- 入口
+
+## 维护与致谢
+
+- 本版本维护与整合：**Lies**，仓库：[Si-yi/DYads-](https://github.com/Si-yi/DYads-)。
+- 原项目：[DYYY](https://github.com/huami1314/DYYY)，原作者 **huami**。
+- 复刻上游：[Wtrwx/DYYY](https://github.com/Wtrwx/DYYY)，感谢其维护和二次开发。
+- 部分功能移植自 **DYKiller**，感谢 **Hierarch** 及相关贡献者；对应文件保留来源、版权和许可声明。
+- 自动消息相关界面与交互参考 **小小雪糕（Xuegao）** 的自动消息插件。
+
+本版本保留原项目贡献者名单及许可证，具体模块的署名和许可见对应源码文件。
 
 ## 贡献者
 

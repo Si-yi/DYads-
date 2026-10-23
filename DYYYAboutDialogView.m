@@ -80,6 +80,11 @@
             [attributedString addAttribute:NSLinkAttributeName value:@"https://t.me/vita_app" range:telegramRange];
         }
 
+        NSRange maintainedGithubRange = [message rangeOfString:@"本版本仓库 Si-yi/DYads-"];
+        if (maintainedGithubRange.location != NSNotFound) {
+            [attributedString addAttribute:NSLinkAttributeName value:@"https://github.com/Si-yi/DYads-" range:maintainedGithubRange];
+        }
+
         NSRange githubRange = [message rangeOfString:@"仓库地址 Wtrwx/DYYY"];
         if (githubRange.location != NSNotFound) {
             [attributedString addAttribute:NSLinkAttributeName value:@"https://github.com/Wtrwx/DYYY" range:githubRange];

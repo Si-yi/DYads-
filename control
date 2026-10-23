@@ -1,12 +1,12 @@
 Package: com.huami.dyyy
-Name: DYYY
+Name: DYads-
 Version: 2.2-9
-Description: 仅供学习交流，请在 24 小时内自觉删除。
-Homepage: https://github.com/huami1314/DYYY
+Description: 基于 DYYY 的个人整合与修改版本，由 Lies 维护，仅供学习交流。
+Homepage: https://github.com/Si-yi/DYads-
 Section: Tweaks
 Depends: firmware (>= 5.0), mobilesubstrate
 Priority: optional
-Maintainer: huami
+Maintainer: Lies
 Author: huami
 Architecture: iphoneos-arm
 Icon: https://Mieing.Github.io/repo/file/TikTok.png

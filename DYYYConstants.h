@@ -1,8 +1,8 @@
 #ifndef DYYYConstants_h
 #define DYYYConstants_h
 
-#define DYYY_NAME @"DYYY"
-#define DYYY_SETTINGS_NAME @"DYYY设置"
+#define DYYY_NAME @"DYads-"
+#define DYYY_SETTINGS_NAME @"DYads-设置"
 
 #define DYYY_VERSION @"2.2-9"
 

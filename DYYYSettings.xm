@@ -356,7 +356,7 @@ static UIColor *DYYYSettingsSearchPlaceholderColor(BOOL usesLightBackground) {
     self.searchTextField.autocorrectionType = UITextAutocorrectionTypeNo;
     self.searchTextField.spellCheckingType = UITextSpellCheckingTypeNo;
     self.searchTextField.delegate = self;
-    self.searchTextField.accessibilityLabel = @"DYYY设置搜索";
+    self.searchTextField.accessibilityLabel = @"DYads-设置搜索";
 
     UIView *leftView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 38, 30)];
     self.leftIconView = [[UIImageView alloc] initWithFrame:CGRectMake(14, 5, 18, 18)];
@@ -476,7 +476,7 @@ static UIColor *DYYYSettingsSearchPlaceholderColor(BOOL usesLightBackground) {
 
         AWESettingItemModel *item = entry[@"item"];
         DYYYRefreshSearchItemValue(item);
-        NSString *path = entry[@"path"] ?: @"DYYY";
+        NSString *path = entry[@"path"] ?: DYYY_NAME;
         NSMutableArray *items = groupedItems[path];
         if (!items) {
             items = [NSMutableArray array];
@@ -783,7 +783,7 @@ static void DYYYBuildSettingsSearchIndexIfNeeded(NSArray<AWESettingItemModel *> 
         UIButton *dyyyBtn = [UIButton buttonWithType:UIButtonTypeSystem];
         dyyyBtn.tag = 232323;
         dyyyBtn.accessibilityLabel = @"DYYYSettingsButton";
-        [dyyyBtn setTitle:@"DYYY" forState:UIControlStateNormal];
+        [dyyyBtn setTitle:DYYY_NAME forState:UIControlStateNormal];
 
         UIColor *titleColor = [DYYYUtils isDarkMode] ? [UIColor whiteColor] : [UIColor blackColor];
         [dyyyBtn setTitleColor:titleColor forState:UIControlStateNormal];
@@ -834,7 +834,7 @@ static void DYYYBuildSettingsSearchIndexIfNeeded(NSArray<AWESettingItemModel *> 
         UIButton *dyyyBtn = [UIButton buttonWithType:UIButtonTypeSystem];
         dyyyBtn.tag = 232323;
         dyyyBtn.accessibilityLabel = @"DYYYSettingsButton";
-        [dyyyBtn setTitle:@"DYYY" forState:UIControlStateNormal];
+        [dyyyBtn setTitle:DYYY_NAME forState:UIControlStateNormal];
 
         UIColor *titleColor = [DYYYUtils isDarkMode] ? [UIColor whiteColor] : [UIColor blackColor];
         [dyyyBtn setTitleColor:titleColor forState:UIControlStateNormal];
@@ -3858,10 +3858,13 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
     aboutItem.colorStyle = 0;
     aboutItem.isEnable = YES;
     aboutItem.cellTappedBlock = ^{
-      [DYYYSettingsHelper showAboutDialog:@"关于DYYY"
+      [DYYYSettingsHelper showAboutDialog:@"关于 DYads-"
                                   message:@"版本: " DYYY_VERSION @"\n\n"
-                                          @"感谢使用DYYY\n\n"
-                                          @"感谢huami开源\n\n"
+                                          @"本版本维护与整合：Lies\n\n"
+                                          @"基于 DYYY 的个人整合与修改版本\n\n"
+                                          @"本版本仓库 Si-yi/DYads-\n\n"
+                                          @"部分功能移植自 DYKiller，感谢原作者与贡献者\n\n"
+                                          @"原项目作者：huami，感谢开源\n\n"
                                           @"@维他入我心 基于DYYY二次开发\n\n"
                                           @"感谢huami group中群友的支持赞助\n\n"
                                           @"Telegram @huamidev\n\n"
@@ -3924,7 +3927,7 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
     };
     NSMutableArray *pluginToolsSections = [NSMutableArray array];
     [pluginToolsSections addObject:[DYYYSettingsHelper createSectionWithTitle:@"调试" items:@[ debugToggle ]]];
-    AWESettingItemModel *pluginToolsEntry = DYYYMakePageEntry(rootVC, @"插件工具", @"ic_gearsimplify_outlined_20", @"DYYY · 插件工具", pluginToolsSections);
+    AWESettingItemModel *pluginToolsEntry = DYYYMakePageEntry(rootVC, @"插件工具", @"ic_gearsimplify_outlined_20", @"DYads- · 插件工具", pluginToolsSections);
 
 
 
@@ -3958,14 +3961,14 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
                                       footerTitle:@"备份插件设置和自定义图标。恢复前会自动保存当前状态，可以撤销上次恢复。"
                                             items:[backupToolItems subarrayWithRange:NSMakeRange(0, 3)]],
         [DYYYSettingsHelper createSectionWithTitle:@"重置"
-                                      footerTitle:@"所有 DYYY 设置和自定义图标回到默认，重置前会自动创建可撤销的快照。"
+                                      footerTitle:@"所有 DYads- 设置和自定义图标回到默认，重置前会自动创建可撤销的快照。"
                                             items:[backupToolItems subarrayWithRange:NSMakeRange(3, 1)]]
     ];
-    AWESettingItemModel *backupToolsEntry = DYYYMakePageEntry(rootVC, @"备份工具", @"ic_memorycard_outlined_20", @"DYYY · 备份工具", backupToolSections);
+    AWESettingItemModel *backupToolsEntry = DYYYMakePageEntry(rootVC, @"备份工具", @"ic_memorycard_outlined_20", @"DYads- · 备份工具", backupToolSections);
 
-    AWESettingItemModel *authorInfoEntry = DYYYMakePageEntry(rootVC, @"作者信息", @"ic_personcircleclean_outlined_20", @"DYYY · 作者信息", @[ aboutSection ]);
+    AWESettingItemModel *authorInfoEntry = DYYYMakePageEntry(rootVC, @"关于与致谢", @"ic_personcircleclean_outlined_20", @"DYads- · 关于与致谢", @[ aboutSection ]);
     AWESettingSectionModel *pluginSection = [[%c(AWESettingSectionModel) alloc] init];
-    pluginSection.sectionHeaderTitle = @"DYYY";
+    pluginSection.sectionHeaderTitle = DYYY_NAME;
     pluginSection.sectionHeaderHeight = 40;
     pluginSection.sectionFooterTitle = @"本项目仅供学习、研究与测试使用，严禁用于商业用途或违法活动。使用者应自行遵守所在地法律法规及相关平台规则，并承担因使用、修改或分发本项目产生的风险与责任。项目作者及贡献者不对相关后果承担责任。";
     pluginSection.type = 0;
@@ -3980,7 +3983,7 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
     if (friendShareEntry.cellTappedBlock) friendShareEntry.cellTappedBlock();
     if (backupToolsEntry.cellTappedBlock) backupToolsEntry.cellTappedBlock();
     DYYYBuildingSettingsSearchIndex = wasBuildingSearchIndex;
-    DYYYRegisterSearchSections(@"DYYY · 作者信息", @[ aboutSection ]);
+    DYYYRegisterSearchSections(@"DYads- · 关于与致谢", @[ aboutSection ]);
 
     NSArray *rootSections = @[ mainSection, pluginSection ];
     viewModel.sectionDataArray = rootSections;
@@ -4032,7 +4035,7 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
         newSection.itemArray = @[ dyyyItem ];
         newSection.type = 0;
         newSection.sectionHeaderHeight = 40;
-        newSection.sectionHeaderTitle = @"DYYY";
+        newSection.sectionHeaderTitle = DYYY_NAME;
 
         NSMutableArray *newSections = [NSMutableArray arrayWithArray:originalSections];
         [newSections insertObject:newSection atIndex:0];
