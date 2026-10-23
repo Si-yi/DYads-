@@ -7,6 +7,10 @@
 @interface DYYYAutoMessage : NSObject
 + (NSMutableArray<NSMutableDictionary *> *)messageConfigs;
 + (void)saveMessageConfigs:(NSArray *)configs;
++ (NSString *)imageDirectory;
++ (void)resolveRecipient:(NSString *)input completion:(void (^)(NSDictionary *friend, NSString *error))completion;
++ (NSString *)renderMessageForConfig:(NSDictionary *)config;
++ (void)sendConfig:(NSDictionary *)config completion:(void (^)(BOOL success, NSString *reason))completion;
 + (void)editConfigFrom:(UIViewController *)root existing:(NSMutableDictionary *)existing completion:(void (^)(void))completion;
 + (BOOL)openNativeChatForUserID:(NSString *)userID message:(NSString *)message;
 + (void)loadMutualFriends:(void (^)(NSArray<NSDictionary *> *friends))completion;
@@ -16,4 +20,5 @@
 + (void)scanFriendSharesWithToast:(BOOL)showToast;
 
 @end
+
 

@@ -1,5 +1,6 @@
 #import "DYYYAutoMessagePanel.h"
 #import "DYYYAutoMessage.h"
+#import "DYYYAutoMessageEditor.h"
 #import "DYYYIMService.h"
 #import "DYYYSettingsHelper.h"
 #import "DYYYUtils.h"
@@ -292,7 +293,9 @@
             }
         }
     } else {
-        cell.detailTextLabel.text = row[@"message"];
+        NSInteger mode = [row[@"sendMode"] integerValue];
+        NSString *type = mode == 2 ? @"仅图片" : (mode == 1 ? @"文字＋图" : ([row[@"randomText"] boolValue] ? @"每日随机" : @"固定文字"));
+        cell.detailTextLabel.text = [NSString stringWithFormat:@"%@ · %@", type, mode == 2 ? [NSString stringWithFormat:@"%lu 张", (unsigned long)[row[@"imagePaths"] count]] : (row[@"message"] ?: @"")];
         UISwitch *toggle = [UISwitch new];
         toggle.tag = indexPath.row;
         toggle.on = [row[@"enabled"] boolValue];
@@ -341,7 +344,7 @@
         [DYYYSettingsHelper showTextInputAlert:@"消息内容" defaultText:@"[点火]" placeholder:@"为选中好友设置发送内容" onConfirm:^(NSString *text) {
             NSMutableArray *configs = [DYYYAutoMessage messageConfigs];
             NSMutableSet *existing = [NSMutableSet set];
-            for (NSDictionary *config in configs) [existing addObject:config[@"userID"]];
+            for (NSDictionary *config in configs) if ([config[@"ownerID"] isEqual:[DYYYIMService accountID]]) [existing addObject:config[@"userID"]];
             for (NSDictionary *friend in friends) {
                 if ([existing containsObject:friend[@"userID"]]) continue;
                 [configs addObject:[@{ @"userID":friend[@"userID"], @"ownerID":[DYYYIMService accountID], @"name":friend[@"name"], @"message":text ?: @"", @"enabled":@YES } mutableCopy]];
@@ -356,7 +359,7 @@
     for (NSDictionary *row in self.configs) if ([row[@"enabled"] boolValue] && [row[@"ownerID"] isEqual:[DYYYIMService accountID]]) { first = row; break; }
     if (!first) { [DYYYUtils showToast:@"请先添加并启用当前账户配置，旧配置请编辑保存一次"]; return; }
     [DYYYUtils showToast:@"正在请求抖音发送，等待发送回执"];
-    [DYYYIMService sendText:first[@"message"] toUserID:first[@"userID"] completion:^(__unused BOOL success, NSString *reason) {
+    [DYYYAutoMessage sendConfig:first completion:^(__unused BOOL success, NSString *reason) {
         [DYYYUtils showToast:reason];
     }];
 }
@@ -374,7 +377,7 @@
 - (void)closePanel { [self dismissViewControllerAnimated:YES completion:nil]; }
 - (void)showHelp {
     if (!self.pickingFriends) {
-        [DYYYUtils showToast:@"点击配置修改，左滑删除。测试会实际发送给第一位启用好友；当天已有发送或待确认记录时不重复发送。旧配置请保存一次以绑定当前账户。"];
+        [DYYYAutoMessageEditor showHelpFrom:self];
         return;
     }
     self.loadingFriends = YES;

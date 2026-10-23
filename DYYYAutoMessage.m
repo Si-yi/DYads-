@@ -1,11 +1,13 @@
 #import "DYYYAutoMessage.h"
 #import "DYYYAutoMessagePanel.h"
+#import "DYYYAutoMessageEditor.h"
 #import "DYYYIMService.h"
 #import "DYYYFriendShareService.h"
 
 #import "AwemeHeaders.h"
 #import "DYYYSettingsHelper.h"
 #import "DYYYUtils.h"
+#include <stdint.h>
 
 static NSString *const kDYYYAutoMessageEnabled = @"DYYYAutoMessageEnabled";
 static NSString *const kDYYYAutoMessageConfigs = @"DYYYAutoMessageConfigs";
@@ -34,25 +36,43 @@ static NSString *const kDYYYFriendShareFriends = @"DYYYFriendShareFeedFriends";
             if (![row isKindOfClass:NSDictionary.class]) continue;
             NSString *userID = [row[@"userID"] isKindOfClass:NSString.class] ? row[@"userID"] : @"";
             if (userID.length == 0) continue;
-            [configs addObject:[@{
+            NSMutableDictionary *config = [row mutableCopy];
+            [config addEntriesFromDictionary:@{
                 @"userID" : userID,
                 @"name" : [row[@"name"] isKindOfClass:NSString.class] ? row[@"name"] : userID,
                 @"ownerID" : [row[@"ownerID"] isKindOfClass:NSString.class] ? row[@"ownerID"] : @"",
                 @"message" : [row[@"message"] isKindOfClass:NSString.class] ? row[@"message"] : @"",
                 @"enabled" : @([row[@"enabled"] respondsToSelector:@selector(boolValue)] ? [row[@"enabled"] boolValue] : YES)
-            } mutableCopy]];
+            }];
+            NSInteger mode = [row[@"sendMode"] respondsToSelector:@selector(integerValue)] ? [row[@"sendMode"] integerValue] : 0;
+            config[@"sendMode"] = @(MIN(2, MAX(0, mode)));
+            config[@"randomText"] = @([row[@"randomText"] respondsToSelector:@selector(boolValue)] && [row[@"randomText"] boolValue]);
+            NSMutableArray *images = [NSMutableArray array];
+            if ([row[@"imagePaths"] isKindOfClass:NSArray.class]) for (id path in row[@"imagePaths"])
+                if ([path isKindOfClass:NSString.class] && [[path stringByStandardizingPath] hasPrefix:[[self imageDirectory] stringByAppendingString:@"/"]]) [images addObject:[path stringByStandardizingPath]];
+            config[@"imagePaths"] = images;
+            [configs addObject:config];
         }
     }
     return configs;
 }
 
 + (void)saveMessageConfigs:(NSArray *)configs {
+    NSArray *previous = [[self defaults] arrayForKey:kDYYYAutoMessageConfigs] ?: @[];
     NSMutableArray *saved = [NSMutableArray array];
     for (NSDictionary *row in configs) {
         NSMutableDictionary *config = [row mutableCopy];
         [saved addObject:config];
     }
     [[self defaults] setObject:saved forKey:kDYYYAutoMessageConfigs];
+    // 仅清理原配置引用过且已不再使用的托管图片，不碰图库原文件。
+    NSMutableSet *referenced = [NSMutableSet set];
+    for (NSDictionary *config in saved) if ([config[@"imagePaths"] isKindOfClass:NSArray.class]) [referenced addObjectsFromArray:config[@"imagePaths"]];
+    NSString *prefix = [[self imageDirectory] stringByAppendingString:@"/"];
+    for (NSDictionary *config in previous) for (id path in ([config[@"imagePaths"] isKindOfClass:NSArray.class] ? config[@"imagePaths"] : @[])) {
+        if ([path isKindOfClass:NSString.class] && [[path stringByStandardizingPath] hasPrefix:prefix] && ![referenced containsObject:path])
+            [NSFileManager.defaultManager removeItemAtPath:path error:nil];
+    }
 }
 
 + (NSString *)todayKey {
@@ -60,6 +80,162 @@ static NSString *const kDYYYFriendShareFriends = @"DYYYFriendShareFeedFriends";
     formatter.locale = [[NSLocale alloc] initWithLocaleIdentifier:@"en_US_POSIX"];
     formatter.dateFormat = @"yyyy-MM-dd";
     return [formatter stringFromDate:[NSDate date]];
+}
+
+#pragma mark - 配置解析与文字模板
+
++ (NSString *)imageDirectory {
+    NSString *base = NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES).firstObject;
+    return [base stringByAppendingPathComponent:@"DYYY/AutoMessageImages"];
+}
+
++ (void)resolveRecipient:(NSString *)input completion:(void (^)(NSDictionary *, NSString *))completion {
+    NSString *account = [DYYYIMService accountID];
+    NSString *query = [input stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if (!account.length) { completion(nil, @"登录账户尚未就绪"); return; }
+    if ([query containsString:@":"]) {
+        NSArray *parts = [query componentsSeparatedByString:@":"];
+        BOOL full = parts.count == 4 && [parts[0] isEqual:@"0"] && [parts[1] isEqual:@"1"];
+        if (!(full || parts.count == 2)) { completion(nil, @"目前仅支持一对一会话，群聊尚未适配"); return; }
+        NSArray *users = full ? [parts subarrayWithRange:NSMakeRange(2, 2)] : parts;
+        if (![users containsObject:account]) { completion(nil, @"会话 ID 不属于当前登录账户"); return; }
+        query = [users[0] isEqual:account] ? users[1] : users[0];
+    }
+    if ([query hasPrefix:@"@"]) query = [query substringFromIndex:1];
+    if ([query isEqual:account] || !query.length) { completion(nil, @"请选择其他好友"); return; }
+    BOOL numeric = [query rangeOfCharacterFromSet:NSCharacterSet.decimalDigitCharacterSet.invertedSet].location == NSNotFound;
+    if (numeric && query.longLongValue > 0 && query.length <= 19) {
+        // 已有配置按 UID 保存，不为每次保存和测试重读整个联系人数据库。
+        NSArray *cached = [[self defaults] arrayForKey:[@"DYYYMutualFriendsCache." stringByAppendingString:account]] ?: @[];
+        NSMutableArray *displayMatches = [NSMutableArray array];
+        for (NSDictionary *row in cached) {
+            if ([row[@"userID"] isEqual:query]) { completion(row, nil); return; }
+            if ([row[@"displayID"] isEqual:query]) [displayMatches addObject:row];
+        }
+        if (displayMatches.count > 1) { completion(nil, @"存在重复抖音号，请填写完整用户 ID"); return; }
+        completion(displayMatches.firstObject ?: @{@"userID":query, @"name":query}, nil);
+        return;
+    }
+    [self loadMutualFriends:^(NSArray<NSDictionary *> *friends) {
+        if (![account isEqual:[DYYYIMService accountID]]) { completion(nil, @"登录账户已变化，请重试"); return; }
+        NSMutableArray *matches = [NSMutableArray array];
+        for (NSDictionary *friend in friends) {
+            if ([friend[@"userID"] isEqual:query]) { completion(friend, nil); return; }
+            BOOL aliasMatch = NO;
+            if ([friend[@"aliases"] isKindOfClass:NSArray.class]) for (id alias in friend[@"aliases"])
+                if ([alias isKindOfClass:NSString.class] && [alias caseInsensitiveCompare:query] == NSOrderedSame) { aliasMatch = YES; break; }
+            if ([friend[@"name"] caseInsensitiveCompare:query] == NSOrderedSame || [friend[@"displayID"] caseInsensitiveCompare:query] == NSOrderedSame || aliasMatch)
+                [matches addObject:friend];
+        }
+        if (matches.count == 1) { completion(matches.firstObject, nil); return; }
+        if (matches.count > 1) { completion(nil, @"存在同名好友，请使用完整用户 ID"); return; }
+        BOOL digits = [query rangeOfCharacterFromSet:NSCharacterSet.decimalDigitCharacterSet.invertedSet].location == NSNotFound;
+        if (digits && query.longLongValue > 0 && query.length <= 19) { completion(@{@"userID":query, @"name":query}, nil); return; }
+        completion(nil, @"未找到匹配的本地好友，请选择互关好友或填写完整用户 ID");
+    }];
+}
+
++ (NSString *)progressKey:(NSDictionary *)config {
+    return [NSString stringWithFormat:@"DYYYAutoMessageProgress.%@.%@", config[@"ownerID"] ?: @"", config[@"userID"] ?: @""];
+}
+
++ (NSArray<NSString *> *)randomEntries:(NSString *)text {
+    NSMutableArray *entries = [NSMutableArray array];
+    NSMutableString *current = nil;
+    NSRegularExpression *numbered = [NSRegularExpression regularExpressionWithPattern:@"^\\s*[0-9]+[.、．]\\s*" options:0 error:nil];
+    NSArray *lines = [text componentsSeparatedByCharactersInSet:NSCharacterSet.newlineCharacterSet];
+    BOOL grouped = NO;
+    for (NSString *line in lines) if ([numbered firstMatchInString:line options:0 range:NSMakeRange(0, line.length)]) { grouped = YES; break; }
+    for (NSString *line in lines) {
+        NSTextCheckingResult *match = [numbered firstMatchInString:line options:0 range:NSMakeRange(0, line.length)];
+        if (!grouped) {
+            NSString *entry = [line stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+            if (entry.length) [entries addObject:entry];
+        } else if (match) {
+            if (current.length) [entries addObject:[current copy]];
+            current = [[line substringFromIndex:NSMaxRange(match.range)] mutableCopy];
+        } else if (current) {
+            [current appendFormat:@"\n%@", line];
+        } else if ([line stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet].length) {
+            current = [line mutableCopy];
+        }
+    }
+    if (current.length) [entries addObject:[current copy]];
+    return entries;
+}
+
++ (NSString *)renderMessageForConfig:(NSDictionary *)config {
+    NSDate *now = NSDate.date;
+    NSString *text = [config[@"message"] isKindOfClass:NSString.class] ? config[@"message"] : @"";
+    if ([config[@"randomText"] boolValue]) {
+        NSArray *entries = [self randomEntries:text];
+        if (!entries.count) return @"";
+        // 稳定的逐日散列：同一账户、好友、日期和文本在重启后仍选同一条。
+        NSData *seed = [[NSString stringWithFormat:@"%@/%@/%@/%@", config[@"ownerID"], config[@"userID"], [self todayKey], text] dataUsingEncoding:NSUTF8StringEncoding];
+        uint32_t hash = 2166136261u;
+        const unsigned char *bytes = seed.bytes;
+        for (NSUInteger i = 0; i < seed.length; i++) hash = (hash ^ bytes[i]) * 16777619u;
+        text = entries[hash % entries.count];
+    }
+    NSCalendar *calendar = NSCalendar.currentCalendar;
+    NSDateComponents *components = [calendar components:NSCalendarUnitYear | NSCalendarUnitMonth | NSCalendarUnitDay | NSCalendarUnitHour | NSCalendarUnitMinute | NSCalendarUnitSecond fromDate:now];
+    NSDictionary *progress = [[self defaults] dictionaryForKey:[self progressKey:config]] ?: @{};
+    NSUInteger count = [progress[@"count"] unsignedIntegerValue];
+    // 当天测试已成功后预览仍显示同一次发送的序号。
+    NSUInteger sequence = count + ([progress[@"date"] isEqual:[self todayKey]] ? 0 : 1);
+    NSTimeInterval created = [config[@"createdAt"] respondsToSelector:@selector(doubleValue)] ? [config[@"createdAt"] doubleValue] : 0;
+    NSDate *start = created > 0 ? [NSDate dateWithTimeIntervalSince1970:created] : now;
+    NSInteger days = MAX(1, [calendar components:NSCalendarUnitDay fromDate:[calendar startOfDayForDate:start] toDate:[calendar startOfDayForDate:now] options:0].day + 1);
+    NSDateFormatter *format = [NSDateFormatter new];
+    format.locale = [NSLocale localeWithLocaleIdentifier:@"zh_CN"];
+    format.dateFormat = @"yyyy-MM-dd";
+    NSString *date = [format stringFromDate:now];
+    format.dateFormat = @"EEEE";
+    NSDictionary *tokens = @{
+        @"n":[NSString stringWithFormat:@"%lu", (unsigned long)sequence], @"d":@(days).stringValue,
+        @"remark":config[@"name"] ?: @"", @"备注":config[@"name"] ?: @"", @"date":date, @"日期":date,
+        @"weekday":[format stringFromDate:now], @"星期":[format stringFromDate:now],
+        @"year":@(components.year).stringValue, @"年":@(components.year).stringValue,
+        @"month":@(components.month).stringValue, @"月":@(components.month).stringValue,
+        @"day":@(components.day).stringValue, @"日":@(components.day).stringValue,
+        @"hour":@(components.hour).stringValue, @"时":@(components.hour).stringValue,
+        @"minute":@(components.minute).stringValue, @"分":@(components.minute).stringValue,
+        @"second":@(components.second).stringValue, @"秒":@(components.second).stringValue, @"换行":@"\n"
+    };
+    // 单遍替换，不把备注中碰巧存在的花括号当成新模板执行。
+    NSRegularExpression *pattern = [NSRegularExpression regularExpressionWithPattern:@"\\{([^{}\\n]{1,100})\\}" options:0 error:nil];
+    NSArray *matches = [pattern matchesInString:text options:0 range:NSMakeRange(0, text.length)];
+    NSMutableString *result = [text mutableCopy];
+    for (NSTextCheckingResult *match in matches.reverseObjectEnumerator) {
+        NSString *key = [text substringWithRange:[match rangeAtIndex:1]];
+        NSString *value = tokens[key];
+        if ([key hasPrefix:@"datetime:"]) {
+            format.dateFormat = [key substringFromIndex:9];
+            value = [format stringFromDate:now];
+        }
+        if (value) [result replaceCharactersInRange:match.range withString:value];
+    }
+    return result;
+}
+
++ (void)sendConfig:(NSDictionary *)config completion:(void (^)(BOOL, NSString *))completion {
+    if (!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(), ^{ [self sendConfig:config completion:completion]; }); return; }
+    NSString *account = [DYYYIMService accountID];
+    if (!account.length || ![config[@"ownerID"] isEqual:account]) { if (completion) completion(NO, @"配置不属于当前登录账户"); return; }
+    if ([config[@"sendMode"] integerValue] != 0) {
+        if (completion) completion(NO, @"原生图片上传尚未适配，本次未发送");
+        return;
+    }
+    NSString *message = [self renderMessageForConfig:config];
+    if (!message.length) { if (completion) completion(NO, @"没有可发送的文字内容"); return; }
+    [DYYYIMService sendText:message toUserID:config[@"userID"] completion:^(BOOL success, NSString *reason) {
+        if (success) {
+            NSString *key = [self progressKey:config];
+            NSDictionary *previous = [[self defaults] dictionaryForKey:key] ?: @{};
+            if (![previous[@"date"] isEqual:[self todayKey]]) [[self defaults] setObject:@{@"count":@([previous[@"count"] unsignedIntegerValue] + 1), @"date":[self todayKey]} forKey:key];
+        }
+        if (completion) completion(success, reason);
+    }];
 }
 
 + (BOOL)isNoSendTime {
@@ -98,7 +274,7 @@ static NSString *const kDYYYFriendShareFriends = @"DYYYFriendShareFeedFriends";
         [self processDailyConfigs:configs completion:completion];
         return;
     }
-    [DYYYIMService sendText:config[@"message"] toUserID:config[@"userID"] completion:^(BOOL success, NSString *reason) {
+    [self sendConfig:config completion:^(BOOL success, NSString *reason) {
         if ([[self defaults] boolForKey:kDYYYAutoMessageToast]) [DYYYUtils showToast:reason];
         [self processDailyConfigs:configs completion:completion];
     }];
@@ -209,7 +385,12 @@ static NSString *const kDYYYFriendShareFriends = @"DYYYFriendShareFeedFriends";
                 }
             }
         }
-        [friends addObject:@{ @"userID":uid, @"name":name, @"displayID":display,
+        NSMutableOrderedSet *aliases = [NSMutableOrderedSet orderedSet];
+        for (id source in @[model, row]) for (NSString *key in @[@"nickname", @"nickName", @"displayName", @"contactName", @"remarkName", @"remark", @"uniqueID", @"uniqueId"] ) {
+            id value = [self friendValue:source keys:@[key]];
+            if ([value isKindOfClass:NSString.class] && [value length]) [aliases addObject:value];
+        }
+        [friends addObject:@{ @"userID":uid, @"name":name, @"displayID":display, @"aliases":aliases.array,
             @"avatar":[avatar isKindOfClass:NSString.class] ? avatar : @"",
             @"hasFlame":@([hasFlame respondsToSelector:@selector(boolValue)] ? [hasFlame boolValue] : days > 0), @"flameDays":@(MAX(0, days)) }];
     }
@@ -254,23 +435,9 @@ static NSString *const kDYYYFriendShareFriends = @"DYYYFriendShareFeedFriends";
     return [DYYYSettingsHelper createSettingItem:dictionary];
 }
 
+// 添加与编辑使用同一个可滚动配置窗口。
 + (void)editConfigFrom:(UIViewController *)root existing:(NSMutableDictionary *)existing completion:(void (^)(void))completion {
-    NSString *initialID = existing[@"userID"] ?: @"";
-    [DYYYSettingsHelper showTextInputAlert:@"用户 ID" defaultText:initialID placeholder:@"输入抖音用户 ID" onConfirm:^(NSString *userID) {
-        NSString *trimmedID = [userID stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-        if (trimmedID.length == 0) return;
-        [DYYYSettingsHelper showTextInputAlert:@"每日发送内容" defaultText:existing[@"message"] ?: @"" placeholder:@"输入消息内容" onConfirm:^(NSString *message) {
-            NSMutableArray *configs = [self messageConfigs];
-            NSUInteger index = [configs indexOfObjectPassingTest:^BOOL(NSDictionary *row, NSUInteger idx, BOOL *stop) {
-                return [row[@"userID"] isEqualToString:existing[@"userID"] ?: trimmedID];
-            }];
-            NSMutableDictionary *config = [@{ @"userID" : trimmedID, @"name" : existing[@"name"] ?: trimmedID, @"ownerID" : [DYYYIMService accountID],
-                                               @"message" : message ?: @"", @"enabled" : existing[@"enabled"] ?: @YES } mutableCopy];
-            if (index != NSNotFound) configs[index] = config; else [configs addObject:config];
-            [self saveMessageConfigs:configs];
-            if (completion) completion();
-        } onCancel:nil];
-    } onCancel:nil];
+    [DYYYAutoMessageEditor showFrom:root config:existing completion:completion];
 }
 
 + (NSArray<AWESettingSectionModel *> *)messageConfigSectionsWithRoot:(UIViewController *)root {

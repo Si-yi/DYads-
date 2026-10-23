@@ -21,6 +21,7 @@
 - **通用工具/常量**
   - `DYYYUtils.(h/m)`：窗口/颜色/路径等工具。
   - `DYYYConstants.h`：Keys、URL、通知名。
+- **好友发送配置**：`DYYYAutoMessageEditor.(h/m)` 管理同屏添加、按好友编辑、固定或每日随机文字、变量插入和本地图片选择。文字由 `DYYYAutoMessage` 渲染后统一发送；图片上传接口未适配时必须明确提示并停止含图发送，不能假报成功。
 - **自动消息弹窗**：`DYYYAutoMessagePanel.(h/m)` 展示配置开关列表与互关好友搜索多选，配置读写和联系人适配由 `DYYYAutoMessage` 负责。
 - **独立 IM 适配**：`DYYYIMService.(h/m)` 复用抖音创建的消息服务实例，读取联系人、未读分享并校验会话账户，通过原生回执维护每日发送状态；`DYYYAutoMessageHooks.xm` 观测服务生命周期与发送结果。私有声明集中在 `AwemeHeaders.h`。
 - **好友分享推荐**：`DYYYFriendShareService.(h/m)` 在冷启动或从后台返回后扫描所选好友的本地未读分享，通过原生作品 ID 插入接口加载视频，将好友分享放在原首页列表之前。已刷记录独立于聊天已读，按账户保存；实际滑走或播放循环后才记已刷。未编译和真机验证前不得宣称适配已通过。

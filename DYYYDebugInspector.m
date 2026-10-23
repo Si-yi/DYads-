@@ -361,6 +361,7 @@ static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *wi
         unsigned int classCount = 0;
         Class *classes = objc_copyClassList(&classCount);
         NSMutableArray<NSString *> *candidates = [NSMutableArray array];
+        NSMutableArray<NSString *> *mediaCandidates = [NSMutableArray array];
         NSArray<NSString *> *terms = @[@"message", @"conversation", @"contact", @"user", @"sender", @"sdk", @"session", @"account"];
         for (unsigned int index = 0; index < classCount; index++) {
             NSString *name = NSStringFromClass(classes[index]);
@@ -374,11 +375,19 @@ static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *wi
             if (DKClassNameIsRuntimeGenerated(name)) continue;
             if ([name containsString:@"View"] || [name containsString:@"Controller"] || [name containsString:@"Cell"]) continue;
             NSString *lower = name.lowercaseString;
+            if ([lower containsString:@"image"] || [lower containsString:@"photo"] || [lower containsString:@"picture"] || [lower containsString:@"upload"])
+                [mediaCandidates addObject:name];
             for (NSString *term in terms) {
                 if ([lower containsString:term]) { [candidates addObject:name]; break; }
             }
         }
         free(classes);
+        // 图片发送需有真实上传和消息模型签名，不能仅凭文字消息字典猜测。
+        [mediaCandidates sortUsingSelector:@selector(compare:)];
+        for (NSString *name in mediaCandidates) {
+            if (names.count >= 85) break;
+            [names addObject:name];
+        }
         [candidates sortUsingSelector:@selector(compare:)];
         NSUInteger matchingCount = candidates.count;
         for (NSString *name in candidates) {
