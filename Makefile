@@ -44,6 +44,7 @@ DYYY_FILES += DYYYFriendShareBadgeView.m DYYYChatVideoLayout.m
 DYYY_FILES += DYYYCollectionRows.m
 DYYY_FILES += DYYYCommentMenuTheme.m DYYYCommentMenuThemeHooks.xm
 DYYY_FILES += DYYYDebugAppearance.m
+DYYY_FILES += DYYYDebugMenuView.m DYYYCommentMenuPalette.m
 DYYY_FILES += DYYYCommentHeaderLayout.m DYYYCommentHeaderLayoutHooks.xm
 DYYY_FILES += DYYYSearchClean.m DYYYSearchCleanHooks.xm
 DYYY_CFLAGS = -fobjc-arc -w

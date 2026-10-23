@@ -1,4 +1,5 @@
 #import "DYYYCommentMenuTheme.h"
+#import "DYYYCommentMenuPalette.h"
 #import "AwemeHeaders.h"
 #import "DYYYUtils.h"
 #import <objc/runtime.h>
@@ -52,11 +53,13 @@ static char kDYYYCommentMenuOriginalViewStyleKey;
                 @(view.overrideUserInterfaceStyle), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         }
         if (view.overrideUserInterfaceStyle != style) view.overrideUserInterfaceStyle = style;
+        [DYYYCommentMenuPalette applyInView:view controller:controller];
     }
 }
 
 + (void)restoreController:(UIViewController *)controller {
     if (!NSThread.isMainThread || !controller) return;
+    [DYYYCommentMenuPalette restoreController:controller];
     NSNumber *original = objc_getAssociatedObject(controller, &kDYYYCommentMenuOriginalControllerStyleKey);
     objc_setAssociatedObject(controller, &kDYYYCommentMenuStyleKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     objc_setAssociatedObject(controller, &kDYYYCommentMenuOriginalControllerStyleKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -67,6 +70,15 @@ static char kDYYYCommentMenuOriginalViewStyleKey;
         objc_setAssociatedObject(view, &kDYYYCommentMenuOriginalViewStyleKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         view.overrideUserInterfaceStyle = (UIUserInterfaceStyle)originalView.integerValue;
     }
+}
+
++ (UIViewController *)controllerForView:(UIView *)view {
+    for (UIResponder *responder = view.nextResponder; responder; responder = responder.nextResponder) {
+        if ([responder isKindOfClass:UIViewController.class] &&
+            [NSStringFromClass(responder.class) isEqualToString:@"AWECommentLongPressPanelSwiftImpl.CommentLongPressPanelSheet"])
+            return (UIViewController *)responder;
+    }
+    return nil;
 }
 
 @end

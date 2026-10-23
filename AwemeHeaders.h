@@ -1088,6 +1088,10 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @interface DYYYCommentLongPressPanelSheet : DUXContentSheet
 @end
 
+// 评论菜单功能行的白色卡片由原生 contentShapeLayer 绘制。
+@interface DYYYCommentMenuCardCell : UICollectionViewCell
+@end
+
 @protocol AFDPrivacyHalfScreenViewControllerProtocol <NSObject>
 @end
 

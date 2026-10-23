@@ -1,5 +1,6 @@
 #import "DYYYDebugInspector.h"
 #import "DYYYDebugAppearance.h"
+#import "DYYYDebugMenuView.h"
 #import "DYYYGlassTabBar.h"
 #import "DYYYIMService.h"
 #import "DYYYFriendShareService.h"
@@ -276,10 +277,7 @@ static void DYYYDebugStopRecording(void) {
 
 static void DYYYDebugPresentAlert(UIViewController *presenter, NSString *title, NSString *message) {
     if (!presenter) return;
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
-    [DYYYDebugAppearance prepareController:alert sourceWindow:presenter.viewIfLoaded.window];
-    [alert addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
-    [presenter presentViewController:alert animated:YES completion:nil];
+    [DYYYDebugMenuView presentFromController:presenter window:presenter.viewIfLoaded.window title:title message:message items:@[]];
 }
 
 static NSData *DYYYDebugJSONData(id value) {
@@ -487,7 +485,9 @@ static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *wi
         [DYYYDebugAppearance prepareController:share sourceWindow:window];
         UIPopoverPresentationController *popover = share.popoverPresentationController;
         if (popover) { popover.sourceView = presenter.view; popover.sourceRect = CGRectMake(CGRectGetMidX(presenter.view.bounds), CGRectGetMidY(presenter.view.bounds), 1, 1); }
-        [presenter presentViewController:share animated:YES completion:nil];
+        [presenter presentViewController:share animated:YES completion:^{
+            [DYYYDebugAppearance prepareController:share sourceWindow:window];
+        }];
       });
     });
 }
@@ -495,25 +495,22 @@ static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *wi
 static void DYYYDebugShowActions(UIWindow *window) {
     UIViewController *presenter = DKDebugTopPresenter(window);
     if (!presenter) return;
-    UIAlertController *menu = [UIAlertController alertControllerWithTitle:@"DYYY 调试工具" message:DYYYDebugRecording ? @"正在记录首页刷新、模型切换和页面状态。出现问题后停止并导出。" : @"手动开始记录，复现问题后停止并导出。每段最多保存 12000 个事件，超出数量会写入报告。" preferredStyle:UIAlertControllerStyleActionSheet];
-    [DYYYDebugAppearance prepareController:menu sourceWindow:window];
+    NSString *message = DYYYDebugRecording ? @"正在记录首页刷新、模型切换和页面状态。出现问题后停止并导出。" : @"手动开始记录，复现问题后停止并导出。每段最多保存 12000 个事件，超出数量会写入报告。";
+    NSMutableArray<DYYYDebugMenuItem *> *items = [NSMutableArray array];
     if (DYYYDebugRecording) {
-        [menu addAction:[UIAlertAction actionWithTitle:@"停止记录并导出（轻量）" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+        [items addObject:[DYYYDebugMenuItem itemWithTitle:@"停止记录并导出（轻量）" handler:^{
             DYYYDebugStopRecording();
             DYYYDebugExportCurrentPage(presenter, window, NO);
         }]];
     } else {
-        [menu addAction:[UIAlertAction actionWithTitle:@"开始记录（覆盖上一段）" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { DYYYDebugStartRecording(window); }]];
+        [items addObject:[DYYYDebugMenuItem itemWithTitle:@"开始记录（覆盖上一段）" handler:^{ DYYYDebugStartRecording(window); }]];
         if (DYYYDebugStoppedAt) {
-            [menu addAction:[UIAlertAction actionWithTitle:@"重新导出上次记录（轻量）" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { DYYYDebugExportCurrentPage(presenter, window, NO); }]];
+            [items addObject:[DYYYDebugMenuItem itemWithTitle:@"重新导出上次记录（轻量）" handler:^{ DYYYDebugExportCurrentPage(presenter, window, NO); }]];
         }
     }
-    [menu addAction:[UIAlertAction actionWithTitle:@"导出当前页（轻量）" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { DYYYDebugExportCurrentPage(presenter, window, NO); }]];
-    [menu addAction:[UIAlertAction actionWithTitle:@"完整导出（含图层和类头文件）" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { DYYYDebugExportCurrentPage(presenter, window, YES); }]];
-    [menu addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
-    UIPopoverPresentationController *popover = menu.popoverPresentationController;
-    if (popover) { popover.sourceView = presenter.view; popover.sourceRect = CGRectMake(CGRectGetMidX(presenter.view.bounds), CGRectGetMidY(presenter.view.bounds), 1, 1); }
-    [presenter presentViewController:menu animated:YES completion:nil];
+    [items addObject:[DYYYDebugMenuItem itemWithTitle:@"导出当前页（轻量）" handler:^{ DYYYDebugExportCurrentPage(presenter, window, NO); }]];
+    [items addObject:[DYYYDebugMenuItem itemWithTitle:@"完整导出（含图层和类头文件）" handler:^{ DYYYDebugExportCurrentPage(presenter, window, YES); }]];
+    [DYYYDebugMenuView presentFromController:presenter window:window title:@"DYYY 调试工具" message:message items:items];
 }
 
 static void DYYYDebugInstallOnWindow(UIWindow *window) {

@@ -6,4 +6,5 @@
 + (UIUserInterfaceStyle)styleForController:(UIViewController *)controller;
 + (void)synchronizeController:(UIViewController *)controller;
 + (void)restoreController:(UIViewController *)controller;
++ (UIViewController *)controllerForView:(UIView *)view;
 @end

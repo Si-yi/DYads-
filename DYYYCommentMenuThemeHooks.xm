@@ -1,5 +1,6 @@
 #import "AwemeHeaders.h"
 #import "DYYYCommentMenuTheme.h"
+#import "DYYYCommentMenuPalette.h"
 
 %group DYYYCommentMenuThemeHooks
 %hook DYYYCommentLongPressPanelSheet
@@ -42,6 +43,11 @@
     %orig(menuStyle == UIUserInterfaceStyleUnspecified ? style : menuStyle);
 }
 
+- (void)viewDidLayoutSubviews {
+    %orig;
+    [DYYYCommentMenuTheme synchronizeController:(UIViewController *)self];
+}
+
 - (void)viewDidDisappear:(BOOL)animated {
     %orig(animated);
     // 临时覆盖另一层菜单时保留主题；真正离开窗口才恢复原值。
@@ -52,9 +58,29 @@
 %end
 %end
 
+%group DYYYCommentMenuCardThemeHooks
+%hook DYYYCommentMenuCardCell
+- (void)layoutSubviews {
+    %orig;
+    UIView *cell = (UIView *)self;
+    UIViewController *controller = [DYYYCommentMenuTheme controllerForView:cell];
+    if (controller) [DYYYCommentMenuPalette applyInView:cell controller:controller];
+    else [DYYYCommentMenuPalette restoreView:cell];
+}
+- (void)prepareForReuse {
+    [DYYYCommentMenuPalette restoreView:(UIView *)self];
+    %orig;
+}
+%end
+%end
+
 %ctor {
     Class sheetClass = NSClassFromString(@"AWECommentLongPressPanelSwiftImpl.CommentLongPressPanelSheet");
     if (sheetClass && [sheetClass isSubclassOfClass:UIViewController.class]) {
         %init(DYYYCommentMenuThemeHooks, DYYYCommentLongPressPanelSheet = sheetClass);
+    }
+    Class cellClass = NSClassFromString(@"CommentLongPressPanelNormalBaseCell");
+    if (cellClass && [cellClass isSubclassOfClass:UICollectionViewCell.class]) {
+        %init(DYYYCommentMenuCardThemeHooks, DYYYCommentMenuCardCell = cellClass);
     }
 }
