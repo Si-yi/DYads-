@@ -85,7 +85,7 @@ static NSDictionary *DKTransform3DDict(CATransform3D t) {
 
 static BOOL DKIsDebugWindow(UIWindow *window) {
     NSString *cls = DKClassName(window);
-    return [cls hasPrefix:@"DKDebug"] || [cls hasPrefix:@"FLEX"];
+    return [cls hasPrefix:@"DKDebug"] || [cls hasPrefix:@"DYYYDebugOverlay"] || [cls hasPrefix:@"FLEX"];
 }
 
 NSArray<UIWindow *> *DKDebugActiveWindows(void) {
@@ -504,3 +504,4 @@ DKDebugExportContext *DKDebugCaptureContext(UIWindow *targetWindow, CGPoint poin
     context.presenter = DKDebugTopPresenter(targetWindow);
     return context;
 }
+

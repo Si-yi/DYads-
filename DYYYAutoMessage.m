@@ -154,7 +154,7 @@ static NSString *const kDYYYFriendShareWatchedIDs = @"DYYYFriendShareWatchedItem
     NSMutableArray *friends = [NSMutableArray array];
     NSMutableSet *seen = [NSMutableSet set];
     for (id row in rows) {
-        id nested = [self friendValue:row keys:@[@"user", @"userModel", @"imUser"]];
+        id nested = [self friendValue:row keys:@[@"user", @"userModel", @"imUser", @"userInfo"]];
         id model = nested ?: row;
         id mutual = [self friendValue:model keys:@[@"isMutualFollow", @"isFriend"]];
         id follow = [self friendValue:model keys:@[@"followStatus", @"follow_status"]];
@@ -163,16 +163,16 @@ static NSString *const kDYYYFriendShareWatchedIDs = @"DYYYFriendShareWatchedItem
         NSString *uid = [uidValue isKindOfClass:NSString.class] ? uidValue : ([uidValue isKindOfClass:NSNumber.class] ? [uidValue stringValue] : nil);
         if (!uid.length || [seen containsObject:uid]) continue;
         [seen addObject:uid];
-        id nameValue = [self friendValue:model keys:@[@"name", @"nickname", @"nickName", @"displayName"]];
+        id nameValue = [self friendValue:model keys:@[@"name", @"nickname", @"nickName", @"displayName", @"display_name", @"contactName"]];
         NSString *name = [nameValue isKindOfClass:NSString.class] ? nameValue : uid;
-        id displayValue = [self friendValue:model keys:@[@"displayID", @"uniqueID", @"uniqueId", @"shortID"]];
+        id displayValue = [self friendValue:model keys:@[@"displayID", @"uniqueID", @"uniqueId", @"shortID", @"shortId", @"short_id", @"username"]];
         NSString *display = [displayValue isKindOfClass:NSString.class] ? displayValue : uid;
         id flameInfo = [self friendValue:row keys:@[@"streakInfo", @"flameInfo"]];
         id daysValue = [self friendValue:row keys:@[@"flameDays", @"streakDays", @"streakCount"]] ?:
             [self friendValue:flameInfo keys:@[@"days", @"streakDays", @"streakCount"]];
         NSInteger days = [daysValue respondsToSelector:@selector(integerValue)] ? [daysValue integerValue] : 0;
         id hasFlame = [self friendValue:row keys:@[@"hasFlame", @"isFlameFriend"]];
-        id avatar = [self friendValue:model keys:@[@"avatar", @"avatarThumb", @"avatarURL", @"avatarUrl", @"avatar_thumb"]];
+        id avatar = [self friendValue:model keys:@[@"avatar", @"avatarThumb", @"avatarURL", @"avatarUrl", @"avatar_thumb", @"avatarSmallStrUrl", @"avatarStrUrls", @"avatarURLList"]];
         if (![avatar isKindOfClass:NSString.class]) avatar = [self friendValue:avatar keys:@[@"urlList", @"url_list", @"url"]];
         if ([avatar isKindOfClass:NSArray.class]) avatar = [avatar firstObject];
         [friends addObject:@{ @"userID":uid, @"name":name, @"displayID":display,
@@ -188,7 +188,7 @@ static NSString *const kDYYYFriendShareWatchedIDs = @"DYYYFriendShareWatchedItem
 
 + (id)sharedFriendService:(NSString *)className {
     Class cls = NSClassFromString(className);
-    for (NSString *name in @[@"sharedInstance", @"sharedManager"]) {
+    for (NSString *name in @[@"shared", @"sharedInstance", @"sharedManager"]) {
         SEL sel = NSSelectorFromString(name);
         NSMethodSignature *signature = [cls methodSignatureForSelector:sel];
         if (signature.numberOfArguments == 2 && signature.methodReturnType[0] == '@')
@@ -205,7 +205,8 @@ static NSString *const kDYYYFriendShareWatchedIDs = @"DYYYFriendShareWatchedItem
     __block BOOL finished = NO;
     void (^finish)(NSArray *) = ^(NSArray *friends) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            if (finished) return;
+            // 超时先显示缓存后，实际列表晚到仍可更新界面。
+            if (finished && !friends.count) return;
             finished = YES;
             if (friends.count) [[self defaults] setObject:friends forKey:@"DYYYMutualFriendsCache"];
             if (completion) completion(friends ?: @[]);
@@ -240,7 +241,6 @@ static NSString *const kDYYYFriendShareWatchedIDs = @"DYYYFriendShareWatchedItem
         strncmp([signature getArgumentTypeAtIndex:2], "@?", 2) == 0) {
         void (^callback)(id) = ^(id rows) {
             dispatch_async(dispatch_get_main_queue(), ^{
-                if (finished) return;
                 NSArray *friends = [self normalizedFriends:rows requireMutual:NO];
                 if (friends.count) finish(friends); else fallback();
             });
@@ -333,4 +333,5 @@ static NSString *const kDYYYFriendShareWatchedIDs = @"DYYYFriendShareWatchedItem
 }
 
 @end
+
 

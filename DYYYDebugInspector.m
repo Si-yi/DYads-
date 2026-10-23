@@ -31,6 +31,43 @@ static void DYYYDebugKeepOnlyOverlay(UIWindow *window, UIButton *keep) {
     objc_setAssociatedObject(window, DYYYDebugSharedButtonKey(), keep, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 
+// 独立的非 key 透明窗口：按钮始终高于应用设置页、插件弹窗，空白位置透传触摸。
+@interface DYYYDebugOverlayWindow : UIWindow
+@end
+@implementation DYYYDebugOverlayWindow
+- (BOOL)canBecomeKeyWindow { return NO; }
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *hit = [super hitTest:point withEvent:event];
+    return hit == self || hit == self.rootViewController.view ? nil : hit;
+}
+@end
+
+@interface DYYYDebugOverlayRootController : UIViewController
+@end
+@implementation DYYYDebugOverlayRootController
+- (void)loadView {
+    self.view = [UIView new];
+    self.view.backgroundColor = UIColor.clearColor;
+}
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    DYYYDebugInspectorRefreshOverlay();
+}
+- (BOOL)shouldAutorotate { return YES; }
+- (UIInterfaceOrientationMask)supportedInterfaceOrientations { return UIInterfaceOrientationMaskAll; }
+@end
+
+static DYYYDebugOverlayWindow *DYYYDebugFloatingWindow;
+static __weak UIWindow *DYYYDebugContentWindow;
+static BOOL DYYYDebugOverlayRefreshing;
+
+static UIWindow *DYYYDebugCurrentContentWindow(void) {
+    UIWindow *window = DYYYDebugContentWindow;
+    if (window && !window.hidden && window.alpha > 0.01) return window;
+    return DKDebugTargetWindow();
+}
+
+
 // 钩子只观测调用，原方法始终执行；关闭记录后不再保存事件。
 static BOOL DYYYDebugRecording;
 static NSMutableArray *DYYYDebugEvents;
@@ -202,7 +239,7 @@ static void DYYYDebugStopRecording(void) {
 
 @implementation DYYYDebugOverlayDragR2
 - (void)handleTap {
-    DYYYDebugShowActions(self.window);
+    DYYYDebugShowActions(DYYYDebugCurrentContentWindow());
 }
 - (void)handlePan:(UIPanGestureRecognizer *)gesture {
     UIButton *button = self.button;
@@ -254,7 +291,7 @@ static NSDictionary *DYYYDebugMetadata(void) {
         @"systemName": UIDevice.currentDevice.systemName ?: @"",
         @"systemVersion": UIDevice.currentDevice.systemVersion ?: @"",
         @"deviceModel": UIDevice.currentDevice.model ?: @"",
-        @"debugImplementation": @"manual-recording-single-overlay-r3-compressed",
+        @"debugImplementation": @"global-overlay-r4-keyboard-theme",
         @"loadedPluginImages": pluginImages,
         @"inputSettings": @{
             @"DYYYEnableFloatingCommentInput": [defaults objectForKey:@"DYYYEnableFloatingCommentInput"] ?: NSNull.null,
@@ -389,8 +426,10 @@ static void DYYYDebugInstallOnWindow(UIWindow *window) {
     UIButton *existing = objc_getAssociatedObject(window, DYYYDebugSharedButtonKey());
     if (existing.superview == window && [existing.accessibilityIdentifier isEqualToString:DYYYDebugOverlayIdentifier]) {
         DYYYDebugKeepOnlyOverlay(window, existing);
-        existing.tintColor = DYYYDebugRecording ? UIColor.systemRedColor : UIColor.whiteColor;
-        existing.accessibilityLabel = DYYYDebugRecording ? @"DYYY 调试工具：正在记录" : @"DYYY 调试工具";
+        UIColor *color = DYYYDebugRecording ? UIColor.systemRedColor : UIColor.whiteColor;
+        if (![existing.tintColor isEqual:color]) existing.tintColor = color;
+        NSString *label = DYYYDebugRecording ? @"DYYY 调试工具：正在记录" : @"DYYY 调试工具";
+        if (![existing.accessibilityLabel isEqualToString:label]) existing.accessibilityLabel = label;
         return;
     }
     CGRect previousFrame = CGRectZero;
@@ -426,28 +465,79 @@ void DYYYDebugInspectorRefreshOverlay(void) {
         dispatch_async(dispatch_get_main_queue(), ^{ DYYYDebugInspectorRefreshOverlay(); });
         return;
     }
-    BOOL enabled = [NSUserDefaults.standardUserDefaults boolForKey:@"DYYYDebugInspectorEnabled"];
-    NSArray<UIWindow *> *windows = DKDebugActiveWindows();
-    UIWindow *target = nil;
-    for (UIWindow *window in windows) {
-        NSString *name = NSStringFromClass(window.class);
-        if ([name containsString:@"TextEffects"] || [name containsString:@"Keyboard"] || window.windowLevel != UIWindowLevelNormal) continue;
-        if (!target || window.isKeyWindow) target = window;
-    }
-    for (UIWindow *window in windows) {
-        if (!enabled || window != target) {
+    if (DYYYDebugOverlayRefreshing) return;
+    DYYYDebugOverlayRefreshing = YES;
+    @try {
+        if (UIApplication.sharedApplication.applicationState == UIApplicationStateBackground) {
+            if (!DYYYDebugFloatingWindow.hidden) DYYYDebugFloatingWindow.hidden = YES;
+            return;
+        }
+        BOOL enabled = [NSUserDefaults.standardUserDefaults boolForKey:@"DYYYDebugInspectorEnabled"];
+        NSArray<UIWindow *> *windows = DKDebugActiveWindows();
+        UIWindow *target = nil;
+        CGFloat highestLevel = UIWindowLevelAlert;
+        for (UIWindow *window in windows) {
+            NSString *name = NSStringFromClass(window.class);
+            if ([name hasPrefix:@"DYYYDebug"] || [name containsString:@"TextEffects"] || [name containsString:@"Keyboard"] || !window.rootViewController) continue;
+            highestLevel = MAX(highestLevel, window.windowLevel);
+            if (!target || window.isKeyWindow) target = window;
+        }
+        // 清理以前挂在普通窗口里的旧按钮，避免进入设置页面后又产生第二个。
+        for (UIWindow *window in windows) {
+            if ([window isKindOfClass:DYYYDebugOverlayWindow.class]) continue;
             DYYYDebugKeepOnlyOverlay(window, nil);
             objc_setAssociatedObject(window, &kDYYYDebugButtonKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             objc_setAssociatedObject(window, &kDYYYDebugDragKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        } else {
-            DYYYDebugInstallOnWindow(window);
         }
+        if (!enabled || !target) {
+            if (!DYYYDebugFloatingWindow.hidden) DYYYDebugFloatingWindow.hidden = YES;
+            return;
+        }
+        DYYYDebugContentWindow = target;
+        const void *sharedWindowKey = (const void *)sel_registerName("DYYYDebugInspector.sharedOverlayWindow");
+        DYYYDebugOverlayWindow *sharedWindow = objc_getAssociatedObject(UIApplication.sharedApplication, sharedWindowKey);
+        if (!DYYYDebugFloatingWindow && [sharedWindow isKindOfClass:DYYYDebugOverlayWindow.class]) DYYYDebugFloatingWindow = sharedWindow;
+        if (DYYYDebugFloatingWindow && DYYYDebugFloatingWindow.windowScene != target.windowScene) {
+            DYYYDebugFloatingWindow.hidden = YES;
+            DYYYDebugFloatingWindow = nil;
+        }
+        if (!DYYYDebugFloatingWindow) {
+            DYYYDebugFloatingWindow = target.windowScene ? [[DYYYDebugOverlayWindow alloc] initWithWindowScene:target.windowScene] : [[DYYYDebugOverlayWindow alloc] initWithFrame:target.bounds];
+            DYYYDebugFloatingWindow.backgroundColor = UIColor.clearColor;
+            DYYYDebugFloatingWindow.rootViewController = [DYYYDebugOverlayRootController new];
+            objc_setAssociatedObject(UIApplication.sharedApplication, sharedWindowKey, DYYYDebugFloatingWindow, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+        if (DYYYDebugFloatingWindow.windowLevel != highestLevel + 1) DYYYDebugFloatingWindow.windowLevel = highestLevel + 1;
+        CGRect frame = target.windowScene ? target.windowScene.coordinateSpace.bounds : target.bounds;
+        if (!CGRectEqualToRect(DYYYDebugFloatingWindow.frame, frame)) DYYYDebugFloatingWindow.frame = frame;
+        if (DYYYDebugFloatingWindow.hidden) DYYYDebugFloatingWindow.hidden = NO; // 不调用 makeKey，避免抢走键盘和当前页面焦点。
+        DYYYDebugInstallOnWindow(DYYYDebugFloatingWindow);
+        UIButton *button = objc_getAssociatedObject(DYYYDebugFloatingWindow, DYYYDebugSharedButtonKey());
+        if (button) {
+            if (button.hidden) button.hidden = NO;
+            if (DYYYDebugFloatingWindow.subviews.lastObject != button) [DYYYDebugFloatingWindow bringSubviewToFront:button];
+            CGFloat radius = CGRectGetWidth(button.bounds) / 2;
+            UIEdgeInsets safe = DYYYDebugFloatingWindow.safeAreaInsets;
+            CGPoint center = button.center;
+            center.x = MIN(MAX(center.x, radius + 10), CGRectGetWidth(frame) - radius - 10);
+            center.y = MIN(MAX(center.y, safe.top + radius + 10), CGRectGetHeight(frame) - safe.bottom - radius - 10);
+            if (!CGPointEqualToPoint(button.center, center)) button.center = center;
+        }
+    } @finally {
+        DYYYDebugOverlayRefreshing = NO;
     }
 }
+
 
 void DYYYDebugInspectorInstall(void) {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
+      // 窗口/场景切换时迁移同一个悬浮层；普通导航 push/present 不会再遮住按钮。
+      for (NSString *name in @[ UIWindowDidBecomeVisibleNotification, UIWindowDidBecomeKeyNotification, UIWindowDidBecomeHiddenNotification, UISceneDidActivateNotification, UISceneWillDeactivateNotification, UIApplicationDidEnterBackgroundNotification ]) {
+          [NSNotificationCenter.defaultCenter addObserverForName:name object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
+              DYYYDebugInspectorRefreshOverlay();
+          }];
+      }
       DYYYDebugInstalledHooks = [NSMutableSet set];
       DYYYDebugHookStatus = [NSMutableArray array];
       for (NSString *name in @[ UIApplicationDidEnterBackgroundNotification, UIApplicationWillEnterForegroundNotification ]) {
@@ -477,4 +567,5 @@ void DYYYDebugInspectorInstall(void) {
     });
     dispatch_async(dispatch_get_main_queue(), ^{ DYYYDebugInspectorRefreshOverlay(); });
 }
+
 
