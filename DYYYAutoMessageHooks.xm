@@ -65,6 +65,17 @@
 }
 %end
 
+%hook TIMXOConversation
+- (id)sendMessage:(id)model error:(void *)error {
+    [DYYYIMService observeConversationSend:model conversation:self];
+    return %orig;
+}
+- (id)sendMessage:(id)model isSaveDB:(BOOL)saveDB error:(void *)error {
+    [DYYYIMService observeConversationSend:model conversation:self];
+    return %orig;
+}
+%end
+
 %hook IESIMMessageSender
 - (id)init {
     id result = %orig;
@@ -97,7 +108,9 @@
 }
 - (id)messagesInConversation:(id)conversation excludeMessageTypes:(id)types limit:(unsigned long long)limit {
     [DYYYIMService observeHistoryQuery:conversation manager:self];
-    return %orig;
+    id result = %orig;
+    [DYYYIMService observeHistoryResults:result manager:self];
+    return result;
 }
 %end
 

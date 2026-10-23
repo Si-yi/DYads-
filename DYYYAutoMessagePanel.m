@@ -7,6 +7,7 @@
 
 @interface DYYYAutoMessagePanel () <UITableViewDataSource, UITableViewDelegate, UISearchBarDelegate>
 @property(nonatomic) BOOL pickingFriends;
+@property(nonatomic) BOOL pickingTest;
 @property(nonatomic) BOOL loadingFriends;
 @property(nonatomic, strong) UIVisualEffectView *panel;
 @property(nonatomic, strong) UILabel *titleLabel;
@@ -150,6 +151,9 @@
         self.saveButton = [self button:@"保存选中" color:UIColor.systemBlueColor action:@selector(saveSelection)];
         self.footer = [self row:@[self.saveButton, close]];
         [self filterFriends];
+    } else if (self.pickingTest) {
+        self.footer = [self row:@[close]];
+        [self updateTitle];
     } else {
         UIStackView *top = [self row:@[
             [self button:@"添加配置" color:UIColor.systemBlueColor action:@selector(addConfig)],
@@ -170,7 +174,8 @@
     CGRect safe = UIEdgeInsetsInsetRect(self.view.bounds, self.view.safeAreaInsets);
     CGFloat width = MIN(360, CGRectGetWidth(safe) - 48);
     CGFloat height = MIN(self.pickingFriends ? 520 : 500, CGRectGetHeight(safe) - 40);
-    self.panel.frame = CGRectMake(CGRectGetMidX(safe) - width / 2, CGRectGetMidY(safe) - height / 2, width, height);
+    CGFloat y = self.pickingTest ? CGRectGetMaxY(safe) - height - 12 : CGRectGetMidY(safe) - height / 2;
+    self.panel.frame = CGRectMake(CGRectGetMidX(safe) - width / 2, y, width, height);
     self.titleLabel.frame = CGRectMake(14, 16, width - 56, 30);
     self.helpButton.frame = CGRectMake(width - 44, 14, 30, 32);
     CGFloat top = 58;
@@ -180,7 +185,7 @@
         self.selectionBar.frame = CGRectMake(18, top, width - 36, 34);
         top += 42;
     }
-    CGFloat footerHeight = self.pickingFriends ? 44 : 94;
+    CGFloat footerHeight = (self.pickingFriends || self.pickingTest) ? 44 : 94;
     self.footer.frame = CGRectMake(18, height - footerHeight - 18, width - 36, footerHeight);
     self.table.frame = CGRectMake(0, top, width, MAX(0, CGRectGetMinY(self.footer.frame) - top - 12));
 }
@@ -194,8 +199,8 @@
         self.emptyLabel.text = self.friends.count ? @"没有匹配的好友" : (self.loadingFriends ? @"正在读取互关好友…" : @"未读取到互关好友\n请先在抖音打开消息页后重试，原选择会保留。" );
         self.emptyLabel.hidden = self.groups.firstObject.count + self.groups.lastObject.count > 0;
     } else {
-        self.titleLabel.text = @"自动消息设置";
-        self.emptyLabel.text = @"还没有配置\n点击下方添加，或选择互关好友";
+        self.titleLabel.text = self.pickingTest ? @"选择测试配置" : @"自动消息设置";
+        self.emptyLabel.text = self.pickingTest ? @"当前账户还没有配置" : @"还没有配置\n点击下方添加，或选择互关好友";
         self.emptyLabel.hidden = self.configs.count > 0;
     }
 }
@@ -296,11 +301,14 @@
         NSInteger mode = [row[@"sendMode"] integerValue];
         NSString *type = mode == 2 ? @"仅图片" : (mode == 1 ? @"文字＋图" : ([row[@"randomText"] boolValue] ? @"每日随机" : @"固定文字"));
         cell.detailTextLabel.text = [NSString stringWithFormat:@"%@ · %@", type, mode == 2 ? [NSString stringWithFormat:@"%lu 张", (unsigned long)[row[@"imagePaths"] count]] : (row[@"message"] ?: @"")];
-        UISwitch *toggle = [UISwitch new];
-        toggle.tag = indexPath.row;
-        toggle.on = [row[@"enabled"] boolValue];
-        [toggle addTarget:self action:@selector(configToggled:) forControlEvents:UIControlEventValueChanged];
-        cell.accessoryView = toggle;
+        if (self.pickingTest) cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        else {
+            UISwitch *toggle = [UISwitch new];
+            toggle.tag = indexPath.row;
+            toggle.on = [row[@"enabled"] boolValue];
+            [toggle addTarget:self action:@selector(configToggled:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = toggle;
+        }
     }
     return cell;
 }
@@ -312,6 +320,14 @@
         if ([self.selectedIDs containsObject:uid]) [self.selectedIDs removeObject:uid]; else [self.selectedIDs addObject:uid];
         [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
         [self updateTitle];
+    } else if (self.pickingTest) {
+        NSDictionary *config = [self.configs[indexPath.row] copy];
+        [self dismissViewControllerAnimated:YES completion:^{
+            [DYYYUtils showToast:@"正在请求测试发送，等待抖音回执"];
+            [DYYYAutoMessage sendConfig:config manualTest:YES completion:^(BOOL success, NSString *reason) {
+                [DYYYUtils showToast:reason];
+            }];
+        }];
     } else {
         __weak typeof(self) weakSelf = self;
         [DYYYAutoMessage editConfigFrom:self existing:self.configs[indexPath.row] completion:^{ [weakSelf reloadConfigs]; }];
@@ -323,9 +339,9 @@
     if (![self.configs[toggle.tag][@"ownerID"] length]) self.configs[toggle.tag][@"ownerID"] = [DYYYIMService accountID];
     [DYYYAutoMessage saveMessageConfigs:self.configs];
 }
-- (BOOL)tableView:(UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)indexPath { return !self.pickingFriends; }
+- (BOOL)tableView:(UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)indexPath { return !self.pickingFriends && !self.pickingTest; }
 - (void)tableView:(UITableView *)tableView commitEditingStyle:(UITableViewCellEditingStyle)style forRowAtIndexPath:(NSIndexPath *)indexPath {
-    if (style != UITableViewCellEditingStyleDelete || self.pickingFriends) return;
+    if (style != UITableViewCellEditingStyleDelete || self.pickingFriends || self.pickingTest) return;
     [self.configs removeObjectAtIndex:indexPath.row];
     [DYYYAutoMessage saveMessageConfigs:self.configs];
     [tableView reloadData];
@@ -355,13 +371,16 @@
     }];
 }
 - (void)testConfig {
-    NSDictionary *first = nil;
-    for (NSDictionary *row in self.configs) if ([row[@"enabled"] boolValue] && [row[@"ownerID"] isEqual:[DYYYIMService accountID]]) { first = row; break; }
-    if (!first) { [DYYYUtils showToast:@"请先添加并启用当前账户配置，旧配置请编辑保存一次"]; return; }
-    [DYYYUtils showToast:@"正在请求抖音发送，等待发送回执"];
-    [DYYYAutoMessage sendConfig:first completion:^(__unused BOOL success, NSString *reason) {
-        [DYYYUtils showToast:reason];
-    }];
+    NSString *account = [DYYYIMService accountID];
+    if (!account.length) { [DYYYUtils showToast:@"当前登录账户尚未就绪"]; return; }
+    NSMutableArray *configs = [NSMutableArray array];
+    for (NSDictionary *row in [DYYYAutoMessage messageConfigs])
+        if ([row[@"ownerID"] isEqual:account]) [configs addObject:row];
+    if (!configs.count) { [DYYYUtils showToast:@"请先为当前账户添加配置"]; return; }
+    DYYYAutoMessagePanel *picker = [DYYYAutoMessagePanel new];
+    picker.pickingTest = YES;
+    picker.configs = configs;
+    [DYYYAutoMessagePanel presentPanel:picker from:self];
 }
 - (void)selectAll { for (NSArray *group in self.groups) for (NSDictionary *row in group) [self.selectedIDs addObject:row[@"userID"]]; [self.table reloadData]; [self updateTitle]; }
 - (void)selectNone { [self.selectedIDs removeAllObjects]; [self.table reloadData]; [self updateTitle]; }

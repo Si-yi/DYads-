@@ -2000,6 +2000,8 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 
 @class TIMXOMessage;
 @interface TIMXOConversation : NSObject
+- (id)sendMessage:(id)model error:(void *)error;
+- (id)sendMessage:(id)model isSaveDB:(BOOL)saveDB error:(void *)error;
 + (instancetype)instanceWithRootObject:(id)root identifier:(id)identifier;
 @property (nonatomic, readonly) long long ownerID;
 @property (nonatomic, readonly, copy) NSString *identifier;

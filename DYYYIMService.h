@@ -7,9 +7,12 @@
 + (NSDictionary *)diagnostics;
 + (NSString *)accountID;
 + (void)observeTextModel:(id)model sender:(id)sender;
++ (void)observeConversationSend:(id)model conversation:(id)conversation;
 + (void)observeHistoryQuery:(id)conversation manager:(id)manager;
++ (void)observeHistoryResults:(id)results manager:(id)manager;
 + (void)observeMessage:(id)message conversation:(id)conversation error:(id)error;
 + (void)sendText:(NSString *)text toUserID:(NSString *)userID completion:(void (^)(BOOL success, NSString *reason))completion;
++ (void)sendText:(NSString *)text toUserID:(NSString *)userID manualTest:(BOOL)manualTest completion:(void (^)(BOOL success, NSString *reason))completion;
 + (NSString *)dailyStateForUserID:(NSString *)userID;
 + (NSArray<NSDictionary *> *)unreadSharesForUsers:(NSArray<NSString *> *)userIDs error:(NSString **)error;
 @end

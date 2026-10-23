@@ -219,7 +219,11 @@ static NSString *const kDYYYFriendShareFriends = @"DYYYFriendShareFeedFriends";
 }
 
 + (void)sendConfig:(NSDictionary *)config completion:(void (^)(BOOL, NSString *))completion {
-    if (!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(), ^{ [self sendConfig:config completion:completion]; }); return; }
+    [self sendConfig:config manualTest:NO completion:completion];
+}
+
++ (void)sendConfig:(NSDictionary *)config manualTest:(BOOL)manualTest completion:(void (^)(BOOL, NSString *))completion {
+    if (!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(), ^{ [self sendConfig:config manualTest:manualTest completion:completion]; }); return; }
     NSString *account = [DYYYIMService accountID];
     if (!account.length || ![config[@"ownerID"] isEqual:account]) { if (completion) completion(NO, @"配置不属于当前登录账户"); return; }
     if ([config[@"sendMode"] integerValue] != 0) {
@@ -228,8 +232,8 @@ static NSString *const kDYYYFriendShareFriends = @"DYYYFriendShareFeedFriends";
     }
     NSString *message = [self renderMessageForConfig:config];
     if (!message.length) { if (completion) completion(NO, @"没有可发送的文字内容"); return; }
-    [DYYYIMService sendText:message toUserID:config[@"userID"] completion:^(BOOL success, NSString *reason) {
-        if (success) {
+    [DYYYIMService sendText:message toUserID:config[@"userID"] manualTest:manualTest completion:^(BOOL success, NSString *reason) {
+        if (success && !manualTest) {
             NSString *key = [self progressKey:config];
             NSDictionary *previous = [[self defaults] dictionaryForKey:key] ?: @{};
             if (![previous[@"date"] isEqual:[self todayKey]]) [[self defaults] setObject:@{@"count":@([previous[@"count"] unsignedIntegerValue] + 1), @"date":[self todayKey]} forKey:key];

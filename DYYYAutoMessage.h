@@ -10,6 +10,7 @@
 + (NSString *)imageDirectory;
 + (void)resolveRecipient:(NSString *)input completion:(void (^)(NSDictionary *recipient, NSString *error))completion;
 + (NSString *)renderMessageForConfig:(NSDictionary *)config;
++ (void)sendConfig:(NSDictionary *)config manualTest:(BOOL)manualTest completion:(void (^)(BOOL success, NSString *reason))completion;
 + (void)sendConfig:(NSDictionary *)config completion:(void (^)(BOOL success, NSString *reason))completion;
 + (void)editConfigFrom:(UIViewController *)root existing:(NSMutableDictionary *)existing completion:(void (^)(void))completion;
 + (BOOL)openNativeChatForUserID:(NSString *)userID message:(NSString *)message;
