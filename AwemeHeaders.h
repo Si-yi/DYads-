@@ -1092,6 +1092,14 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @interface DYYYCommentMenuCardCell : UICollectionViewCell
 @end
 
+// 评论菜单的好友横排异步创建、滚动复用后需要重新同步文字颜色。
+// 运行时分别绑定 AWEIMShareImpl.ShareContactListTargetCell / ShareContactListRecentShareCell。
+@interface DYYYCommentMenuContactCell : UICollectionViewCell
+@end
+
+@interface DYYYCommentMenuRecentShareCell : UICollectionViewCell
+@end
+
 @protocol AFDPrivacyHalfScreenViewControllerProtocol <NSObject>
 @end
 

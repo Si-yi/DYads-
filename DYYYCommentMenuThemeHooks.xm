@@ -62,10 +62,43 @@
 %hook DYYYCommentMenuCardCell
 - (void)layoutSubviews {
     %orig;
-    UIView *cell = (UIView *)self;
-    UIViewController *controller = [DYYYCommentMenuTheme controllerForView:cell];
-    if (controller) [DYYYCommentMenuPalette applyInView:cell controller:controller];
-    else [DYYYCommentMenuPalette restoreView:cell];
+    [DYYYCommentMenuPalette synchronizeCell:(UIView *)self];
+}
+- (void)prepareForReuse {
+    [DYYYCommentMenuPalette restoreView:(UIView *)self];
+    %orig;
+}
+%end
+%end
+
+// 好友昵称、最近分享和火花说明在内层 CollectionView 布局时才写入颜色。
+// 只在评论长按菜单内接管；同一 Cell 用于普通分享页时恢复原值。
+%group DYYYCommentMenuContactThemeHooks
+%hook DYYYCommentMenuContactCell
+- (void)layoutSubviews {
+    %orig;
+    [DYYYCommentMenuPalette synchronizeCell:(UIView *)self];
+}
+- (void)didMoveToWindow {
+    %orig;
+    [DYYYCommentMenuPalette synchronizeCell:(UIView *)self];
+}
+- (void)prepareForReuse {
+    [DYYYCommentMenuPalette restoreView:(UIView *)self];
+    %orig;
+}
+%end
+%end
+
+%group DYYYCommentMenuRecentShareThemeHooks
+%hook DYYYCommentMenuRecentShareCell
+- (void)layoutSubviews {
+    %orig;
+    [DYYYCommentMenuPalette synchronizeCell:(UIView *)self];
+}
+- (void)didMoveToWindow {
+    %orig;
+    [DYYYCommentMenuPalette synchronizeCell:(UIView *)self];
 }
 - (void)prepareForReuse {
     [DYYYCommentMenuPalette restoreView:(UIView *)self];
@@ -82,5 +115,13 @@
     Class cellClass = NSClassFromString(@"CommentLongPressPanelNormalBaseCell");
     if (cellClass && [cellClass isSubclassOfClass:UICollectionViewCell.class]) {
         %init(DYYYCommentMenuCardThemeHooks, DYYYCommentMenuCardCell = cellClass);
+    }
+    Class contactClass = NSClassFromString(@"AWEIMShareImpl.ShareContactListTargetCell");
+    if (contactClass && [contactClass isSubclassOfClass:UICollectionViewCell.class]) {
+        %init(DYYYCommentMenuContactThemeHooks, DYYYCommentMenuContactCell = contactClass);
+    }
+    Class recentClass = NSClassFromString(@"AWEIMShareImpl.ShareContactListRecentShareCell");
+    if (recentClass && [recentClass isSubclassOfClass:UICollectionViewCell.class]) {
+        %init(DYYYCommentMenuRecentShareThemeHooks, DYYYCommentMenuRecentShareCell = recentClass);
     }
 }

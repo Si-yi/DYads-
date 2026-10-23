@@ -86,6 +86,67 @@ static char kDYYYMenuPaletteReportKey;
     return object_getIvar(cell, ivar);
 }
 
++ (UIColor *)readableTextColor:(UIColor *)color {
+    if (!color) return nil;
+    UIColor *resolved = [color resolvedColorWithTraitCollection:
+        [UITraitCollection traitCollectionWithUserInterfaceStyle:UIUserInterfaceStyleDark]];
+    CGFloat r, g, b, a;
+    if (![resolved getRed:&r green:&g blue:&b alpha:&a] || a <= 0.01) return nil;
+    // 抖音的正文是略带蓝色的深灰，不能只匹配纯黑；火花、警告等彩色文字保留。
+    if (MAX(r, MAX(g, b)) - MIN(r, MIN(g, b)) >= 0.12) return nil;
+    if (MIN(r, MIN(g, b)) >= 0.78 && a >= 0.9) return nil;
+    // 主文字与辅助文字都使用不透明颜色，避免旧的 60% 黑色在黑底上消失。
+    return [UIColor colorWithWhite:a < 0.85 ? 0.78 : 0.96 alpha:1];
+}
+
++ (void)applyLabel:(UILabel *)label controller:(UIViewController *)controller {
+    // 富文本只改对应的颜色段，不再调用 textColor setter 覆盖彩色火花或原始样式。
+    NSAttributedString *originalText = label.attributedText;
+    if (originalText.length) {
+        NSMutableAttributedString *text = [originalText mutableCopy];
+        __block BOOL changed = NO;
+        [originalText enumerateAttribute:NSForegroundColorAttributeName inRange:NSMakeRange(0, originalText.length) options:0 usingBlock:^(id color, NSRange range, BOOL *stop) {
+            UIColor *source = [color isKindOfClass:UIColor.class] ? color : label.textColor;
+            UIColor *target = [self readableTextColor:source];
+            if (target) {
+                [text addAttribute:NSForegroundColorAttributeName value:target range:range];
+                changed = YES;
+            }
+        }];
+        if (changed) [self write:text key:@"attributedText" object:label controller:controller];
+        return;
+    }
+    UIColor *target = [self readableTextColor:label.textColor];
+    if (target) [self write:target key:@"textColor" object:label controller:controller];
+}
+
++ (UIImageView *)actionIconInCell:(UIView *)cell {
+    UIImageView *icon = [self ivar:"$__lazy_storage_$_iconImage" inCell:cell];
+    if ([icon isKindOfClass:UIImageView.class]) return icon;
+    // 39.5.0 导出中功能图标为行首 20×20 的 UIImageView；Swift 成员不可读时局部回退。
+    // 仅从功能行内找小图标，不接管好友头像、火花和识图缩略图。
+    NSMutableArray<UIView *> *queue = [NSMutableArray arrayWithObject:cell];
+    for (NSUInteger index = 0; index < queue.count && index < 32; index++) {
+        UIView *view = queue[index];
+        if ([view isKindOfClass:UIImageView.class]) {
+            CGRect frame = [view convertRect:view.bounds toView:cell];
+            if (frame.size.width >= 16 && frame.size.width <= 24 &&
+                frame.size.height >= 16 && frame.size.height <= 24 &&
+                CGRectGetMinX(frame) >= 0 && CGRectGetMaxX(frame) <= 44)
+                return (UIImageView *)view;
+            continue;
+        }
+        [queue addObjectsFromArray:view.subviews];
+    }
+    return nil;
+}
+
++ (void)synchronizeCell:(UIView *)cell {
+    UIViewController *controller = [DYYYCommentMenuTheme controllerForView:cell];
+    if (controller && cell.window) [self applyInView:cell controller:controller];
+    else [self restoreView:cell];
+}
+
 + (BOOL)applyCard:(UIView *)cell controller:(UIViewController *)controller {
     BOOL handled = NO;
     // 卡片白底直接画在 CAShapeLayer 上，修改 UIView 的主题不会改变它。
@@ -109,7 +170,7 @@ static char kDYYYMenuPaletteReportKey;
         }
     }
     // 只接管功能行的专用图标；好友头像和识图缩略图保持原图。
-    UIImageView *icon = [self ivar:"$__lazy_storage_$_iconImage" inCell:cell];
+    UIImageView *icon = [self actionIconInCell:cell];
     if ([icon isKindOfClass:UIImageView.class] && icon.image) {
         if (icon.image.renderingMode != UIImageRenderingModeAlwaysTemplate)
             [self write:[icon.image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] key:@"image" object:icon controller:controller];
@@ -166,20 +227,8 @@ static char kDYYYMenuPaletteReportKey;
                 [self write:panel key:@"backgroundColor" object:view controller:controller]; backgrounds++;
             }
             if ([view isKindOfClass:UILabel.class]) {
-                UILabel *label = (UILabel *)view;
-                if ([self isNeutral:label.textColor minimum:0 opaque:NO]) {
-                    [self write:UIColor.whiteColor key:@"textColor" object:label controller:controller]; labels++;
-                }
-                if (label.attributedText.length) {
-                    NSMutableAttributedString *text = [label.attributedText mutableCopy];
-                    __block BOOL changed = NO;
-                    [label.attributedText enumerateAttribute:NSForegroundColorAttributeName inRange:NSMakeRange(0, text.length) options:0 usingBlock:^(id color, NSRange range, BOOL *stop) {
-                        if ([color isKindOfClass:UIColor.class] && [self isNeutral:color minimum:0 opaque:NO] && ![color isEqual:UIColor.whiteColor]) {
-                            [text addAttribute:NSForegroundColorAttributeName value:UIColor.whiteColor range:range]; changed = YES;
-                        }
-                    }];
-                    if (changed) [self write:text key:@"attributedText" object:label controller:controller];
-                }
+                [self applyLabel:(UILabel *)view controller:controller];
+                labels++;
             }
             if ([view isKindOfClass:UIVisualEffectView.class]) {
                 UIVisualEffectView *effectView = (UIVisualEffectView *)view;
