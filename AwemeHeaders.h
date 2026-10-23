@@ -2029,6 +2029,7 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @end
 
 @interface TIMXOMessageManager : NSObject
+- (id)earliestMessagesInConversationWithIdentifier:(id)identifier limit:(long long)limit;
 - (id)initWithRootObject:(id)root;
 - (id)messagesBeforeTime:(double)time inTypes:(id)types limit:(unsigned long long)limit;
 - (id)messagesInConversation:(id)conversation excludeMessageTypes:(id)types limit:(unsigned long long)limit;

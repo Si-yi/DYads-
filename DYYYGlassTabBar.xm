@@ -824,21 +824,16 @@ static BOOL DKGlassSyncItems(UITabBarController *controller, NSArray *buttons) {
 // 只有等整轮布局结束才保证读到最终值。gPendingMirror 让一轮布局最多排一次。
 static BOOL gPendingMirror = NO;
 
+static void DKGlassUpdate(AWENormalModeTabBar *douyinBar) API_AVAILABLE(ios(26.0));
+
 static void DKGlassScheduleMirror(void) {
-    if (gPendingMirror || !gBar) return;
+    if (gPendingMirror) return;
     gPendingMirror = YES;
     dispatch_async(dispatch_get_main_queue(), ^{
         gPendingMirror = NO;
         AWENormalModeTabBar *bar = gDouyinBar;
-        UITabBarController *controller = bar ? DKGlassControllerForView(bar) : nil;
-        if (!gBar || !controller) return;
-        // 内容没变时纯空转；变了才重建 items，并要求底栏重排一次几何——胶囊宽度归 UIKit 算，
-        // 圆键位置得跟着它走。签名收敛后不再标脏，不会形成布局环。
-        // 取色排在同步之前：标题图要按极性渲染，极性得先定下来。
-        NSArray *buttons = DKGlassValue(bar, @"tabBarButtons");
-        DKGlassApplyInk(DKGlassInkStyleFor(buttons, (NSInteger)controller.selectedIndex,
-                                           gGlassStyle));
-        if (DKGlassSyncItems(controller, buttons)) [bar setNeedsLayout];
+        if (!bar || !bar.window) return;
+        if (@available(iOS 26.0, *)) DKGlassUpdate(bar);
     });
 }
 
@@ -1068,6 +1063,10 @@ static NSUInteger DKGlassReferenceCount(NSArray *buttons) {
 // 整个功能只在 iOS 26 及以上成立——低版本没有 UIGlassEffect，装上去只是一条没有玻璃的
 // UITabBar 盖住抖音底栏，比原生还差。故在此一处挡住，各 helper 用 API_AVAILABLE 标注。
 static void DKGlassUpdate(AWENormalModeTabBar *douyinBar) API_AVAILABLE(ios(26.0)) {
+    static BOOL updating = NO;
+    if (!douyinBar || updating) return;
+    updating = YES;
+    @try {
     // 抖音换过底栏实例时，先把旧那条的内容还原——玻璃底栏只会跟着新实例走，
     // 旧实例的按钮若停在 opacity=0，它再次出现时就是一条空底栏。
     AWENormalModeTabBar *previousBar = gDouyinBar;
@@ -1135,7 +1134,12 @@ static void DKGlassUpdate(AWENormalModeTabBar *douyinBar) API_AVAILABLE(ios(26.0
     DKGlassApplyInk(DKGlassInkStyleFor(buttons, (NSInteger)controller.selectedIndex, gGlassStyle));
     DKGlassSyncItems(controller, buttons);
     DKGlassLayoutGlass(douyinBar, DKGlassReferenceCount(buttons));
-    DKGlassSetDouyinContentVisible(douyinBar, buttons, NO);
+    // 原生按钮尚未建立时不能先把底栏内容清空。
+    BOOL ready = gBar.items.count > 0 && CGRectGetWidth(gBar.bounds) > 0 && CGRectGetHeight(gBar.bounds) > 0;
+    DKGlassSetDouyinContentVisible(douyinBar, buttons, !ready);
+    } @finally {
+        updating = NO;
+    }
 }
 
 void DKGlassTabBarRefresh(void) {
@@ -1149,6 +1153,21 @@ void DKGlassTabBarRefresh(void) {
 %group DKGlassTabBarHooks
 
 %hook AWENormalModeTabBar
+
+// 冷启动先于下一次 layout 完成挂载；按钮数组稍后填充时再合并刷新一次。
+- (void)didMoveToWindow {
+    %orig;
+    if (!self.window) return;
+    if (@available(iOS 26.0, *)) DKGlassUpdate(self);
+    DKGlassScheduleMirror();
+}
+
+- (void)didAddSubview:(UIView *)subview {
+    %orig;
+    if (subview == gBar || subview == gPlusKey || !self.window) return;
+    gDouyinBar = self;
+    DKGlassScheduleMirror();
+}
 
 - (void)layoutSubviews {
     %orig;
@@ -1252,3 +1271,4 @@ static void DYYYGlassSettingsChanged(void) {
 void DKGlassTabBarRefresh(void) {}
 
 #endif /* __IPHONE_OS_VERSION_MAX_ALLOWED >= 260000 */
+

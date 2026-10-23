@@ -42,6 +42,26 @@
     }
 }
 
+// 运行时接口只声明 id：不能把所有版本的查询结果都假定为 NSArray。
++ (NSArray *)messageArray:(id)value {
+    if ([value isKindOfClass:NSArray.class]) return value;
+    if ([value isKindOfClass:NSOrderedSet.class]) return [value array];
+    if ([value isKindOfClass:NSSet.class]) return [value allObjects];
+    if ([value isKindOfClass:NSDictionary.class]) {
+        for (NSString *key in @[@"messages", @"messageList", @"list", @"data"]) {
+            id list = value[key];
+            if ([list isKindOfClass:NSArray.class]) return list;
+            if ([list isKindOfClass:NSOrderedSet.class]) return [list array];
+        }
+        NSArray *objects = [value allValues];
+        if (!objects.count) return @[];
+        BOOL messages = YES;
+        for (id object in objects) if (![object respondsToSelector:@selector(belongingConversationIdentifier)]) { messages = NO; break; }
+        if (messages) return objects;
+    }
+    return nil;
+}
+
 + (NSArray<NSDictionary *> *)unreadSharesForUsers:(NSArray<NSString *> *)userIDs error:(NSString **)error {
     [self shared].scanState = [@{@"selectedUserCount":@(userIDs.count), @"stage":@"initializing"} mutableCopy];
     NSString *account = [self accountID];
@@ -62,25 +82,10 @@
         return @[];
     }
     NSString *historyKind = [[self shared].historyArguments objectForKey:messages];
-    [self shared].scanState[@"historyKind"] = historyKind ?: @"time_query";
+    [self shared].scanState[@"historyKind"] = historyKind ?: @"identifier_query";
     NSMutableArray *rows = [NSMutableArray array];
     NSMutableSet *seen = [NSMutableSet set];
     @try {
-        // 未观察到旧查询接口时，使用签名明确的时间查询。一次扫描只读一次，按会话 ID 分流。
-        NSArray *recent = nil;
-        if (!historyKind.length) {
-            if (![messages respondsToSelector:@selector(messagesBeforeTime:inTypes:limit:)]) {
-                if (error) *error = @"当前版本的本地消息查询入口不可用";
-                return @[];
-            }
-            id result = [messages messagesBeforeTime:NSDate.distantFuture.timeIntervalSince1970 inTypes:nil limit:2000];
-            if (![result isKindOfClass:NSArray.class]) {
-                if (error) *error = @"本地消息查询未返回可读取的列表";
-                return @[];
-            }
-            recent = result;
-            [self shared].scanState[@"recentMessageCount"] = @(recent.count);
-        }
         for (NSString *peer in userIDs) {
             if (![peer isKindOfClass:NSString.class] || peer.longLongValue <= 0 || [peer isEqual:account]) continue;
             NSString *cid = [manager conversationIDFor1to1ChatWithOtherUserID:peer.longLongValue inbox:0];
@@ -94,16 +99,35 @@
             unsigned long long unread = conv.unreadCount;
             if (!unread) continue;
             id argument = [historyKind isEqual:@"identifier"] ? (id)cid : conv;
-            id result = recent ? [recent filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(id object, NSDictionary *bindings) {
-                TIMXOMessage *message = object;
-                if (![message respondsToSelector:@selector(belongingConversationIdentifier)]) return NO;
-                return [message.belongingConversationIdentifier isEqual:cid];
-            }]] : [messages messagesInConversation:argument excludeMessageTypes:@[] limit:MIN(MAX(unread, 100ULL), 1000ULL)];
-            if (recent.count == 2000 && [result count] < unread) {
-                if (error) *error = @"近期消息较多，当前窗口未覆盖该好友全部未读消息，请进入好友聊天后再扫描";
+            id raw = nil;
+            NSArray *result = nil;
+            BOOL usedEarliest = NO;
+            if (historyKind.length) {
+                raw = [messages messagesInConversation:argument excludeMessageTypes:@[] limit:MIN(MAX(unread, 100ULL), 2000ULL)];
+                result = [self messageArray:raw];
+            }
+            // 明确接收会话 identifier 的原生入口，不再依赖返回类型未确认的全局时间查询。
+            if (!result && [messages respondsToSelector:@selector(earliestMessagesInConversationWithIdentifier:limit:)]) {
+                usedEarliest = YES;
+                raw = [messages earliestMessagesInConversationWithIdentifier:cid limit:2000];
+                result = [self messageArray:raw];
+            }
+            [self shared].scanState[@"query"] = usedEarliest ? @"earliest_by_identifier" : @"observed_conversation_query";
+            [self shared].scanState[@"returnClass"] = raw ? NSStringFromClass([raw class]) : @"nil";
+            if (!result) {
+                [self shared].scanState[@"stage"] = @"unreadable_result";
+                if (error) *error = @"该好友的本地消息查询未返回可读取列表，请导出当前记录";
                 return @[];
             }
-            if (![result isKindOfClass:NSArray.class]) continue;
+            [self shared].scanState[@"messageCount"] = @(result.count);
+            NSString *lastID = conv.lastMessage.identifier;
+            BOOL coversLatest = NO;
+            for (TIMXOMessage *message in result) if ([message.identifier isEqual:lastID]) { coversLatest = YES; break; }
+            if (usedEarliest && result.count >= 2000 && !coversLatest) {
+                [self shared].scanState[@"stage"] = @"history_window_incomplete";
+                if (error) *error = @"该好友历史消息超过读取窗口，请先打开好友聊天后重新扫描";
+                return @[];
+            }
             // 先按时间排序，避免底层返回顺序变化时取到旧的已读消息。
             NSArray *history = [result sortedArrayUsingComparator:^NSComparisonResult(TIMXOMessage *a, TIMXOMessage *b) {
                 NSDate *da = a.createdAt, *db = b.createdAt;
@@ -451,11 +475,11 @@
         }
     }
     if (!type) type = [self textTypeForBody:content number:@(last.messageType)];
-    if (!type && [messages respondsToSelector:@selector(messagesBeforeTime:inTypes:limit:)]) {
-        // 使用同一 SDK 的近期消息识别文字类型，不要求目标好友的末条恰好是文字。
+    if (!type && [messages respondsToSelector:@selector(earliestMessagesInConversationWithIdentifier:limit:)]) {
+        // 同样使用参数明确的会话 ID 入口识别文字类型，避免时间查询的非列表返回。
         @try {
-            id recent = [messages messagesBeforeTime:NSDate.distantFuture.timeIntervalSince1970 inTypes:nil limit:200];
-            if ([recent isKindOfClass:NSArray.class]) for (TIMXOMessage *message in recent) {
+            NSArray *recent = [self messageArray:[messages earliestMessagesInConversationWithIdentifier:cid limit:200]];
+            for (TIMXOMessage *message in recent) {
                 type = [self textTypeForBody:message.content number:@(message.messageType)];
                 if (type) break;
             }
@@ -502,4 +526,5 @@
     });
 }
 @end
+
 
