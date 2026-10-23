@@ -133,6 +133,15 @@ static BOOL gBootstrapActive = NO;
 static BOOL gBootstrapHasPlus = NO;
 static NSUInteger gMirrorRuns = 0;
 static NSUInteger gLayoutRuns = 0;
+// 只保护从博主主页返回首页这一段过渡；正常主页隐藏和取消手势仍遵循原生状态。
+static __weak UIViewController *gLeavingProfile = nil;
+static __weak UIViewController *gReturnHome = nil;
+static __weak UIViewController *gAppearingHome = nil;
+static __weak AWENormalModeTabBar *gReturnHost = nil;
+static BOOL gHomeBarWasVisible = NO;
+static BOOL gProfileReturnActive = NO;
+static BOOL gReturnOldHidden = NO;
+static CGFloat gReturnOldAlpha = 1;
 static id gProxy = nil;
 // 每个 item 对应的 tab 序号（validIndex）。与 items 同序等长。
 static NSArray<NSNumber *> *gItemKinds = nil;
@@ -672,9 +681,55 @@ static void DKGlassSyncPlusIcon(UIView *button) {
 
 @interface DKGlassTabBarProxy : NSObject <UITabBarDelegate>
 - (void)plusKeyDidTap;
++ (void)beginProfileReturn:(UIViewController *)home;
++ (void)finishProfileReturn:(BOOL)cancelled;
 @end
 
 @implementation DKGlassTabBarProxy
+
++ (void)beginProfileReturn:(UIViewController *)home {
+    if (gProfileReturnActive || !DKGlassTabBarEnabled() || !gHomeBarWasVisible || !gDouyinBar) return;
+    id<UIViewControllerTransitionCoordinator> coordinator = home.transitionCoordinator;
+    UIViewController *from = [coordinator viewControllerForKey:UITransitionContextFromViewControllerKey];
+    if ([from isKindOfClass:UINavigationController.class]) from = ((UINavigationController *)from).topViewController;
+    BOOL profile = [NSStringFromClass(from.class) containsString:@"AWEUserDetailViewController"];
+    if (!profile && !gLeavingProfile) return;
+    gLeavingProfile = nil;
+    gReturnHome = home;
+    gReturnHost = gDouyinBar;
+    gReturnOldHidden = gReturnHost.hidden;
+    gReturnOldAlpha = gReturnHost.alpha;
+    gProfileReturnActive = YES;
+    [UIView performWithoutAnimation:^{
+        gReturnHost.hidden = NO;
+        gReturnHost.alpha = 1;
+        [gReturnHost.layer removeAnimationForKey:@"opacity"];
+        [gReturnHost setNeedsLayout];
+    }];
+    __weak UIViewController *expectedHome = home;
+    [coordinator animateAlongsideTransition:nil completion:^(id<UIViewControllerTransitionCoordinatorContext> context) {
+        if (gReturnHome != expectedHome) return;
+        if (context.isCancelled) [self finishProfileReturn:YES];
+        // 成功由首页 viewDidAppear 收尾，覆盖原生的最后一次显隐写入。
+    }];
+}
+
++ (void)finishProfileReturn:(BOOL)cancelled {
+    if (!gProfileReturnActive) return;
+    AWENormalModeTabBar *bar = gReturnHost;
+    gProfileReturnActive = NO;
+    gLeavingProfile = nil;
+    gReturnHome = nil;
+    gReturnHost = nil;
+    [UIView performWithoutAnimation:^{
+        bar.hidden = cancelled ? gReturnOldHidden : NO;
+        bar.alpha = cancelled ? gReturnOldAlpha : 1;
+        [bar.layer removeAnimationForKey:@"opacity"];
+        if (!cancelled) {
+            if (@available(iOS 26.0, *)) DKGlassTabBarRefresh();
+        }
+    }];
+}
 
 // 拍摄不是页面，走抖音自己的拍摄回调，传它自己的按钮。
 - (void)plusKeyDidTap {
@@ -1007,7 +1062,8 @@ static CGFloat DKGlassCapsuleWidth(NSUInteger count, NSUInteger reference, CGFlo
 NSString *DKGlassGeometryStatus(void) {
     if (!gBar) return @"未建立（功能关闭或尚未布局）";
     return [NSString stringWithFormat:
-            @"同步 %lu / 布局 %lu / 预显示 %@ · 项目 %lu / 参考 %lu · 胶囊目标 %.1f 实测 %.1f · 按钮宽 %.1f 首距 %.1f 高 %.1f · 内缩 %.1f（%@）",
+            @"返场 %@ · 同步 %lu / 布局 %lu / 预显示 %@ · 项目 %lu / 参考 %lu · 胶囊目标 %.1f 实测 %.1f · 按钮宽 %.1f 首距 %.1f 高 %.1f · 内缩 %.1f（%@）",
+            gProfileReturnActive ? @"YES" : @"NO",
             (unsigned long)gMirrorRuns, (unsigned long)gLayoutRuns, gBootstrapActive ? @"YES" : @"NO",
             (unsigned long)gGeometryCount, (unsigned long)gGeometryReference, gGeometryTarget, gGeometryMeasured,
             gMetrics.buttonWidth, gMetrics.buttonPad, gMetrics.height, gMetrics.inset,
@@ -1217,6 +1273,16 @@ void DKGlassTabBarRefresh(void) {
 
 %hook AWENormalModeTabBar
 
+- (void)setHidden:(BOOL)hidden {
+    if (gProfileReturnActive && self == gReturnHost && DKGlassTabBarEnabled()) hidden = NO;
+    %orig(hidden);
+}
+
+- (void)setAlpha:(CGFloat)alpha {
+    if (gProfileReturnActive && self == gReturnHost && DKGlassTabBarEnabled()) alpha = 1;
+    %orig(alpha);
+}
+
 // 冷启动先于下一次 layout 完成挂载；按钮数组稍后填充时再合并刷新一次。
 - (void)didMoveToWindow {
     %orig;
@@ -1237,6 +1303,39 @@ void DKGlassTabBarRefresh(void) {
     if (@available(iOS 26.0, *)) DKGlassUpdate(self);
 }
 
+%end
+
+%hook AWEUserDetailViewControllerV2
+- (void)viewWillDisappear:(BOOL)animated {
+    gLeavingProfile = self;
+    if (gAppearingHome) [DKGlassTabBarProxy beginProfileReturn:gAppearingHome];
+    %orig;
+}
+- (void)viewDidAppear:(BOOL)animated {
+    %orig;
+    if (gProfileReturnActive) [DKGlassTabBarProxy finishProfileReturn:YES];
+    if (gLeavingProfile == self) gLeavingProfile = nil;
+}
+%end
+
+%hook AWEFeedRootViewController
+- (void)viewWillAppear:(BOOL)animated {
+    gAppearingHome = self;
+    [DKGlassTabBarProxy beginProfileReturn:self];
+    %orig;
+}
+- (void)viewDidAppear:(BOOL)animated {
+    %orig;
+    if (gReturnHome == self) [DKGlassTabBarProxy finishProfileReturn:NO];
+    if (gAppearingHome == self) gAppearingHome = nil;
+    gHomeBarWasVisible = gDouyinBar && !gDouyinBar.hidden && gDouyinBar.alpha > 0.01;
+}
+- (void)viewWillDisappear:(BOOL)animated {
+    if (gReturnHome == self) [DKGlassTabBarProxy finishProfileReturn:YES];
+    else gHomeBarWasVisible = gDouyinBar && !gDouyinBar.hidden && gDouyinBar.alpha > 0.01;
+    if (gAppearingHome == self) gAppearingHome = nil;
+    %orig;
+}
 %end
 
 // 角标变化不一定伴随底栏重新布局（收到推送时就不会），故在抖音写入角标的两个入口上
@@ -1335,5 +1434,6 @@ void DKGlassTabBarRefresh(void) {}
 NSString *DKGlassGeometryStatus(void) { return @"当前 SDK 不支持玻璃底栏"; }
 
 #endif /* __IPHONE_OS_VERSION_MAX_ALLOWED >= 260000 */
+
 
 

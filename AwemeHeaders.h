@@ -1256,6 +1256,9 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @end
 
 // 隐藏状态栏
+@interface AWEUserDetailViewControllerV2 : UIViewController
+@end
+
 @interface AWEFeedRootViewController : UIViewController
 - (BOOL)prefersStatusBarHidden;
 @end
