@@ -345,7 +345,11 @@ static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *wi
             @"TIMXOSendMessage", @"TIMXSenderMessageTemplate", @"TIMXOMessageManager",
             @"TIMXOConversationManager", @"TIMXOConversation", @"TIMXOMessage", @"TIMXOUser",
             @"IESIMSendMessageModel", @"IESIMMessageSender", @"IESIMConversationDataManager",
-            @"IESIMService", @"AWEUserModel", @"AWEUser", @"AWEAwemeModel"
+            @"IESIMService", @"AWEUserModel", @"AWEUser", @"AWEAwemeModel",
+            @"HTSService", @"HTSServiceCenter", @"TIMXSDKInstance",
+            @"AWEHotListDataController", @"AWEListDataController", @"AWEFeedTableViewController",
+            @"AWEAwemeDetailModel", @"AWEAwemeDetailRequestModel", @"AWEAwemeDetailRequest",
+            @"AWEAwemeDetailAPI", @"AWEAwemeDetailService", @"TTNetworkManager"
         ];
         NSMutableOrderedSet<NSString *> *names = [NSMutableOrderedSet orderedSet];
         NSMutableArray<NSString *> *missing = [NSMutableArray array];
@@ -358,6 +362,12 @@ static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *wi
         NSArray<NSString *> *terms = @[@"message", @"conversation", @"contact", @"user", @"sender", @"sdk", @"session", @"account"];
         for (unsigned int index = 0; index < classCount; index++) {
             NSString *name = NSStringFromClass(classes[index]);
+            BOOL detailClass = [name hasPrefix:@"AWE"] &&
+                ([name containsString:@"AwemeDetail"] || [name containsString:@"MultiAweme"] || [name containsString:@"AwemeRequest"]);
+            if (detailClass && !DKClassNameIsRuntimeGenerated(name)) {
+                if (names.count < 80) [names addObject:name];
+                continue;
+            }
             if (![name hasPrefix:@"TIMX"] && ![name hasPrefix:@"IESIM"] && ![name hasPrefix:@"AWEIM"]) continue;
             if (DKClassNameIsRuntimeGenerated(name)) continue;
             if ([name containsString:@"View"] || [name containsString:@"Controller"] || [name containsString:@"Cell"]) continue;
@@ -469,7 +479,7 @@ static void DYYYDebugShowActions(UIWindow *window) {
         }
     }
     [menu addAction:[UIAlertAction actionWithTitle:@"导出当前页（轻量）" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { DYYYDebugExportCurrentPage(presenter, window, NO, NO); }]];
-    [menu addAction:[UIAlertAction actionWithTitle:@"导出消息接口（独立开发）" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { DYYYDebugExportCurrentPage(presenter, window, NO, YES); }]];
+    [menu addAction:[UIAlertAction actionWithTitle:@"导出消息与分享接口（独立开发）" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { DYYYDebugExportCurrentPage(presenter, window, NO, YES); }]];
     [menu addAction:[UIAlertAction actionWithTitle:@"完整导出（含图层和类头文件）" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { DYYYDebugExportCurrentPage(presenter, window, YES, NO); }]];
     [menu addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
     UIPopoverPresentationController *popover = menu.popoverPresentationController;
@@ -623,6 +633,7 @@ void DYYYDebugInspectorInstall(void) {
     });
     dispatch_async(dispatch_get_main_queue(), ^{ DYYYDebugInspectorRefreshOverlay(); });
 }
+
 
 
 

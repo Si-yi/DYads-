@@ -1,5 +1,6 @@
 #import "DYYYAutoMessagePanel.h"
 #import "DYYYAutoMessage.h"
+#import "DYYYIMService.h"
 #import "DYYYSettingsHelper.h"
 #import "DYYYUtils.h"
 
@@ -297,6 +298,7 @@
 - (void)configToggled:(UISwitch *)toggle {
     if (toggle.tag >= self.configs.count) return;
     self.configs[toggle.tag][@"enabled"] = @(toggle.on);
+    if (![self.configs[toggle.tag][@"ownerID"] length]) self.configs[toggle.tag][@"ownerID"] = [DYYYIMService accountID];
     [DYYYAutoMessage saveMessageConfigs:self.configs];
 }
 - (BOOL)tableView:(UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)indexPath { return !self.pickingFriends; }
@@ -323,7 +325,7 @@
             for (NSDictionary *config in configs) [existing addObject:config[@"userID"]];
             for (NSDictionary *friend in friends) {
                 if ([existing containsObject:friend[@"userID"]]) continue;
-                [configs addObject:[@{ @"userID":friend[@"userID"], @"name":friend[@"name"], @"message":text ?: @"", @"enabled":@YES } mutableCopy]];
+                [configs addObject:[@{ @"userID":friend[@"userID"], @"ownerID":[DYYYIMService accountID], @"name":friend[@"name"], @"message":text ?: @"", @"enabled":@YES } mutableCopy]];
             }
             [DYYYAutoMessage saveMessageConfigs:configs];
             [weakSelf reloadConfigs];
@@ -332,11 +334,12 @@
 }
 - (void)testConfig {
     NSDictionary *first = nil;
-    for (NSDictionary *row in self.configs) if ([row[@"enabled"] boolValue]) { first = row; break; }
-    if (!first) { [DYYYUtils showToast:@"请先添加并启用配置"]; return; }
-    // 当前发送层只提供预填聊天；测试不改每日处理记录，也不伪报发送成功。
-    [DYYYAutoMessage openNativeChatForUserID:first[@"userID"] message:first[@"message"]];
-    [DYYYUtils showToast:@"已打开预填聊天，请在抖音确认发送"];
+    for (NSDictionary *row in self.configs) if ([row[@"enabled"] boolValue] && [row[@"ownerID"] isEqual:[DYYYIMService accountID]]) { first = row; break; }
+    if (!first) { [DYYYUtils showToast:@"请先添加并启用当前账户配置，旧配置请编辑保存一次"]; return; }
+    [DYYYUtils showToast:@"正在请求抖音发送，等待发送回执"];
+    [DYYYIMService sendText:first[@"message"] toUserID:first[@"userID"] completion:^(__unused BOOL success, NSString *reason) {
+        [DYYYUtils showToast:reason];
+    }];
 }
 - (void)selectAll { for (NSArray *group in self.groups) for (NSDictionary *row in group) [self.selectedIDs addObject:row[@"userID"]]; [self.table reloadData]; [self updateTitle]; }
 - (void)selectNone { [self.selectedIDs removeAllObjects]; [self.table reloadData]; [self updateTitle]; }
@@ -352,7 +355,7 @@
 - (void)closePanel { [self dismissViewControllerAnimated:YES completion:nil]; }
 - (void)showHelp {
     if (!self.pickingFriends) {
-        [DYYYUtils showToast:@"点击配置修改，左滑删除。测试会打开预填聊天，由你确认发送。"];
+        [DYYYUtils showToast:@"点击配置修改，左滑删除。测试会实际发送给第一位启用好友；当天已有发送或待确认记录时不重复发送。旧配置请保存一次以绑定当前账户。"];
         return;
     }
     self.loadingFriends = YES;
@@ -366,3 +369,4 @@
 }
 - (void)dealloc { for (NSURLSessionDataTask *task in self.avatarTasks) [task cancel]; }
 @end
+

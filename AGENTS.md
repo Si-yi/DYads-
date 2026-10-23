@@ -22,6 +22,7 @@
   - `DYYYUtils.(h/m)`：窗口/颜色/路径等工具。
   - `DYYYConstants.h`：Keys、URL、通知名。
 - **自动消息弹窗**：`DYYYAutoMessagePanel.(h/m)` 展示配置开关列表与互关好友搜索多选，配置读写和联系人适配由 `DYYYAutoMessage` 负责。
+- **独立 IM 适配**：`DYYYIMService.(h/m)` 复用抖音创建的消息服务实例，读取联系人服务、校验会话账户并通过原生发送回执维护每日状态；`DYYYAutoMessageHooks.xm` 观测服务生命周期与发送结果。私有声明集中在 `AwemeHeaders.h`。好友分享推荐的扫描和流插入尚未完成，不得标记为已可用。
 - **设置页复用 UI（按交互类型）**
   - 列表/选择：`DYYYKeywordListView.(h/m)`、`DYYYOptionsSelectionView.(h/m)`、`DYYYFilterSettingsView.(h/m)`。
   - 输入/图标配置：`DYYYCustomInputView.(h/m)`、`DYYYIconOptionsDialogView.(h/m)`、`DYYYImagePickerDelegate.(h/m)`、`DYYYBackupPickerDelegate.(h/m)`。
@@ -132,3 +133,4 @@
 - 是否描述了用户可见的行为及开关，确保可通过设置界面操作。
 
 遵循以上约定可以保证 tweak 的 Hook 安全性和可维护性，也方便 AI Agent 在回答问题或生成补丁时保持统一风格。
+

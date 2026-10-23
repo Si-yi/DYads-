@@ -1,16 +1,13 @@
 #import "DYYYAutoMessage.h"
 #import "DYYYAutoMessagePanel.h"
-#import <string.h>
+#import "DYYYIMService.h"
 
 #import "AwemeHeaders.h"
 #import "DYYYSettingsHelper.h"
 #import "DYYYUtils.h"
-#import <objc/message.h>
 
 static NSString *const kDYYYAutoMessageEnabled = @"DYYYAutoMessageEnabled";
 static NSString *const kDYYYAutoMessageConfigs = @"DYYYAutoMessageConfigs";
-static NSString *const kDYYYAutoMessageSentDay = @"DYYYAutoMessageSentDay";
-static NSString *const kDYYYAutoMessageSentIDs = @"DYYYAutoMessageSentIDs";
 static NSString *const kDYYYAutoMessageQueryKeyword = @"DYYYAutoMessageIDQueryKeyword";
 static NSString *const kDYYYAutoMessageNoSendTime = @"DYYYAutoMessageNoSendTime";
 static NSString *const kDYYYAutoMessageToast = @"DYYYAutoMessageToastEnabled";
@@ -40,6 +37,7 @@ static NSString *const kDYYYFriendShareWatchedIDs = @"DYYYFriendShareWatchedItem
             [configs addObject:[@{
                 @"userID" : userID,
                 @"name" : [row[@"name"] isKindOfClass:NSString.class] ? row[@"name"] : userID,
+                @"ownerID" : [row[@"ownerID"] isKindOfClass:NSString.class] ? row[@"ownerID"] : @"",
                 @"message" : [row[@"message"] isKindOfClass:NSString.class] ? row[@"message"] : @"",
                 @"enabled" : @([row[@"enabled"] respondsToSelector:@selector(boolValue)] ? [row[@"enabled"] boolValue] : YES)
             } mutableCopy]];
@@ -49,7 +47,12 @@ static NSString *const kDYYYFriendShareWatchedIDs = @"DYYYFriendShareWatchedItem
 }
 
 + (void)saveMessageConfigs:(NSArray *)configs {
-    [[self defaults] setObject:configs ?: @[] forKey:kDYYYAutoMessageConfigs];
+    NSMutableArray *saved = [NSMutableArray array];
+    for (NSDictionary *row in configs) {
+        NSMutableDictionary *config = [row mutableCopy];
+        [saved addObject:config];
+    }
+    [[self defaults] setObject:saved forKey:kDYYYAutoMessageConfigs];
 }
 
 + (NSString *)todayKey {
@@ -86,25 +89,41 @@ static NSString *const kDYYYFriendShareWatchedIDs = @"DYYYFriendShareWatchedItem
     return YES;
 }
 
++ (void)processDailyConfigs:(NSMutableArray *)configs completion:(void (^)(void))completion {
+    if (![[self defaults] boolForKey:kDYYYAutoMessageEnabled] || [self isNoSendTime]) { if (completion) completion(); return; }
+    if (!configs.count) { if (completion) completion(); return; }
+    NSDictionary *config = configs.firstObject;
+    [configs removeObjectAtIndex:0];
+    if (![config[@"enabled"] boolValue] || ![config[@"ownerID"] isEqualToString:[DYYYIMService accountID]] || [DYYYIMService dailyStateForUserID:config[@"userID"]].length) {
+        [self processDailyConfigs:configs completion:completion];
+        return;
+    }
+    [DYYYIMService sendText:config[@"message"] toUserID:config[@"userID"] completion:^(BOOL success, NSString *reason) {
+        if ([[self defaults] boolForKey:kDYYYAutoMessageToast]) [DYYYUtils showToast:reason];
+        [self processDailyConfigs:configs completion:completion];
+    }];
+}
+
 + (void)runDailyMessageCheckIfNeeded {
-    // 保留旧调用方兼容入口；实际启动检查由原版服务的生命周期通知执行。
-    // 打开聊天窗口不代表消息已发送，不再写入虚假的今日发送记录。
+    if (!NSThread.isMainThread) {
+        dispatch_async(dispatch_get_main_queue(), ^{ [self runDailyMessageCheckIfNeeded]; });
+        return;
+    }
+    if (![[self defaults] boolForKey:kDYYYAutoMessageEnabled] || [self isNoSendTime]) return;
+    // 同时注入原版时停止 DYYY 的自动调度，卸掉原版后无需它即可运行。
+    if (NSClassFromString(@"AutoMessageManager")) return;
+    static BOOL processing;
+    if (processing || ![DYYYIMService accountID].length) return;
+    processing = YES;
+    NSString *account = [DYYYIMService accountID];
+    NSMutableArray *configs = [NSMutableArray array];
+    for (NSDictionary *config in [self messageConfigs]) if ([config[@"ownerID"] isEqual:account]) [configs addObject:config];
+    [self processDailyConfigs:configs completion:^{ processing = NO; }];
 }
 
 + (void)scanFriendSharesWithToast:(BOOL)showToast {
-    if (!NSThread.isMainThread) {
-        dispatch_async(dispatch_get_main_queue(), ^{ [self scanFriendSharesWithToast:showToast]; });
-        return;
-    }
-    id service = [self sharedFriendService:@"FriendShareFeedService"];
-    SEL scan = NSSelectorFromString(@"scanNowWithToast:");
-    NSMethodSignature *signature = [service methodSignatureForSelector:scan];
-    if (signature.numberOfArguments == 3 && signature.methodReturnType[0] == 'v' &&
-        strchr("Bc", [signature getArgumentTypeAtIndex:2][0])) {
-        ((void (*)(id, SEL, BOOL))objc_msgSend)(service, scan, showToast);
-    } else if (showToast) {
-        [DYYYUtils showToast:@"未找到原版好友分享服务，请确认 AutoMessagePlugin 已加载"];
-    }
+    // 分享作品的详情获取和推荐流插入需要单独适配，不回退到已卸载插件的服务。
+    if (showToast) [DYYYUtils showToast:@"好友来源选择已独立接入，分享扫描与推荐流插入仍在适配"];
 }
 
 #pragma mark - 互关好友数据
@@ -113,6 +132,7 @@ static NSString *const kDYYYFriendShareWatchedIDs = @"DYYYFriendShareWatchedItem
     for (NSString *key in keys) {
         @try {
             id value = [object isKindOfClass:NSDictionary.class] ? object[key] : [object valueForKey:key];
+            if ([value isKindOfClass:NSString.class] && ![value length]) continue;
             if (value && value != NSNull.null) return value;
         } @catch (__unused NSException *exception) {}
     }
@@ -129,7 +149,9 @@ static NSString *const kDYYYFriendShareWatchedIDs = @"DYYYFriendShareWatchedItem
         id model = nested ?: row;
         id mutual = [self friendValue:model keys:@[@"isMutualFollow", @"isFriend"]];
         id follow = [self friendValue:model keys:@[@"followStatus", @"follow_status"]];
-        if (requireMutual && ![mutual boolValue] && [follow integerValue] != 2) continue;
+        id follower = [self friendValue:model keys:@[@"followerStatus", @"follower_status"]];
+        BOOL bothFollow = [follow integerValue] == 1 && [follower integerValue] == 1;
+        if (requireMutual && ![mutual boolValue] && [follow integerValue] != 2 && !bothFollow) continue;
         id uidValue = [self friendValue:model keys:@[@"userID", @"uid", @"userId", @"user_id"]];
         NSString *uid = [uidValue isKindOfClass:NSString.class] ? uidValue : ([uidValue isKindOfClass:NSNumber.class] ? [uidValue stringValue] : nil);
         if (!uid.length || [seen containsObject:uid]) continue;
@@ -144,7 +166,8 @@ static NSString *const kDYYYFriendShareWatchedIDs = @"DYYYFriendShareWatchedItem
         NSInteger days = [daysValue respondsToSelector:@selector(integerValue)] ? [daysValue integerValue] : 0;
         id hasFlame = [self friendValue:row keys:@[@"hasFlame", @"isFlameFriend"]];
         id avatar = [self friendValue:model keys:@[@"avatar", @"avatarThumb", @"avatarURL", @"avatarUrl", @"avatar_thumb", @"avatarSmallStrUrl", @"avatarStrUrls", @"avatarURLList"]];
-        if (![avatar isKindOfClass:NSString.class]) avatar = [self friendValue:avatar keys:@[@"urlList", @"url_list", @"url"]];
+        if ([avatar isKindOfClass:NSArray.class]) avatar = [avatar firstObject];
+        if (avatar && ![avatar isKindOfClass:NSString.class]) avatar = [self friendValue:avatar keys:@[@"urlList", @"url_list", @"url"]];
         if ([avatar isKindOfClass:NSArray.class]) avatar = [avatar firstObject];
         [friends addObject:@{ @"userID":uid, @"name":name, @"displayID":display,
             @"avatar":[avatar isKindOfClass:NSString.class] ? avatar : @"",
@@ -157,68 +180,31 @@ static NSString *const kDYYYFriendShareWatchedIDs = @"DYYYFriendShareWatchedItem
     return friends;
 }
 
-+ (id)sharedFriendService:(NSString *)className {
-    Class cls = NSClassFromString(className);
-    for (NSString *name in @[@"shared", @"sharedInstance", @"sharedManager"]) {
-        SEL sel = NSSelectorFromString(name);
-        NSMethodSignature *signature = [cls methodSignatureForSelector:sel];
-        if (signature.numberOfArguments == 2 && signature.methodReturnType[0] == '@')
-            return ((id (*)(id, SEL))objc_msgSend)(cls, sel);
-    }
-    return nil;
-}
-
 + (void)loadMutualFriends:(void (^)(NSArray<NSDictionary *> *friends))completion {
     if (!NSThread.isMainThread) {
         dispatch_async(dispatch_get_main_queue(), ^{ [self loadMutualFriends:completion]; });
         return;
     }
-    __block BOOL finished = NO;
-    void (^finish)(NSArray *) = ^(NSArray *friends) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            // 超时先显示缓存后，实际列表晚到仍可更新界面。
-            if (finished && !friends.count) return;
-            finished = YES;
-            if (friends.count) [[self defaults] setObject:friends forKey:@"DYYYMutualFriendsCache"];
-            if (completion) completion(friends ?: @[]);
-        });
-    };
-    void (^fallback)(void) = ^{
-        for (NSString *className in @[@"AWEIMUserDBManager", @"AWEIMUserManager"]) {
-            id service = [self sharedFriendService:className];
-            SEL sel = NSSelectorFromString(@"localContactList");
-            NSMethodSignature *signature = [service methodSignatureForSelector:sel];
-            id rows = nil;
-            if (signature.numberOfArguments == 2 && signature.methodReturnType[0] == '@')
-                rows = ((id (*)(id, SEL))objc_msgSend)(service, sel);
-            else {
-                sel = NSSelectorFromString(@"localContactListWithReadScene:");
-                signature = [service methodSignatureForSelector:sel];
-                if (signature.numberOfArguments == 3 && signature.methodReturnType[0] == '@') {
-                    const char *arg = [signature getArgumentTypeAtIndex:2];
-                    if (strchr("qQiIlL", arg[0])) rows = ((id (*)(id, SEL, NSInteger))objc_msgSend)(service, sel, 0);
-                }
-            }
-            NSArray *friends = [self normalizedFriends:rows requireMutual:YES];
-            if (friends.count) { finish(friends); return; }
+    id database = [DYYYIMService contactDatabase];
+    NSArray *friends = @[];
+    @try {
+        if ([database respondsToSelector:@selector(fetchFriendUsersWithLimits:readScene:)]) {
+            id rows = [(AWEIMUserDBManager *)database fetchFriendUsersWithLimits:10000 readScene:0];
+            friends = [self normalizedFriends:rows requireMutual:NO];
         }
-        finish([[self defaults] arrayForKey:@"DYYYMutualFriendsCache"] ?: @[]);
-    };
-    // 用户已有的自动消息插件公开了此只读入口；可选适配，未安装也能读取抖音联系人。
-    id existing = [self sharedFriendService:@"AutoMessageManager"];
-    SEL fetch = NSSelectorFromString(@"getAllMutualFriendsWithCompletion:");
-    NSMethodSignature *signature = [existing methodSignatureForSelector:fetch];
-    if (signature.numberOfArguments == 3 && signature.methodReturnType[0] == 'v' &&
-        strncmp([signature getArgumentTypeAtIndex:2], "@?", 2) == 0) {
-        void (^callback)(id) = ^(id rows) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                NSArray *friends = [self normalizedFriends:rows requireMutual:NO];
-                if (friends.count) finish(friends); else fallback();
-            });
-        };
-        ((void (*)(id, SEL, id))objc_msgSend)(existing, fetch, callback);
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(4 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ if (!finished) fallback(); });
-    } else fallback();
+        if (!friends.count && [database respondsToSelector:@selector(localContactListWithReadScene:)]) {
+            id rows = [(AWEIMUserDBManager *)database localContactListWithReadScene:0];
+            friends = [self normalizedFriends:rows requireMutual:YES];
+        }
+    } @catch (__unused NSException *exception) {
+        [DYYYUtils showToast:@"抖音联系人暂时不可读，请进入消息页后再试"];
+    }
+    NSString *account = [DYYYIMService accountID];
+    NSString *cacheKey = account.length ? [@"DYYYMutualFriendsCache." stringByAppendingString:account] : nil;
+    if (friends.count && cacheKey) [[self defaults] setObject:friends forKey:cacheKey];
+    if (!friends.count && cacheKey) friends = [[self defaults] arrayForKey:cacheKey] ?: @[];
+    if (!database) [DYYYUtils showToast:@"联系人服务尚未就绪，请先进入抖音消息页"];
+    if (completion) completion(friends);
 }
 
 
@@ -238,7 +224,7 @@ static NSString *const kDYYYFriendShareWatchedIDs = @"DYYYFriendShareWatchedItem
             NSUInteger index = [configs indexOfObjectPassingTest:^BOOL(NSDictionary *row, NSUInteger idx, BOOL *stop) {
                 return [row[@"userID"] isEqualToString:existing[@"userID"] ?: trimmedID];
             }];
-            NSMutableDictionary *config = [@{ @"userID" : trimmedID, @"name" : existing[@"name"] ?: trimmedID,
+            NSMutableDictionary *config = [@{ @"userID" : trimmedID, @"name" : existing[@"name"] ?: trimmedID, @"ownerID" : [DYYYIMService accountID],
                                                @"message" : message ?: @"", @"enabled" : existing[@"enabled"] ?: @YES } mutableCopy];
             if (index != NSNotFound) configs[index] = config; else [configs addObject:config];
             [self saveMessageConfigs:configs];
@@ -263,13 +249,21 @@ static NSString *const kDYYYFriendShareWatchedIDs = @"DYYYFriendShareWatchedItem
 }
 
 + (NSArray<AWESettingSectionModel *> *)settingsSectionsWithRootViewController:(UIViewController *)rootViewController {
-    AWESettingItemModel *enabled = [self setting:@{ @"identifier" : kDYYYAutoMessageEnabled, @"title" : @"启用自动消息", @"subTitle" : @"每日自动处理已配置的消息", @"detail" : @"", @"cellType" : @6, @"imageName" : @"ic_comment_outlined_20" }];
+    AWESettingItemModel *enabled = [self setting:@{ @"identifier" : kDYYYAutoMessageEnabled, @"title" : @"启用自动消息", @"subTitle" : @"使用抖音原生消息服务，每日去重", @"detail" : @"", @"cellType" : @6, @"imageName" : @"ic_comment_outlined_20" }];
     AWESettingItemModel *configs = [self setting:@{ @"identifier" : @"DYYYAutoMessageConfigPage", @"title" : @"自动消息设置", @"detail" : @"", @"cellType" : @26, @"imageName" : @"ic_comment_outlined_20" }];
     configs.cellTappedBlock = ^{
         [DYYYAutoMessagePanel showConfigsFrom:rootViewController];
     };
     AWESettingItemModel *status = [self setting:@{ @"identifier" : @"DYYYAutoMessageStatus", @"title" : @"检测发送状态", @"detail" : @"", @"cellType" : @26, @"imageName" : @"ic_eye_outlined_20" }];
-    status.cellTappedBlock = ^{ [DYYYUtils showToast:[NSString stringWithFormat:@"今日已处理 %lu/%lu 位用户", (unsigned long)[[[self defaults] arrayForKey:kDYYYAutoMessageSentIDs] count], (unsigned long)[self messageConfigs].count]]; };
+    status.cellTappedBlock = ^{
+        NSUInteger sent = 0, pending = 0;
+        for (NSDictionary *config in [self messageConfigs]) {
+            NSString *state = [DYYYIMService dailyStateForUserID:config[@"userID"]];
+            if ([state isEqual:@"sent"]) sent++;
+            if ([state isEqual:@"pending"]) pending++;
+        }
+        [DYYYUtils showToast:[NSString stringWithFormat:@"今日已确认 %lu 位，待确认 %lu 位", (unsigned long)sent, (unsigned long)pending]];
+    };
     AWESettingItemModel *keyword = [self setting:@{ @"identifier" : kDYYYAutoMessageQueryKeyword, @"title" : @"ID 查询关键词", @"detail" : @"查询id", @"cellType" : @26, @"imageName" : @"ic_pensketch_outlined_20" }];
     keyword.detail = [[self defaults] stringForKey:kDYYYAutoMessageQueryKeyword] ?: @"查询id";
     keyword.cellTappedBlock = ^{ [DYYYSettingsHelper showTextInputAlert:@"ID 查询关键词" defaultText:keyword.detail placeholder:@"例如：查询id" onConfirm:^(NSString *text) { [[self defaults] setObject:text ?: @"查询id" forKey:kDYYYAutoMessageQueryKeyword]; keyword.detail = text ?: @"查询id"; [keyword refreshCell]; } onCancel:nil]; };
@@ -304,6 +298,7 @@ static NSString *const kDYYYFriendShareWatchedIDs = @"DYYYFriendShareWatchedItem
 }
 
 @end
+
 
 
 

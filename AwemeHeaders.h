@@ -1964,3 +1964,56 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @interface AWEFeedMultiTabSelectedContainerView : UIView
 @end
 
+// 抖音 39.5.0 运行时导出的 IM 接口；DYYY 独立消息服务只使用这些已确认的方法。
+@interface AWEIMContactDataManager : NSObject
++ (instancetype)sharedInstance;
+- (id)userManager;
+@end
+
+@interface AWEIMUserDBManager : NSObject
+- (id)currentDataBaseUid;
+- (id)fetchFriendUsersWithLimits:(long long)limit readScene:(long long)scene;
+- (id)localContactListWithReadScene:(long long)scene;
+@end
+
+@class TIMXOMessage;
+@interface TIMXOConversation : NSObject
++ (instancetype)instanceWithRootObject:(id)root identifier:(id)identifier;
+@property (nonatomic, readonly) long long ownerID;
+@property (nonatomic, readonly, strong) TIMXOMessage *lastMessage;
+@end
+
+@interface TIMXOMessage : NSObject
+@property (nonatomic, readonly, copy) NSDictionary *content;
+@property (nonatomic, readonly, strong) NSDate *createdAt;
+@property (nonatomic, readonly) long long sender;
+@property (nonatomic, readonly) long long messageType;
+@end
+
+@interface TIMXOConversationManager : NSObject
+- (id)initWithRootObject:(id)root;
+- (id)conversationIDFor1to1ChatWithOtherUserID:(long long)userID inbox:(int)inbox;
+- (BOOL)conversationExitsInDB:(id)identifier;
+- (long long)otherUserIDFor1to1ChatWithConversationID:(id)identifier;
+@end
+
+@interface TIMXOMessageManager : NSObject
+- (id)messagesInConversation:(id)conversation excludeMessageTypes:(id)types limit:(unsigned long long)limit;
+@end
+
+@interface IESIMSendMessageModel : NSObject
+- (instancetype)initWithConversationId:(id)identifier;
+@property (nonatomic) long long messageType;
+@property (nonatomic, copy) NSDictionary *messageContentDict;
+@property (nonatomic, copy) NSString *preferMessageId;
+@property (nonatomic) double preferCreateTime;
+@end
+
+@interface IESIMMessageSender : NSObject
+- (id)sendMessage:(id)model;
+- (void)asyncSendMessage:(id)model completion:(id)completion;
+- (void)message:(id)message inConversation:(id)conversation didReceiveResponse:(id)response error:(id)error;
+- (void)message:(id)message inConversation:(id)conversation didReceiveAsyncResponse:(id)response error:(id)error;
+@end
+
+
