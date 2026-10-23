@@ -2812,9 +2812,16 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
 
 
 
-    NSArray<AWESettingSectionModel *> *autoMessageSections = [DYYYAutoMessage settingsSectionsWithRootViewController:rootVC];
-    AWESettingItemModel *autoMessageEntry = DYYYMakePageEntry(rootVC, @"自动消息", @"ic_comment_outlined_20", @"增强设置 · 自动消息", @[ autoMessageSections.firstObject ]);
-    AWESettingItemModel *friendShareEntry = DYYYMakePageEntry(rootVC, @"好友分享进推荐", @"ic_video_outlined_20", @"增强设置 · 好友分享进推荐", @[ autoMessageSections.lastObject ]);
+    AWESettingItemModel *autoMessageEntry = DYYYMakePageEntry(rootVC, @"自动消息", @"ic_comment_outlined_20", @"增强设置 · 自动消息", @[]);
+    autoMessageEntry.cellTappedBlock = ^{
+      if (DYYYBuildingSettingsSearchIndex) return;
+      [DYYYAutoMessage showOriginalSettingsFrom:rootVC friendShares:NO];
+    };
+    AWESettingItemModel *friendShareEntry = DYYYMakePageEntry(rootVC, @"好友分享进推荐", @"ic_video_outlined_20", @"增强设置 · 好友分享进推荐", @[]);
+    friendShareEntry.cellTappedBlock = ^{
+      if (DYYYBuildingSettingsSearchIndex) return;
+      [DYYYAutoMessage showOriginalSettingsFrom:rootVC friendShares:YES];
+    };
 
     // 创建增强设置分类项
     AWESettingItemModel *enhanceSettingItem = [[%c(AWESettingItemModel) alloc] init];
@@ -4039,4 +4046,5 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
     return originalSections;
 }
 %end
+
 

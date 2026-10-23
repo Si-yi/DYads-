@@ -6,6 +6,7 @@
 #import "DYYYSettingsHelper.h"
 #import "DYYYUtils.h"
 #import <objc/message.h>
+#import <dlfcn.h>
 
 static NSString *const kDYYYAutoMessageEnabled = @"DYYYAutoMessageEnabled";
 static NSString *const kDYYYAutoMessageConfigs = @"DYYYAutoMessageConfigs";
@@ -22,6 +23,47 @@ static NSString *const kDYYYFriendShareFriends = @"DYYYFriendShareFeedFriends";
 static NSString *const kDYYYFriendShareWatchedIDs = @"DYYYFriendShareWatchedItemIDs";
 
 @implementation DYYYAutoMessage
+
+#pragma mark - 原版插件入口
+
++ (void)showOriginalSettingsFrom:(UIViewController *)presenter friendShares:(BOOL)friendShares {
+    if (!NSThread.isMainThread) {
+        dispatch_async(dispatch_get_main_queue(), ^{ [self showOriginalSettingsFrom:presenter friendShares:friendShares]; });
+        return;
+    }
+    // 此无参入口由 AutoMessagePlugin 导出，原版在内部查找当前导航控制器。
+    // 保留它的设置模型、好友异步通知与持久化，不再维护另一套同名配置。
+    void (*openSettings)(void) = (void (*)(void))dlsym(RTLD_DEFAULT, "AMPushAutoMessageNativeSettingsPage");
+    if (!NSClassFromString(@"AutoMessageSettingsStore") || !openSettings) {
+        [DYYYUtils showToast:@"未找到原版自动消息服务，请保留并加载 AutoMessagePlugin 插件"];
+        return;
+    }
+    UIViewController *previous = topView();
+    openSettings();
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIViewController *page = topView();
+        if (!page || page == previous || ![page isKindOfClass:NSClassFromString(@"AWESettingBaseViewController")]) return;
+        AWESettingBaseViewController *settings = (AWESettingBaseViewController *)page;
+        id model = [settings viewModel];
+        if (![model respondsToSelector:@selector(sectionDataArray)]) return;
+        NSArray *sections = [(AWESettingsViewModel *)model sectionDataArray];
+        NSString *wanted = friendShares ? @"选择分享来源好友" : @"自动消息设置";
+        [settings.view layoutIfNeeded];
+        UITableView *table = settings.tableView;
+        for (NSUInteger sectionIndex = 0; sectionIndex < sections.count; sectionIndex++) {
+            AWESettingSectionModel *section = sections[sectionIndex];
+            for (NSUInteger rowIndex = 0; rowIndex < section.itemArray.count; rowIndex++) {
+                AWESettingItemModel *item = section.itemArray[rowIndex];
+                if (![item.title isEqualToString:wanted]) continue;
+                if (sectionIndex < (NSUInteger)table.numberOfSections && rowIndex < (NSUInteger)[table numberOfRowsInSection:sectionIndex]) {
+                    [table scrollToRowAtIndexPath:[NSIndexPath indexPathForRow:rowIndex inSection:sectionIndex]
+                                atScrollPosition:UITableViewScrollPositionMiddle animated:NO];
+                }
+                return;
+            }
+        }
+    });
+}
 
 #pragma mark - 配置存储
 
@@ -87,53 +129,24 @@ static NSString *const kDYYYFriendShareWatchedIDs = @"DYYYFriendShareWatchedItem
 }
 
 + (void)runDailyMessageCheckIfNeeded {
-    if (![[self defaults] boolForKey:kDYYYAutoMessageEnabled] || [self isNoSendTime]) return;
-    NSString *today = [self todayKey];
-    if (![[[self defaults] stringForKey:kDYYYAutoMessageSentDay] isEqualToString:today]) {
-        [[self defaults] setObject:today forKey:kDYYYAutoMessageSentDay];
-        [[self defaults] setObject:@[] forKey:kDYYYAutoMessageSentIDs];
-    }
-    NSMutableSet *sentIDs = [NSMutableSet setWithArray:[[self defaults] arrayForKey:kDYYYAutoMessageSentIDs] ?: @[]];
-    NSArray *configs = [self messageConfigs];
-    NSUInteger opened = 0;
-    for (NSDictionary *config in configs) {
-        NSString *userID = config[@"userID"];
-        if (![config[@"enabled"] boolValue] || [sentIDs containsObject:userID]) continue;
-        // 抖音 36.5.0 缺少稳定的公开 IM 发送接口。这里走原生聊天深链，
-        // 由抖音原生页面处理会话与消息内容，避免伪造 IM 请求。
-        if ([self openNativeChatForUserID:userID message:config[@"message"]]) {
-            [sentIDs addObject:userID];
-            opened++;
-        }
-    }
-    [[self defaults] setObject:sentIDs.allObjects forKey:kDYYYAutoMessageSentIDs];
-    if (opened > 0 && [[self defaults] boolForKey:kDYYYAutoMessageToast]) {
-        [DYYYUtils showToast:[NSString stringWithFormat:@"已打开 %lu 个待发送聊天", (unsigned long)opened]];
-    } else if (opened == 0 && configs.count > 0 && [[self defaults] boolForKey:kDYYYAutoMessageAllSentToast]) {
-        [DYYYUtils showToast:@"今日消息已全部处理"];
-    }
+    // 保留旧调用方兼容入口；实际启动检查由原版服务的生命周期通知执行。
+    // 打开聊天窗口不代表消息已发送，不再写入虚假的今日发送记录。
 }
 
 + (void)scanFriendSharesWithToast:(BOOL)showToast {
-    if (![[self defaults] boolForKey:kDYYYFriendShareEnabled]) {
-        if (showToast) [DYYYUtils showToast:@"请先开启好友分享进推荐"];
+    if (!NSThread.isMainThread) {
+        dispatch_async(dispatch_get_main_queue(), ^{ [self scanFriendSharesWithToast:showToast]; });
         return;
     }
-    // 36.5.0 的好友分享缓存接口会随抖音版本变动。先尝试调用当前运行时提供的扫描入口；
-    // 找不到时保留来源及已刷记录，不修改推荐流，避免把非好友视频插入首页。
-    NSArray<NSString *> *classes = @[ @"FriendShareFeedService", @"AWEIMFeedVideoCachePool" ];
-    for (NSString *className in classes) {
-        Class clazz = NSClassFromString(className);
-        SEL sharedSEL = NSSelectorFromString(@"sharedInstance");
-        if (!clazz || ![clazz respondsToSelector:sharedSEL]) continue;
-        id service = ((id (*)(id, SEL))objc_msgSend)(clazz, sharedSEL);
-        SEL scanSEL = NSSelectorFromString(@"scanNowWithToast");
-        if ([service respondsToSelector:scanSEL]) {
-            ((void (*)(id, SEL))objc_msgSend)(service, scanSEL);
-            return;
-        }
+    id service = [self sharedFriendService:@"FriendShareFeedService"];
+    SEL scan = NSSelectorFromString(@"scanNowWithToast:");
+    NSMethodSignature *signature = [service methodSignatureForSelector:scan];
+    if (signature.numberOfArguments == 3 && signature.methodReturnType[0] == 'v' &&
+        strchr("Bc", [signature getArgumentTypeAtIndex:2][0])) {
+        ((void (*)(id, SEL, BOOL))objc_msgSend)(service, scan, showToast);
+    } else if (showToast) {
+        [DYYYUtils showToast:@"未找到原版好友分享服务，请确认 AutoMessagePlugin 已加载"];
     }
-    if (showToast) [DYYYUtils showToast:@"当前抖音版本未提供可用的好友分享扫描接口"];
 }
 
 #pragma mark - 互关好友数据
@@ -333,5 +346,6 @@ static NSString *const kDYYYFriendShareWatchedIDs = @"DYYYFriendShareWatchedItem
 }
 
 @end
+
 
 
