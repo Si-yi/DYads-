@@ -282,6 +282,89 @@ static UIUserInterfaceStyle DYYYCommentInputTheme(UIView *view) {
 }
 
 
+// 键盘的窗口不在评论输入框子树里；在获得焦点之前锁定其主题，隐藏后撤销。
+static __weak UIView *dyyyCommentThemeResponder;
+static UIUserInterfaceStyle dyyyCommentEditingStyle = UIUserInterfaceStyleUnspecified;
+static NSHashTable<UIView *> *dyyyCommentKeyboardSurfaces;
+static char kDYYYKeyboardOriginalThemeKey;
+
+static BOOL DYYYIsCommentKeyboardSurface(UIView *view) {
+    UIWindow *window = [view isKindOfClass:UIWindow.class] ? (UIWindow *)view : view.window;
+    NSString *name = NSStringFromClass(window.class);
+    return [name containsString:@"TextEffectsWindow"] || [name containsString:@"KeyboardWindow"];
+}
+
+static void DYYYRecordCommentTheme(NSString *phase, UIView *view, UIUserInterfaceStyle requested) {
+    if (!NSThread.isMainThread) return;
+    [NSNotificationCenter.defaultCenter postNotificationName:@"DYYYCommentInputThemeDidChange" object:nil userInfo:@{
+        @"phase":phase, @"viewClass":view ? NSStringFromClass(view.class) : @"",
+        @"requestedStyle":@(requested), @"lockedStyle":@(dyyyCommentEditingStyle),
+        @"effectiveStyle":@(view.traitCollection.userInterfaceStyle),
+        @"overrideStyle":@(view.overrideUserInterfaceStyle)
+    }];
+}
+
+static void DYYYRememberCommentKeyboardSurface(UIView *view) {
+    if (!dyyyCommentKeyboardSurfaces) dyyyCommentKeyboardSurfaces = [NSHashTable weakObjectsHashTable];
+    if (!objc_getAssociatedObject(view, &kDYYYKeyboardOriginalThemeKey))
+        objc_setAssociatedObject(view, &kDYYYKeyboardOriginalThemeKey, @(view.overrideUserInterfaceStyle), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    [dyyyCommentKeyboardSurfaces addObject:view];
+}
+
+static void DYYYSyncCommentKeyboardTheme(void) {
+    if (!NSThread.isMainThread || dyyyCommentEditingStyle == UIUserInterfaceStyleUnspecified) return;
+    [UIView performWithoutAnimation:^{
+        for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+            if (![scene isKindOfClass:UIWindowScene.class] || scene.activationState != UISceneActivationStateForegroundActive) continue;
+            for (UIWindow *window in ((UIWindowScene *)scene).windows) {
+                if (!DYYYIsCommentKeyboardSurface(window)) continue;
+                DYYYRememberCommentKeyboardSurface(window);
+                if (window.overrideUserInterfaceStyle != dyyyCommentEditingStyle) window.overrideUserInterfaceStyle = dyyyCommentEditingStyle;
+            }
+        }
+    }];
+}
+
+static void DYYYEndCommentKeyboardTheme(void) {
+    if (!NSThread.isMainThread || dyyyCommentEditingStyle == UIUserInterfaceStyleUnspecified) return;
+    DYYYRecordCommentTheme(@"keyboardThemeReleased", dyyyCommentThemeResponder, UIUserInterfaceStyleUnspecified);
+    dyyyCommentEditingStyle = UIUserInterfaceStyleUnspecified;
+    dyyyCommentThemeResponder = nil;
+    NSArray<UIView *> *surfaces = dyyyCommentKeyboardSurfaces.allObjects;
+    [dyyyCommentKeyboardSurfaces removeAllObjects];
+    [UIView performWithoutAnimation:^{
+        for (UIView *view in surfaces) {
+            NSNumber *original = objc_getAssociatedObject(view, &kDYYYKeyboardOriginalThemeKey);
+            objc_setAssociatedObject(view, &kDYYYKeyboardOriginalThemeKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            if (original) view.overrideUserInterfaceStyle = (UIUserInterfaceStyle)original.integerValue;
+        }
+    }];
+}
+
+static void DYYYBeginCommentKeyboardTheme(UIView *input) {
+    if (!NSThread.isMainThread) return;
+    UIUserInterfaceStyle style = DYYYCommentInputTheme(input);
+    if (style == UIUserInterfaceStyleUnspecified) {
+        if (!DYYYIsCommentKeyboardSurface(input)) DYYYEndCommentKeyboardTheme();
+        return;
+    }
+    dyyyCommentThemeResponder = input;
+    dyyyCommentEditingStyle = style;
+    [UIView performWithoutAnimation:^{
+        if (input.overrideUserInterfaceStyle != style) input.overrideUserInterfaceStyle = style;
+        UIView *host = DYYYCommentInputThemeHost(input);
+        if (host.overrideUserInterfaceStyle != style) host.overrideUserInterfaceStyle = style;
+        UIViewController *owner = [DYYYUtils firstAvailableViewControllerFromView:host];
+        if ([owner isKindOfClass:NSClassFromString(@"AWECommentInputViewController")]) {
+            owner.overrideUserInterfaceStyle = style;
+            owner.view.overrideUserInterfaceStyle = style;
+        }
+    }];
+    DYYYSyncCommentKeyboardTheme();
+    DYYYRecordCommentTheme(@"keyboardThemePreparedBeforeFocus", input, style);
+}
+
+
 static BOOL DYYYShouldHandleSpeedFeatures(void) {
     if (NO /* 已移除快捷倍速悬浮按钮 */) {
         return YES;
@@ -10585,10 +10668,13 @@ static NSHashTable *processedParentViews = nil;
 }
 
 - (BOOL)becomeFirstResponder {
+    DYYYBeginCommentKeyboardTheme((UIView *)self);
     UIUserInterfaceStyle style = DYYYCommentInputTheme((UIView *)self);
     BOOL isDarkMode = style == UIUserInterfaceStyleUnspecified ? [DYYYUtils isDarkMode] : style == UIUserInterfaceStyleDark;
     self.keyboardAppearance = isDarkMode ? UIKeyboardAppearanceDark : UIKeyboardAppearanceLight;
-    return %orig;
+    BOOL result = %orig;
+    if (!result && dyyyCommentThemeResponder == (UIView *)self) DYYYEndCommentKeyboardTheme();
+    return result;
 }
 
 
@@ -10596,6 +10682,13 @@ static NSHashTable *processedParentViews = nil;
     UIUserInterfaceStyle style = DYYYCommentInputTheme((UIView *)self);
     if (style != UIUserInterfaceStyleUnspecified) appearance = style == UIUserInterfaceStyleDark ? UIKeyboardAppearanceDark : UIKeyboardAppearanceLight;
     %orig(appearance);
+}
+
+
+- (UIKeyboardAppearance)keyboardAppearance {
+    UIUserInterfaceStyle style = DYYYCommentInputTheme((UIView *)self);
+    if (style != UIUserInterfaceStyleUnspecified) return style == UIUserInterfaceStyleDark ? UIKeyboardAppearanceDark : UIKeyboardAppearanceLight;
+    return %orig;
 }
 
 %end
@@ -10613,10 +10706,13 @@ static NSHashTable *processedParentViews = nil;
 }
 
 - (BOOL)becomeFirstResponder {
+    DYYYBeginCommentKeyboardTheme((UIView *)self);
     UIUserInterfaceStyle style = DYYYCommentInputTheme((UIView *)self);
     BOOL isDarkMode = style == UIUserInterfaceStyleUnspecified ? [DYYYUtils isDarkMode] : style == UIUserInterfaceStyleDark;
     self.keyboardAppearance = isDarkMode ? UIKeyboardAppearanceDark : UIKeyboardAppearanceLight;
-    return %orig;
+    BOOL result = %orig;
+    if (!result && dyyyCommentThemeResponder == (UIView *)self) DYYYEndCommentKeyboardTheme();
+    return result;
 }
 
 
@@ -10624,6 +10720,13 @@ static NSHashTable *processedParentViews = nil;
     UIUserInterfaceStyle style = DYYYCommentInputTheme((UIView *)self);
     if (style != UIUserInterfaceStyleUnspecified) appearance = style == UIUserInterfaceStyleDark ? UIKeyboardAppearanceDark : UIKeyboardAppearanceLight;
     %orig(appearance);
+}
+
+
+- (UIKeyboardAppearance)keyboardAppearance {
+    UIUserInterfaceStyle style = DYYYCommentInputTheme((UIView *)self);
+    if (style != UIUserInterfaceStyleUnspecified) return style == UIUserInterfaceStyleDark ? UIKeyboardAppearanceDark : UIKeyboardAppearanceLight;
+    return %orig;
 }
 
 %end
@@ -11384,7 +11487,7 @@ static void DYYYUpdateDetailInputTransparency(UIView *root) {
         pill.size.height = MAX(36, pill.size.height);
         if (!chrome) {
             chrome = [[UIView alloc] initWithFrame:pill];
-            chrome.accessibilityIdentifier = @"DYYY.AdaptiveCommentInput.r6";
+            chrome.accessibilityIdentifier = @"DYYY.AdaptiveCommentInput.r7";
             chrome.userInteractionEnabled = NO;
             chrome.accessibilityElementsHidden = YES;
             UIVisualEffect *material = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterialDark];
@@ -11521,21 +11624,23 @@ static void DYYYScheduleAdaptiveInputSync(void) {
 static void DYYYInstallAdaptiveInputLifecycle(void) {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        NSArray *names = @[ UIKeyboardWillChangeFrameNotification, UIKeyboardDidChangeFrameNotification,
+        NSArray *names = @[ UIKeyboardWillShowNotification, UIKeyboardWillChangeFrameNotification, UIKeyboardDidChangeFrameNotification,
             UIKeyboardDidHideNotification, UITextViewTextDidBeginEditingNotification, UITextViewTextDidChangeNotification, UITextViewTextDidEndEditingNotification,
             UITextFieldTextDidBeginEditingNotification, UITextFieldTextDidEndEditingNotification, UIApplicationDidBecomeActiveNotification ];
         for (NSString *name in names) {
             [NSNotificationCenter.defaultCenter addObserverForName:name object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
                 if ([note.name isEqualToString:UIKeyboardDidHideNotification]) {
+                    if (!dyyyCommentThemeResponder.isFirstResponder) DYYYEndCommentKeyboardTheme();
                     dyyyCompactKeyboardDismissed = YES;
                     dyyyCompactKeyboardScreenFrame = CGRectZero;
                 }
                 else if ([note.name isEqualToString:UITextViewTextDidBeginEditingNotification] || [note.name isEqualToString:UITextFieldTextDidBeginEditingNotification]) dyyyCompactKeyboardDismissed = NO;
-                else if ([note.name isEqualToString:UIKeyboardWillChangeFrameNotification] || [note.name isEqualToString:UIKeyboardDidChangeFrameNotification]) {
+                else if ([note.name isEqualToString:UIKeyboardWillShowNotification] || [note.name isEqualToString:UIKeyboardWillChangeFrameNotification] || [note.name isEqualToString:UIKeyboardDidChangeFrameNotification]) {
                     CGRect endFrame = [note.userInfo[UIKeyboardFrameEndUserInfoKey] CGRectValue];
                     dyyyCompactKeyboardScreenFrame = endFrame;
                     if (endFrame.size.height > 0 && CGRectGetMinY(endFrame) < CGRectGetHeight(UIScreen.mainScreen.bounds) - 1) dyyyCompactKeyboardDismissed = NO;
                 }
+                if (![note.name isEqualToString:UIKeyboardDidHideNotification]) DYYYSyncCommentKeyboardTheme();
                 DYYYScheduleAdaptiveInputSync();
             }];
         }
@@ -11552,6 +11657,10 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
 %end
 
 %hook AWECommentInputViewController
+- (void)setOverrideUserInterfaceStyle:(UIUserInterfaceStyle)style {
+    if (dyyyCommentEditingStyle != UIUserInterfaceStyleUnspecified) style = dyyyCommentEditingStyle;
+    %orig(style);
+}
 - (void)viewDidLayoutSubviews {
     %orig;
     DYYYSyncCompactInputsInView(self.view);
@@ -11778,12 +11887,26 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
 %hook UIView
 
 - (void)setOverrideUserInterfaceStyle:(UIUserInterfaceStyle)style {
-    UIUserInterfaceStyle inputStyle = DYYYCommentInputTheme((UIView *)self);
+    UIView *view = (UIView *)self;
+    if (NSThread.isMainThread && dyyyCommentEditingStyle != UIUserInterfaceStyleUnspecified && DYYYIsCommentKeyboardSurface(view)) {
+        DYYYRememberCommentKeyboardSurface(view);
+        UIUserInterfaceStyle requested = style;
+        style = dyyyCommentEditingStyle;
+        %orig(style);
+        if (requested != style) DYYYRecordCommentTheme(@"keyboardSurfaceStyleClamped", view, requested);
+        return;
+    }
+    UIUserInterfaceStyle inputStyle = DYYYCommentInputTheme(view);
     if (inputStyle != UIUserInterfaceStyleUnspecified) style = inputStyle;
     %orig(style);
 }
 
 - (void)setHidden:(BOOL)hidden {
+    if (!hidden && NSThread.isMainThread && [(UIView *)self isKindOfClass:UIWindow.class] && dyyyCommentEditingStyle != UIUserInterfaceStyleUnspecified && DYYYIsCommentKeyboardSurface((UIView *)self)) {
+        DYYYRememberCommentKeyboardSurface((UIView *)self);
+        if (((UIView *)self).overrideUserInterfaceStyle != dyyyCommentEditingStyle)
+            ((UIView *)self).overrideUserInterfaceStyle = dyyyCommentEditingStyle;
+    }
     BOOL shouldForceHidden = DYYYShouldForceAvatarActionViewHidden(self) || DYYYShouldForceAvatarSurroundingViewHidden(self);
     %orig(shouldForceHidden ? YES : hidden);
 }
@@ -13726,5 +13849,6 @@ static void findTargetViewInView(UIView *view) {
                                                     }];
     }
 }
+
 
 

@@ -453,11 +453,19 @@ void DYYYDebugInspectorInstall(void) {
       for (NSString *name in @[ UIApplicationDidEnterBackgroundNotification, UIApplicationWillEnterForegroundNotification ]) {
           [NSNotificationCenter.defaultCenter addObserverForName:name object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) { DYYYDebugRecordEvent(note.name, nil, NO); }];
       }
-      for (NSString *name in @[ UIKeyboardDidChangeFrameNotification, UIKeyboardDidHideNotification,
+      for (NSString *name in @[ @"DYYYCommentInputThemeDidChange", UIKeyboardWillShowNotification, UIKeyboardWillChangeFrameNotification, UIKeyboardDidChangeFrameNotification, UIKeyboardDidHideNotification,
           UITextViewTextDidBeginEditingNotification, UITextViewTextDidChangeNotification, UITextViewTextDidEndEditingNotification ]) {
           [NSNotificationCenter.defaultCenter addObserverForName:name object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
               if (!DYYYDebugRecording) return;
               NSMutableDictionary *details = [NSMutableDictionary dictionary];
+              if ([note.name isEqualToString:@"DYYYCommentInputThemeDidChange"]) [details addEntriesFromDictionary:note.userInfo ?: @{}];
+              if ([note.object isKindOfClass:UITextView.class]) {
+                  UITextView *input = (UITextView *)note.object;
+                  details[@"keyboardAppearance"] = @(input.keyboardAppearance);
+                  details[@"effectiveStyle"] = @(input.traitCollection.userInterfaceStyle);
+                  details[@"overrideStyle"] = @(input.overrideUserInterfaceStyle);
+              }
+
               NSValue *frame = note.userInfo[UIKeyboardFrameEndUserInfoKey];
               if (frame) details[@"keyboardFrame"] = NSStringFromCGRect(frame.CGRectValue);
               if ([note.object isKindOfClass:UITextView.class]) details[@"textLength"] = @(((UITextView *)note.object).text.length);
@@ -469,3 +477,4 @@ void DYYYDebugInspectorInstall(void) {
     });
     dispatch_async(dispatch_get_main_queue(), ^{ DYYYDebugInspectorRefreshOverlay(); });
 }
+
