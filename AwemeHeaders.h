@@ -469,6 +469,7 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @property (nonatomic, strong) id dataController;
 @property (nonatomic, readonly, strong) id currentAweme;
 - (void)insertVideosToFeedWithAwemeIDs:(id)identifiers extraInfo:(id)info;
+- (void)insertAwemeModel:(id)model atIndex:(long long)index shouldForceReload:(BOOL)reload byBiz:(long long)biz;
 - (void)scrollToRowAtIndexPath:(id)indexPath atScrollPosition:(long long)position animated:(BOOL)animated;
 @end
 
@@ -2055,3 +2056,12 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 
 
 
+
+// 好友分享使用抖音视频缓存池；调用前仍以运行时方法签名确认参数。
+@interface AWEIMFeedVideoCachePool : NSObject
++ (instancetype)sharedInstance;
+- (id)awemeModelForItemId:(NSString *)itemID;
+- (id)awemeWithItemId:(NSString *)itemID;
+- (void)requestAwemeModelsForItemIds:(NSArray *)itemIDs requestScene:(NSString *)scene results:(void (^)(id))results;
+- (void)tryRequestAwemeItemsWithIds:(NSArray *)itemIDs requestScene:(NSString *)scene;
+@end

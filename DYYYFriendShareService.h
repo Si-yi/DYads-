@@ -1,6 +1,7 @@
 #import <UIKit/UIKit.h>
 
 @interface DYYYFriendShareService : NSObject
++ (NSDictionary *)diagnostics;
 + (void)applicationOpened;
 + (void)applicationEnteredBackground;
 + (void)applicationBecameActive;

@@ -1,6 +1,7 @@
 #import "DYYYDebugInspector.h"
 #import "DYYYGlassTabBar.h"
 #import "DYYYIMService.h"
+#import "DYYYFriendShareService.h"
 #import "DKDebugCapture.h"
 #import "DKClassDump.h"
 #import "DKZipWriter.h"
@@ -347,12 +348,13 @@ static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *wi
     NSMutableDictionary *metadata = [DYYYDebugMetadata() mutableCopy];
     metadata[@"exportMode"] = messageInterfaces ? @"message-interfaces" : (detailed ? @"complete" : @"lightweight");
     metadata[@"independentIM"] = [DYYYIMService diagnostics];
+    metadata[@"friendShareFeed"] = [DYYYFriendShareService diagnostics];
     writeJSON(@"metadata.json", metadata);
     if (messageInterfaces) {
         // 仅导出抖音自身的运行时声明，不执行联系人查询、消息读取或发送方法。
         // 独立实现需要真实参数签名；普通页面树不包含底层 IM 服务接口。
         NSArray<NSString *> *priority = @[
-            @"AWEIMUserDBManager", @"AWEIMUserManager", @"AWEIMSDKManager", @"AWEIMService",
+            @"AWEIMFeedVideoCachePool", @"AWEIMUserDBManager", @"AWEIMUserManager", @"AWEIMSDKManager", @"AWEIMService",
             @"TIMXOSendMessage", @"TIMXSenderMessageTemplate", @"TIMXOMessageManager",
             @"TIMXOConversationManager", @"TIMXOConversation", @"TIMXOMessage", @"TIMXOUser",
             @"IESIMSendMessageModel", @"IESIMMessageSender", @"IESIMConversationDataManager",
