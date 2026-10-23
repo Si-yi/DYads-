@@ -27,12 +27,13 @@
         %orig(animated);
     }];
     [DYYYCommentMenuTheme synchronizeController:self];
+    UIViewController *menuController = (UIViewController *)self;
     [NSNotificationCenter.defaultCenter postNotificationName:@"DYYYCommentInputThemeDidChange" object:nil userInfo:@{
         @"phase": @"commentLongPressMenuThemeApplied",
-        @"viewClass": NSStringFromClass(self.class),
+        @"viewClass": NSStringFromClass([menuController class]),
         @"requestedStyle": @(style),
-        @"effectiveStyle": @(self.viewIfLoaded.traitCollection.userInterfaceStyle),
-        @"overrideStyle": @(self.overrideUserInterfaceStyle)
+        @"effectiveStyle": @(menuController.viewIfLoaded.traitCollection.userInterfaceStyle),
+        @"overrideStyle": @(menuController.overrideUserInterfaceStyle)
     }];
 }
 
@@ -44,7 +45,8 @@
 - (void)viewDidDisappear:(BOOL)animated {
     %orig(animated);
     // 临时覆盖另一层菜单时保留主题；真正离开窗口才恢复原值。
-    if (!self.viewIfLoaded.window) [DYYYCommentMenuTheme restoreController:self];
+    UIViewController *menuController = (UIViewController *)self;
+    if (!menuController.viewIfLoaded.window) [DYYYCommentMenuTheme restoreController:menuController];
 }
 
 %end
