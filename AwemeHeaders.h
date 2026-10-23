@@ -1353,6 +1353,25 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @interface ACCGestureResponsibleStickerView : UIView
 @end
 
+// 评论顶部业务分区，运行时绑定 Swift 实现；仅使用已有高度和布局接口。
+@interface DYYYCommentHeaderSectionController : NSObject
+@property(nonatomic, copy) void (^didUpdateHeight)(double);
+@property(nonatomic, copy) void (^didTopBarUpdate)(BOOL, BOOL);
+- (double)currentHeight;
+- (void)updateLayout:(BOOL)animated completion:(id)completion;
+- (CGSize)sizeForItemAtIndex:(NSInteger)index model:(id)model collectionViewSize:(CGSize)size;
+- (void)configCell:(UICollectionViewCell *)cell index:(NSInteger)index model:(id)model;
+@end
+
+@interface DYYYCommentHeaderCell : UICollectionViewCell
+@end
+
+@interface DYYYCommentHeaderInnerController : UIViewController
+- (double)heightForSegmentedControl;
+- (double)autoFullScreen_topContainerTotalHeight;
+- (double)pinchFullScreen_topContainerTotalHeight;
+@end
+
 @interface AWEDemaciaChapterProgressSlider : UIView
 @end
 
