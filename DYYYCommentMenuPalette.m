@@ -36,6 +36,8 @@ static char kDYYYMenuPaletteObjectsKey;
 static char kDYYYMenuPaletteBusyKey;
 static char kDYYYMenuPaletteShapeKey;
 static char kDYYYMenuPaletteReportKey;
+static char kDYYYMenuActionOverlayKey;
+static char kDYYYMenuNativeActionIconKey;
 
 @implementation DYYYCommentMenuPalette
 
@@ -129,6 +131,7 @@ static char kDYYYMenuPaletteReportKey;
     NSMutableArray<UIView *> *queue = [NSMutableArray arrayWithObject:cell];
     for (NSUInteger index = 0; index < queue.count && index < 32; index++) {
         UIView *view = queue[index];
+        if (view == objc_getAssociatedObject(cell, &kDYYYMenuActionOverlayKey)) continue;
         if ([view isKindOfClass:UIImageView.class]) {
             CGRect frame = [view convertRect:view.bounds toView:cell];
             if (frame.size.width >= 16 && frame.size.width <= 24 &&
@@ -140,6 +143,86 @@ static char kDYYYMenuPaletteReportKey;
         [queue addObjectsFromArray:view.subviews];
     }
     return nil;
+}
+
++ (void)removeActionOverlayFromObject:(id)object {
+    UIImageView *overlay = objc_getAssociatedObject(object, &kDYYYMenuActionOverlayKey);
+    if (!overlay) return;
+    UIImageView *native = objc_getAssociatedObject(overlay, &kDYYYMenuNativeActionIconKey);
+    objc_setAssociatedObject(object, &kDYYYMenuActionOverlayKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    [overlay removeFromSuperview];
+    if (native) [self restoreObject:native];
+}
+
++ (UIImage *)whiteActionSymbolNamed:(NSString *)name {
+    static NSDictionary<NSString *, UIImage *> *symbols;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSMutableDictionary *images = [NSMutableDictionary dictionary];
+        UIImageSymbolConfiguration *config = [UIImageSymbolConfiguration configurationWithPointSize:20 weight:UIImageSymbolWeightMedium];
+        for (NSString *key in @[ @"doc.on.doc", @"star", @"star.fill", @"magnifyingglass" ]) {
+            UIImage *image = [UIImage systemImageNamed:key withConfiguration:config];
+            if (image) images[key] = [image imageWithTintColor:UIColor.whiteColor renderingMode:UIImageRenderingModeAlwaysOriginal];
+        }
+        symbols = [images copy];
+    });
+    return symbols[name];
+}
+
++ (BOOL)applyReadableActionIconInCell:(UIView *)cell controller:(UIViewController *)controller {
+    // 原生图片可能在布局之后重新着色。已确认的三个动作独立绘制白色符号，避免只改 tintColor 后仍变黑。
+    UILabel *actionLabel = nil;
+    NSString *symbolName = nil;
+    NSMutableArray<UIView *> *queue = [NSMutableArray arrayWithObject:cell];
+    for (NSUInteger index = 0; index < queue.count && index < 32 && !symbolName; index++) {
+        UIView *view = queue[index];
+        if ([view isKindOfClass:UILabel.class]) {
+            UILabel *label = (UILabel *)view;
+            NSString *title = label.text ?: label.attributedText.string;
+            if ([title hasPrefix:@"复制"]) symbolName = @"doc.on.doc";
+            else if ([title isEqualToString:@"收藏"]) symbolName = @"star";
+            else if ([title isEqualToString:@"取消收藏"] || [title isEqualToString:@"已收藏"]) symbolName = @"star.fill";
+            else if ([title isEqualToString:@"搜索"]) symbolName = @"magnifyingglass";
+            if (symbolName) actionLabel = label;
+        }
+        if (![view isKindOfClass:UIImageView.class]) [queue addObjectsFromArray:view.subviews];
+    }
+    UIImageView *overlay = objc_getAssociatedObject(cell, &kDYYYMenuActionOverlayKey);
+    if (!symbolName) {
+        [self removeActionOverlayFromObject:cell];
+        return NO;
+    }
+    UIImageView *nativeIcon = [self actionIconInCell:cell];
+    CGRect frame = nativeIcon ? [nativeIcon convertRect:nativeIcon.bounds toView:cell] : CGRectZero;
+    if (CGRectIsEmpty(frame)) {
+        // 私有成员名变化时，以原生文字的行首留白定位，不改文字、行高或点击区域。
+        CGRect labelFrame = [actionLabel convertRect:actionLabel.bounds toView:cell];
+        frame = CGRectMake(CGRectGetMinX(labelFrame) - 32, CGRectGetMidY(labelFrame) - 10, 20, 20);
+    }
+    UIImage *symbol = [self whiteActionSymbolNamed:symbolName];
+    if (CGRectIsEmpty(frame) || !CGRectContainsRect(cell.bounds, frame) || !symbol) {
+        [self removeActionOverlayFromObject:cell];
+        return NO;
+    }
+    if (!overlay) {
+        overlay = [[UIImageView alloc] initWithFrame:frame];
+        overlay.userInteractionEnabled = NO;
+        overlay.isAccessibilityElement = NO;
+        overlay.contentMode = UIViewContentModeScaleAspectFit;
+        objc_setAssociatedObject(cell, &kDYYYMenuActionOverlayKey, overlay, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [[self objectsForController:controller] addObject:cell];
+        [cell addSubview:overlay];
+    }
+    UIImageView *previousIcon = objc_getAssociatedObject(overlay, &kDYYYMenuNativeActionIconKey);
+    if (previousIcon != nativeIcon) {
+        if (previousIcon) [self restoreObject:previousIcon];
+        objc_setAssociatedObject(overlay, &kDYYYMenuNativeActionIconKey, nativeIcon, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    if (!CGRectEqualToRect(overlay.frame, frame)) overlay.frame = frame;
+    if (overlay.image != symbol) overlay.image = symbol;
+    [cell bringSubviewToFront:overlay];
+    if (nativeIcon) [self write:@0 key:@"alpha" object:nativeIcon controller:controller];
+    return YES;
 }
 
 + (void)synchronizeCell:(UIView *)cell {
@@ -173,7 +256,7 @@ static char kDYYYMenuPaletteReportKey;
     }
     // 只接管功能行的专用图标；好友头像和识图缩略图保持原图。
     UIImageView *icon = [self actionIconInCell:cell];
-    if ([icon isKindOfClass:UIImageView.class] && icon.image) {
+    if (![self applyReadableActionIconInCell:cell controller:controller] && [icon isKindOfClass:UIImageView.class] && icon.image) {
         if (icon.image.renderingMode != UIImageRenderingModeAlwaysTemplate)
             [self write:[icon.image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] key:@"image" object:icon controller:controller];
         [self write:UIColor.whiteColor key:@"tintColor" object:icon controller:controller];
@@ -260,6 +343,7 @@ static char kDYYYMenuPaletteReportKey;
 }
 
 + (void)restoreObject:(id)object {
+    [self removeActionOverlayFromObject:object];
     NSDictionary *changes = objc_getAssociatedObject(object, &kDYYYMenuPaletteChangesKey);
     objc_setAssociatedObject(object, &kDYYYMenuPaletteChangesKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     for (NSString *key in changes) {
