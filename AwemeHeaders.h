@@ -180,6 +180,7 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @interface AWEListDataController : NSObject
 @property(nonatomic, strong) NSMutableArray *dataSource;
 @property(nonatomic, strong) NSMutableArray *filteredDataSource;
+- (void)calculateFilteredDataSource;
 @end
 
 @interface AWEMixVideoListDataController : AWEListDataController

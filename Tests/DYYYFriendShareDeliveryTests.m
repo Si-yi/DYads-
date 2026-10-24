@@ -18,6 +18,29 @@
     return [super methodSignatureForSelector:selector];
 }
 @end
+// 模拟 39.5 的现场行为：updateAwemeList: 不把新 ID 插入数据源。
+@interface DYYYDeliveryTestController : NSObject
+@property (nonatomic, strong) NSMutableArray *dataSource;
+@property (nonatomic, strong) NSMutableArray *filteredDataSource;
+@property (nonatomic) NSUInteger calculations;
+@end
+@implementation DYYYDeliveryTestController
+- (void)updateAwemeList:(id)models {}
+- (void)calculateFilteredDataSource {
+    self.calculations++;
+    self.filteredDataSource = [NSMutableArray array];
+    for (NSDictionary *model in self.dataSource)
+        if (![model[@"filtered"] boolValue]) [self.filteredDataSource addObject:model];
+}
+@end
+@interface DYYYDeliveryInvalidController : DYYYDeliveryTestController
+@end
+@implementation DYYYDeliveryInvalidController
+- (NSMethodSignature *)methodSignatureForSelector:(SEL)selector {
+    if (selector == NSSelectorFromString(@"calculateFilteredDataSource")) return nil;
+    return [super methodSignatureForSelector:selector];
+}
+@end
 @interface DYYYFriendShareDeliveryTests : NSObject
 + (void)run;
 @end
@@ -43,6 +66,32 @@
     [self check:feed.count == 1 reason:@"原列表为空也可以准备首批分享"];
     feed = [DYYYFriendShareDelivery feedWithOriginal:original sharedModels:@{ @"share-A": shareB } orderedIDs:@[ @"share-A" ]];
     [self check:[feed isEqual:original] reason:@"缓存模型 ID 不匹配时不能混入首页"];
+
+    DYYYDeliveryTestController *controller = [DYYYDeliveryTestController new];
+    controller.dataSource = [original mutableCopy];
+    [controller calculateFilteredDataSource];
+    NSArray *merged = [DYYYFriendShareDelivery feedWithOriginal:original sharedModels:@{ @"share-A": shareA, @"share-B": shareB }
+        orderedIDs:@[ @"share-A", @"share-B" ]];
+    [controller updateAwemeList:merged];
+    [self check:[controller.dataSource isEqual:original] reason:@"复现旧入口调用完成但未插入新 ID"];
+    [self check:[DYYYFriendShareDelivery replaceFeed:merged controller:controller] &&
+        [controller.dataSource isEqual:merged] && [controller.filteredDataSource isEqual:merged]
+        reason:@"整表 setter 与原生过滤计算必须让两个列表均包含新分享"];
+    [self check:[controller.dataSource isKindOfClass:NSMutableArray.class] && controller.dataSource != merged
+        reason:@"保留原生可变数据源，不修改调用方列表"];
+    [self check:[DYYYFriendShareDelivery replaceFeed:merged controller:controller] && controller.dataSource.count == 4
+        reason:@"重复准备相同列表不增加重复项"];
+    NSDictionary *ad = @{ @"itemID": @"ad", @"filtered": @YES };
+    [self check:[DYYYFriendShareDelivery replaceFeed:@[ shareA, ad, shareB, one ] controller:controller] &&
+        [controller.filteredDataSource isEqual:@[ shareA, shareB, one ]]
+        reason:@"重算原生过滤列表，不能把原始列表直接塞入过滤结果"];
+    [self check:[DYYYFriendShareDelivery replaceFeed:@[ shareA ] controller:controller] &&
+        [controller.filteredDataSource isEqual:@[ shareA ]] reason:@"跨页准备新批次不能保留旧播放列表"];
+    DYYYDeliveryInvalidController *unsupported = [DYYYDeliveryInvalidController new];
+    unsupported.dataSource = [original mutableCopy];
+    [self check:![DYYYFriendShareDelivery replaceFeed:merged controller:unsupported] &&
+        [unsupported.dataSource isEqual:original] && !unsupported.calculations
+        reason:@"缺少原生过滤入口时不能只写入半套列表"];
 
     DYYYDeliveryTestCell *cell = [DYYYDeliveryTestCell new]; cell.model = shareA;
     [self check:![DYYYFriendShareDelivery prepareAndPlayCell:cell itemID:@"share-A" allowed:NO] && !cell.calls.count

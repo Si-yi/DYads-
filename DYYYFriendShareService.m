@@ -39,7 +39,6 @@
 @property (nonatomic) BOOL resumeAfterPageReturn;
 @property (nonatomic) NSUInteger cellRepairTicket;
 @property (nonatomic, strong) NSMutableSet *retriedModels;
-@property (nonatomic) BOOL modelWarningShown;
 @end
 
 @implementation DYYYFriendShareService
@@ -111,7 +110,7 @@
         s.generation++; s.scanInProgress = NO; s.pendingPlaybackID = nil; s.playbackTicket++; s.selectedOpeningShare = NO; s.waitingToInsert = NO;
         s.feedNeedsReload = NO; s.selectionAfterReload = nil; s.resumeAfterPageReturn = NO;
         [s.queued removeAllObjects]; [s.active removeAllObjects]; [s.models removeAllObjects];
-        [s.inFlight removeAllObjects]; [s.failed removeAllObjects]; [s.retriedModels removeAllObjects]; s.modelWarningShown = NO;
+        [s.inFlight removeAllObjects]; [s.failed removeAllObjects]; [s.retriedModels removeAllObjects];
         NSString *sourceKey = [self key:@"DYYYFriendShareSources"];
         NSDictionary *storedSources = sourceKey ? [NSUserDefaults.standardUserDefaults dictionaryForKey:sourceKey] : nil;
         s.sources = storedSources ? [storedSources mutableCopy] : [NSMutableDictionary dictionary];
@@ -144,7 +143,7 @@
     if (!s.backgrounded) return;
     s.backgrounded = NO; s.generation++; s.attempts = 0; s.selectedOpeningShare = NO;
     s.openingPending = YES; s.scanScheduled = NO; s.scanInProgress = NO; s.displayedID = nil;
-    [s.failed removeAllObjects]; [s.retriedModels removeAllObjects]; s.modelWarningShown = NO;
+    [s.failed removeAllObjects]; [s.retriedModels removeAllObjects];
     [s.history resetPlayback];
     if ([self automatic]) [self restoreSavedShares];
     [self tryOpeningScan];
@@ -229,7 +228,7 @@
     if (s.scanInProgress) { if (showToast) [DYYYUtils showToast:@"正在扫描好友分享，请稍候"]; return; }
     NSArray *users = [NSUserDefaults.standardUserDefaults arrayForKey:@"DYYYFriendShareFeedFriends"] ?: @[];
     if (!users.count) { if (showToast) [DYYYUtils showToast:@"请先选择分享来源好友"]; return; }
-    [s.failed removeAllObjects]; [s.retriedModels removeAllObjects]; s.modelWarningShown = NO;
+    [s.failed removeAllObjects]; [s.retriedModels removeAllObjects];
     s.selectedOpeningShare = NO;
     s.restoredGeneration = NSNotFound;
     [self restoreSavedShares];
@@ -411,10 +410,7 @@
         }
         s.state[@"modelStage"] = @"model_load_timeout";
         s.state[@"unloadedItemIDs"] = missing;
-        if (!s.modelWarningShown) {
-            s.modelWarningShown = YES;
-            [DYYYUtils showToast:@"部分分享暂未加载，已保留待刷记录，将自动重试"];
-        }
+        // 加载失败仅保留诊断和待刷队列，后台静默补试，不打断观看。
         [self insertQueued];
         if (retry.count) dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
             if (generation != s.generation || ![account isEqual:[DYYYIMService accountID]] || ![self enabled]) return;
@@ -456,7 +452,7 @@
     if (!ready.count) return;
     AWEFeedTableViewController *home = s.home;
     id controller = home.dataController;
-    if (!home || ![controller respondsToSelector:@selector(updateAwemeList:)]) { s.state[@"stage"] = @"prepared_waiting_feed"; return; }
+    if (!home || ![controller respondsToSelector:@selector(setDataSource:)] || ![controller respondsToSelector:@selector(calculateFilteredDataSource)]) { s.state[@"stage"] = @"prepared_waiting_feed"; return; }
     NSArray *data = [(AWEListDataController *)controller dataSource];
     if (![data isKindOfClass:NSArray.class]) { s.state[@"stage"] = @"prepared_waiting_feed_data"; return; }
     BOOL visible = [self homeVisible];
@@ -475,16 +471,24 @@
     for (NSString *itemID in desired) if (![orderedIDs containsObject:itemID]) [orderedIDs addObject:itemID];
     NSArray *merged = [DYYYFriendShareDelivery feedWithOriginal:data sharedModels:s.models orderedIDs:orderedIDs];
     s.arranging = YES;
+    BOOL submitted = NO;
     @try {
-        // 一次提交完整模型列表。逐条插入会在中途创建/停用多批 Cell，造成首播状态残留。
-        [(AWEHotListDataController *)controller updateAwemeList:merged];
-    } @catch (__unused NSException *exception) {
-        s.state[@"stage"] = @"batch_update_exception";
-        return;
+        // 不触发逐条插入或隐藏页 Cell 布局，原生过滤仍按当前开关执行。
+        submitted = [DYYYFriendShareDelivery replaceFeed:merged controller:controller];
     } @finally { s.arranging = NO; }
+    if (!submitted) { s.state[@"stage"] = @"batch_replace_unavailable"; return; }
     NSArray *actual = [(AWEListDataController *)controller dataSource];
-    NSMutableSet *confirmed = [NSMutableSet set];
+    NSArray *playable = [(AWEListDataController *)controller filteredDataSource];
+    NSMutableSet *confirmed = [NSMutableSet set], *playableIDs = [NSMutableSet set];
     for (id model in actual) { NSString *itemID = [self itemID:model]; if (itemID.length) [confirmed addObject:itemID]; }
+    for (id model in playable) { NSString *itemID = [self itemID:model]; if (itemID.length) [playableIDs addObject:itemID]; }
+    [confirmed intersectSet:playableIDs];
+    s.state[@"submittedCount"] = @(merged.count);
+    s.state[@"dataSourceCount"] = @(actual.count);
+    s.state[@"playableCount"] = @(playable.count);
+    NSMutableSet *confirmedShares = [NSMutableSet setWithArray:ready];
+    [confirmedShares intersectSet:confirmed];
+    s.state[@"confirmedShareCount"] = @(confirmedShares.count);
     NSMutableSet *known = [self storedIDs:@"DYYYFriendShareInsertedItemIDs"];
     BOOL inserted = NO;
     for (NSString *itemID in ready) if ([confirmed containsObject:itemID]) {
@@ -542,7 +546,11 @@
     if (![data isKindOfClass:NSArray.class]) return;
     NSArray *kept = [self arrangeData:data controller:s.home.dataController];
     if (kept != data) {
-        [(AWEHotListDataController *)s.home.dataController updateAwemeList:kept];
+        BOOL submitted = NO;
+        s.arranging = YES;
+        @try { submitted = [DYYYFriendShareDelivery replaceFeed:kept controller:s.home.dataController]; }
+        @finally { s.arranging = NO; }
+        if (!submitted) return;
         s.feedNeedsReload = YES;
         s.selectionAfterReload = [self itemID:kept.firstObject];
         s.startAfterReload = !s.selectedOpeningShare || s.resumeAfterPageReturn;
@@ -556,7 +564,8 @@
     DYYYFriendShareService *s = [self shared];
     if (!itemID.length || generation != s.generation || ![self enabled] || ![self homeVisible] || s.userDragging) return;
     AWEFeedTableViewController *home = s.home;
-    NSArray *data = [(AWEListDataController *)home.dataController dataSource];
+    // 原生首页按 filteredDataSource 展示，不能用未过滤列表的下标选错 Cell。
+    NSArray *data = [(AWEListDataController *)home.dataController filteredDataSource];
     if (![data isKindOfClass:NSArray.class]) return;
     NSUInteger index = [data indexOfObjectPassingTest:^BOOL(id model, NSUInteger idx, BOOL *stop) {
         return [[self itemID:model] isEqual:itemID];
