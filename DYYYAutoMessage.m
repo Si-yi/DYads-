@@ -1,4 +1,5 @@
 #import "DYYYAutoMessage.h"
+#import "DYYYAutoMessageBatch.h"
 #import "DYYYAutoMessagePanel.h"
 #import "DYYYAutoMessageQuietHoursPanel.h"
 #import "DYYYAutoMessageEditor.h"
@@ -74,6 +75,17 @@ static NSString *const kDYYYFriendShareFriends = @"DYYYFriendShareFeedFriends";
         if ([path isKindOfClass:NSString.class] && [[path stringByStandardizingPath] hasPrefix:prefix] && ![referenced containsObject:path])
             [NSFileManager.defaultManager removeItemAtPath:path error:nil];
     }
+}
+
++ (NSUInteger)updateText:(NSString *)text randomText:(BOOL)randomText userIDs:(NSSet<NSString *> *)userIDs ownerID:(NSString *)ownerID {
+    if (!NSThread.isMainThread || !ownerID.length || ![ownerID isEqual:[DYYYIMService accountID]] || !userIDs.count ||
+        ![text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length) return NSNotFound;
+    // 保存时重新读取，避免把已删除的配置加回来或覆盖其他好友在此期间的修改。
+    NSArray *configs = [self messageConfigs];
+    NSUInteger count = 0;
+    for (NSDictionary *row in configs) if ([row[@"ownerID"] isEqual:ownerID] && [userIDs containsObject:row[@"userID"]]) count++;
+    if (count) [self saveMessageConfigs:[DYYYAutoMessageBatch configsByUpdatingText:text randomText:randomText configs:configs ownerID:ownerID selectedUserIDs:userIDs]];
+    return count;
 }
 
 + (NSString *)todayKey {

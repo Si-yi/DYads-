@@ -1,5 +1,6 @@
 #import "DYYYAutoMessagePanel.h"
 #import "DYYYAutoMessage.h"
+#import "DYYYAutoMessageBatch.h"
 #import "DYYYAutoMessageEditor.h"
 #import "DYYYIMService.h"
 #import "DYYYSettingsHelper.h"
@@ -8,6 +9,8 @@
 @interface DYYYAutoMessagePanel () <UITableViewDataSource, UITableViewDelegate, UISearchBarDelegate>
 @property(nonatomic) BOOL pickingFriends;
 @property(nonatomic) BOOL pickingTest;
+@property(nonatomic) BOOL pickingBatch;
+@property(nonatomic, copy) NSString *batchOwner;
 @property(nonatomic) BOOL loadingFriends;
 @property(nonatomic, strong) UIVisualEffectView *panel;
 @property(nonatomic, strong) UILabel *titleLabel;
@@ -118,9 +121,9 @@
     self.titleLabel.textColor = UIColor.labelColor;
     [content addSubview:self.titleLabel];
     self.helpButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    [self.helpButton setImage:[UIImage systemImageNamed:self.pickingFriends ? @"arrow.clockwise" : @"questionmark.circle"] forState:UIControlStateNormal];
+    [self.helpButton setImage:[UIImage systemImageNamed:self.pickingFriends && !self.pickingBatch ? @"arrow.clockwise" : @"questionmark.circle"] forState:UIControlStateNormal];
     self.helpButton.tintColor = UIColor.labelColor;
-    self.helpButton.accessibilityLabel = self.pickingFriends ? @"重新读取好友" : @"配置说明";
+    self.helpButton.accessibilityLabel = self.pickingFriends && !self.pickingBatch ? @"重新读取好友" : @"配置说明";
     [self.helpButton addTarget:self action:@selector(showHelp) forControlEvents:UIControlEventTouchUpInside];
     [content addSubview:self.helpButton];
     self.table = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStylePlain];
@@ -159,8 +162,9 @@
             [self button:@"添加配置" color:UIColor.systemBlueColor action:@selector(addConfig)],
             [self button:@"测试发送" color:UIColor.systemOrangeColor action:@selector(testConfig)]]];
         UIStackView *bottom = [self row:@[
-            [self button:@"选择互关好友" color:UIColor.systemPinkColor action:@selector(addFriends)], close]];
-        self.footer = [[UIStackView alloc] initWithArrangedSubviews:@[top, bottom]];
+            [self button:@"选择互关好友" color:UIColor.systemPinkColor action:@selector(addFriends)],
+            [self button:@"批量修改内容" color:UIColor.systemBlueColor action:@selector(batchEditContent)]]];
+        self.footer = [[UIStackView alloc] initWithArrangedSubviews:@[top, bottom, close]];
         self.footer.axis = UILayoutConstraintAxisVertical;
         self.footer.spacing = 10;
         self.footer.distribution = UIStackViewDistributionFillEqually;
@@ -185,13 +189,19 @@
         self.selectionBar.frame = CGRectMake(18, top, width - 36, 34);
         top += 42;
     }
-    CGFloat footerHeight = (self.pickingFriends || self.pickingTest) ? 44 : 94;
+    CGFloat footerHeight = (self.pickingFriends || self.pickingTest) ? 44 : 146;
     self.footer.frame = CGRectMake(18, height - footerHeight - 18, width - 36, footerHeight);
     self.table.frame = CGRectMake(0, top, width, MAX(0, CGRectGetMinY(self.footer.frame) - top - 12));
 }
 
 - (void)updateTitle {
-    if (self.pickingFriends) {
+    if (self.pickingBatch) {
+        self.titleLabel.text = [NSString stringWithFormat:@"选择要修改的好友（%lu）", (unsigned long)self.friends.count];
+        [self.saveButton setTitle:[NSString stringWithFormat:@"下一步（%lu）", (unsigned long)self.selectedIDs.count] forState:UIControlStateNormal];
+        self.saveButton.enabled = self.selectedIDs.count > 0;
+        self.emptyLabel.text = self.friends.count ? @"没有匹配的已添加好友" : @"当前账户还没有已添加的好友";
+        self.emptyLabel.hidden = self.groups.lastObject.count > 0;
+    } else if (self.pickingFriends) {
         NSUInteger flame = 0;
         for (NSDictionary *friend in self.friends) if ([friend[@"hasFlame"] boolValue]) flame++;
         self.titleLabel.text = [NSString stringWithFormat:@"选择互关好友（%lu · 🔥%lu）", (unsigned long)self.friends.count, (unsigned long)flame];
@@ -213,7 +223,7 @@
         NSString *haystack = [[NSString stringWithFormat:@"%@ %@ %@ %@", friend[@"name"], friend[@"userID"],
             friend[@"displayID"] ?: @"", [aliases componentsJoinedByString:@" "]] lowercaseString];
         if (query.length && ![haystack containsString:query]) continue;
-        [([friend[@"hasFlame"] boolValue] ? flame : other) addObject:friend];
+        [(!self.pickingBatch && [friend[@"hasFlame"] boolValue] ? flame : other) addObject:friend];
     }
     self.groups = @[flame, other];
     [self.table reloadData];
@@ -227,7 +237,7 @@
 }
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
     if (!self.pickingFriends || !self.groups[section].count) return nil;
-    return section == 0 ? @"🔥 火花好友" : @"互关好友";
+    return self.pickingBatch ? @"已添加好友" : (section == 0 ? @"🔥 火花好友" : @"互关好友");
 }
 - (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section {
     NSString *title = [self tableView:tableView titleForHeaderInSection:section];
@@ -372,6 +382,27 @@
         } onCancel:nil];
     }];
 }
+- (void)batchEditContent {
+    NSString *owner = [DYYYIMService accountID];
+    if (!owner.length) { [DYYYUtils showToast:@"当前登录账户尚未就绪"]; return; }
+    NSArray *contacts = [NSUserDefaults.standardUserDefaults arrayForKey:[@"DYYYMutualFriendsCache." stringByAppendingString:owner]] ?: @[];
+    NSArray *friends = [DYYYAutoMessageBatch configuredFriends:[DYYYAutoMessage messageConfigs] ownerID:owner contacts:contacts];
+    if (!friends.count) { [DYYYUtils showToast:@"请先为当前账户添加好友配置"]; return; }
+    DYYYAutoMessagePanel *picker = [DYYYAutoMessagePanel new];
+    picker.pickingFriends = YES;
+    picker.pickingBatch = YES;
+    picker.batchOwner = owner;
+    picker.friends = friends;
+    picker.selectedIDs = [NSMutableSet set];
+    __weak typeof(self) weakSelf = self;
+    picker.selectionCompletion = ^(NSArray<NSDictionary *> *selected) {
+        if (!weakSelf) return;
+        NSMutableArray *ids = [NSMutableArray array];
+        for (NSDictionary *row in selected) [ids addObject:row[@"userID"]];
+        [DYYYAutoMessageEditor showBatchFrom:weakSelf userIDs:ids ownerID:owner completion:^{ [weakSelf reloadConfigs]; }];
+    };
+    [DYYYAutoMessagePanel presentPanel:picker from:self];
+}
 - (void)testConfig {
     NSString *account = [DYYYIMService accountID];
     if (!account.length) { [DYYYUtils showToast:@"当前登录账户尚未就绪"]; return; }
@@ -387,6 +418,8 @@
 - (void)selectAll { for (NSArray *group in self.groups) for (NSDictionary *row in group) [self.selectedIDs addObject:row[@"userID"]]; [self.table reloadData]; [self updateTitle]; }
 - (void)selectNone { [self.selectedIDs removeAllObjects]; [self.table reloadData]; [self updateTitle]; }
 - (void)saveSelection {
+    if (self.pickingBatch && ![self.batchOwner isEqual:[DYYYIMService accountID]]) { [DYYYUtils showToast:@"登录账户已变化，请重新打开批量修改"]; return; }
+    if (self.pickingBatch && !self.selectedIDs.count) { [DYYYUtils showToast:@"请先选择要修改的好友"]; return; }
     NSMutableArray *selected = [NSMutableArray array];
     NSMutableSet *resolved = [NSMutableSet set];
     for (NSDictionary *row in self.friends) if ([self.selectedIDs containsObject:row[@"userID"]]) { [selected addObject:row]; [resolved addObject:row[@"userID"]]; }
@@ -397,6 +430,9 @@
 }
 - (void)closePanel { [self dismissViewControllerAnimated:YES completion:nil]; }
 - (void)showHelp {
+    if (self.pickingBatch) {
+        [DYYYUtils showToast:@"勾选已添加的好友，或点击全选，再点下一步统一修改文字内容"]; return;
+    }
     if (!self.pickingFriends) {
         [DYYYAutoMessageEditor showHelpFrom:self];
         return;

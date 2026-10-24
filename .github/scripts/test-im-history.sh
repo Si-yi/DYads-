@@ -12,3 +12,6 @@ xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
 xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
     DYYYFriendShareDelivery.m Tests/DYYYFriendShareDeliveryTests.m -o "$test_dir/share-delivery-tests"
 "$test_dir/share-delivery-tests"
+xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
+    DYYYAutoMessageBatch.m Tests/DYYYAutoMessageBatchTests.m -o "$test_dir/auto-message-batch-tests"
+"$test_dir/auto-message-batch-tests"

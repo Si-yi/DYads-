@@ -37,7 +37,7 @@ include $(THEOS)/makefiles/common.mk
 TWEAK_NAME = DYYY
 
 DYYY_FILES = DYYY.xm DYYYFloatClearButton.xm DYYYFloatSpeedButton.m DYYYSettings.xm DYYYAutoMessageHooks.xm DYYYABTestHook.xm DYYYLongPressPanel.xm DYYYGlassTabBar.xm DYYYProfileClean.xm DYYYPlusIcon.m DKTabBarIcons.m DKTabBarIconDraw.m DKIconCropper.m DYYYSettingsHelper.m DYYYAutoMessage.m DYYYAutoMessagePanel.m DYYYBackupTools.m DYYYDebugInspector.m DKDebugCapture.m DKClassDump.m DKZipWriter.m DYYYImagePickerDelegate.m DYYYBackupPickerDelegate.m DYYYBottomAlertView.m DYYYCustomInputView.m DYYYOptionsSelectionView.m DYYYIconOptionsDialogView.m DYYYAboutDialogView.m DYYYKeywordListView.m DYYYFilterSettingsView.m DYYYConfirmCloseView.m DYYYToast.m DYYYManager.m DYYYUtils.m CityManager.m AWMSafeDispatchTimer.m
-DYYY_FILES += DYYYAutoMessageEditor.m DYYYAutoMessageQuietHoursPanel.m
+DYYY_FILES += DYYYAutoMessageEditor.m DYYYAutoMessageQuietHoursPanel.m DYYYAutoMessageBatch.m
 DYYY_FILES += DYYYIMService.m DYYYIMHistoryReader.m
 DYYY_FILES += DYYYFriendShareService.m DYYYFriendShareHistory.m DYYYFriendShareDelivery.m
 DYYY_FILES += DYYYFriendShareBadgeView.m DYYYChatVideoLayout.m

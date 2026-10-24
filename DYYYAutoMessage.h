@@ -7,6 +7,8 @@
 @interface DYYYAutoMessage : NSObject
 + (NSMutableArray<NSMutableDictionary *> *)messageConfigs;
 + (void)saveMessageConfigs:(NSArray *)configs;
+/// 返回匹配配置数；账户变化或参数无效时返回 NSNotFound。
++ (NSUInteger)updateText:(NSString *)text randomText:(BOOL)randomText userIDs:(NSSet<NSString *> *)userIDs ownerID:(NSString *)ownerID;
 + (NSMutableArray<NSMutableDictionary *> *)noSendTimePeriods;
 + (void)saveNoSendTimePeriods:(NSArray *)periods;
 + (NSString *)noSendTimeSummary;
