@@ -2,17 +2,8 @@
 #import "AwemeHeaders.h"
 #import <objc/runtime.h>
 
-static char kDYYYSameStyleVisibilityKey;
-
-@interface DYYYSameStyleVisibilityState : NSObject
-@property (nonatomic, assign) BOOL nativeHidden;
-@property (nonatomic, assign) BOOL forceHidden;
-@property (nonatomic, assign) BOOL applying;
-@property (nonatomic, assign) NSUInteger updateDepth;
-@end
-
-@implementation DYYYSameStyleVisibilityState
-@end
+static char kDYYYSameStyleOriginalsKey;
+static char kDYYYSameStyleUpdateDepthKey;
 
 @implementation DYYYSameStyleVisibility
 
@@ -23,79 +14,70 @@ static char kDYYYSameStyleVisibilityKey;
     return views;
 }
 
-+ (DYYYSameStyleVisibilityState *)stateForView:(UIView *)view {
-    DYYYSameStyleVisibilityState *state = objc_getAssociatedObject(view, &kDYYYSameStyleVisibilityKey);
-    if (!state) {
-        state = [DYYYSameStyleVisibilityState new];
-        state.nativeHidden = view.hidden;
-        objc_setAssociatedObject(view, &kDYYYSameStyleVisibilityKey, state, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        [[self views] addObject:view];
-    }
-    return state;
-}
-
-+ (BOOL)isRightSameStyleEntry:(UIView *)view {
++ (BOOL)isRightMusicView:(UIView *)view {
     if (![view isKindOfClass:NSClassFromString(@"AWEPlayInteractionSingleSongMusicStyleView")]) return NO;
-    BOOL inRightStack = NO;
     for (UIView *parent = view.superview; parent; parent = parent.superview) {
         if ([parent isKindOfClass:NSClassFromString(@"AWEElementStackView")] &&
-            [parent.accessibilityLabel isEqualToString:@"right"]) {
-            inRightStack = YES;
-            break;
-        }
-    }
-    if (!inRightStack) return NO;
-    // 同一原生组件也展示普通唱片/听抖音，不能仅凭“音乐详情”或类名隐藏。
-    // 导出中“拍同款”的标题和点击遮罩均为该组件的直接子视图。
-    for (UIView *child in view.subviews) {
-        if (child.hidden || child.alpha <= 0.01) continue;
-        if ([child.accessibilityLabel isEqualToString:@"拍同款"]) return YES;
-        if ([child isKindOfClass:UILabel.class] && [((UILabel *)child).text isEqualToString:@"拍同款"]) return YES;
+            [parent.accessibilityLabel isEqualToString:@"right"]) return YES;
     }
     return NO;
 }
 
-+ (void)writeHidden:(BOOL)hidden view:(UIView *)view state:(DYYYSameStyleVisibilityState *)state {
-    if (view.hidden == hidden) return;
-    state.applying = YES;
-    @try {
-        view.hidden = hidden;
-    } @finally {
-        state.applying = NO;
++ (void)restoreView:(UIView *)view {
+    NSMapTable<UILabel *, NSNumber *> *originals = objc_getAssociatedObject(view, &kDYYYSameStyleOriginalsKey);
+    objc_setAssociatedObject(view, &kDYYYSameStyleOriginalsKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    for (UILabel *label in originals.keyEnumerator.allObjects) {
+        if (label.hidden) label.hidden = [[originals objectForKey:label] boolValue];
     }
-}
-
-+ (BOOL)hiddenForView:(UIView *)view nativeHidden:(BOOL)hidden {
-    if (!NSThread.isMainThread) return hidden;
-    DYYYSameStyleVisibilityState *state = objc_getAssociatedObject(view, &kDYYYSameStyleVisibilityKey);
-    if (!state || state.applying) return hidden;
-    state.nativeHidden = hidden;
-    return hidden || state.forceHidden;
 }
 
 + (void)applyToView:(UIView *)view {
     if (!NSThread.isMainThread || !view) return;
-    DYYYSameStyleVisibilityState *state = [self stateForView:view];
-    if (state.updateDepth) return;
-    state.forceHidden = view.window && DYYYGetBool(@"DYYYHideSameStyleButton") && [self isRightSameStyleEntry:view];
-    // 隐藏完整组件，连同越出唱片范围的标题与点击遮罩；不移除视图或改约束。
-    [self writeHidden:(state.nativeHidden || state.forceHidden) view:view state:state];
+    if ([objc_getAssociatedObject(view, &kDYYYSameStyleUpdateDepthKey) unsignedIntegerValue]) return;
+    [[self views] addObject:view];
+    if (!view.window || !DYYYGetBool(@"DYYYHideSameStyleButton") || ![self isRightMusicView:view]) {
+        [self restoreView:view];
+        return;
+    }
+    NSMapTable<UILabel *, NSNumber *> *originals = objc_getAssociatedObject(view, &kDYYYSameStyleOriginalsKey);
+    // 复用成音乐/听抖音等其他文案时，立即交还先前接管的标题。
+    for (UILabel *label in originals.keyEnumerator.allObjects) {
+        if (label.superview != view || ![label.text isEqualToString:@"拍同款"]) {
+            if (label.hidden) label.hidden = [[originals objectForKey:label] boolValue];
+            [originals removeObjectForKey:label];
+        }
+    }
+    // 导出确认标题是组件的直接子 UILabel。只隐藏这三个字，保留缩略图、
+    // 原生点击遮罩、音乐按钮、组件尺寸和无障碍动作，不改变点击功能。
+    for (UIView *child in view.subviews) {
+        if (![child isKindOfClass:UILabel.class]) continue;
+        UILabel *label = (UILabel *)child;
+        if (![label.text isEqualToString:@"拍同款"]) continue;
+        if (!originals) {
+            originals = [NSMapTable weakToStrongObjectsMapTable];
+            objc_setAssociatedObject(view, &kDYYYSameStyleOriginalsKey, originals, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+        if (![originals objectForKey:label] || !label.hidden) [originals setObject:@(label.hidden) forKey:label];
+        if (!label.hidden) label.hidden = YES;
+    }
 }
 
 + (void)beginNativeUpdate:(UIView *)view {
     if (!NSThread.isMainThread || !view) return;
-    DYYYSameStyleVisibilityState *state = [self stateForView:view];
-    if (!state.updateDepth++) {
-        state.forceHidden = NO;
-        [self writeHidden:state.nativeHidden view:view state:state];
-    }
+    NSUInteger depth = [objc_getAssociatedObject(view, &kDYYYSameStyleUpdateDepthKey) unsignedIntegerValue];
+    objc_setAssociatedObject(view, &kDYYYSameStyleUpdateDepthKey, @(depth + 1), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if (!depth) [self restoreView:view];
 }
 
 + (void)endNativeUpdate:(UIView *)view {
     if (!NSThread.isMainThread || !view) return;
-    DYYYSameStyleVisibilityState *state = [self stateForView:view];
-    if (state.updateDepth) state.updateDepth--;
-    if (!state.updateDepth) [self applyToView:view];
+    NSUInteger depth = [objc_getAssociatedObject(view, &kDYYYSameStyleUpdateDepthKey) unsignedIntegerValue];
+    if (depth > 1) {
+        objc_setAssociatedObject(view, &kDYYYSameStyleUpdateDepthKey, @(depth - 1), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    } else {
+        objc_setAssociatedObject(view, &kDYYYSameStyleUpdateDepthKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [self applyToView:view];
+    }
 }
 
 + (void)refreshVisibleViews {

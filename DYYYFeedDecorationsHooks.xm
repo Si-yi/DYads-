@@ -82,9 +82,6 @@
 
 %group DYYYSameStyleVisibilityHooks
 %hook AWEPlayInteractionSingleSongMusicStyleView
-- (void)setHidden:(BOOL)hidden {
-    %orig([DYYYSameStyleVisibility hiddenForView:(UIView *)self nativeHidden:hidden]);
-}
 - (void)layoutSubviews {
     %orig;
     [DYYYSameStyleVisibility applyToView:(UIView *)self];
