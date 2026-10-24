@@ -14,22 +14,44 @@
 }
 + (NSArray *)feedWithOriginal:(NSArray *)original sharedModels:(NSDictionary *)models orderedIDs:(NSArray<NSString *> *)orderedIDs
                   watchedIDs:(NSSet<NSString *> *)watchedIDs currentItemID:(NSString *)currentItemID {
-    NSMutableArray *result = [NSMutableArray array];
-    NSMutableSet *seen = [NSMutableSet set];
+    return [self feedWithOriginal:original sharedModels:models orderedIDs:orderedIDs watchedIDs:watchedIDs
+        currentItemID:currentItemID anchorItemID:nil insertAfterAnchor:NO];
+}
++ (NSArray *)feedWithOriginal:(NSArray *)original sharedModels:(NSDictionary *)models orderedIDs:(NSArray<NSString *> *)orderedIDs
+                  watchedIDs:(NSSet<NSString *> *)watchedIDs currentItemID:(NSString *)currentItemID
+                anchorItemID:(NSString *)anchorItemID insertAfterAnchor:(BOOL)afterAnchor {
+    NSUInteger anchorIndex = anchorItemID.length ? [original indexOfObjectPassingTest:^BOOL(id model, NSUInteger index, BOOL *stop) {
+        return [[self itemID:model] isEqual:anchorItemID];
+    }] : NSNotFound;
+    BOOL pinAnchor = afterAnchor && anchorIndex != NSNotFound;
+    NSMutableArray *shares = [NSMutableArray array];
+    NSMutableSet *shareIDs = [NSMutableSet set];
     for (NSString *itemID in orderedIDs) {
         if ([watchedIDs containsObject:itemID] && ![itemID isEqual:currentItemID]) continue;
         id model = models[itemID];
-        if (!model || ![[self itemID:model] isEqual:itemID] || [seen containsObject:itemID]) continue;
-        [result addObject:model]; [seen addObject:itemID];
+        if (!model || ![[self itemID:model] isEqual:itemID] || [shareIDs containsObject:itemID]) continue;
+        [shareIDs addObject:itemID];
+        // 当前正在播放的分享仍留在原位置，其余未刷分享接在它后面。
+        if (!pinAnchor || ![itemID isEqual:anchorItemID]) [shares addObject:model];
     }
-    for (id model in original) {
+    NSMutableArray *result = [NSMutableArray array];
+    NSMutableSet *seen = [NSMutableSet set];
+    NSUInteger insertionIndex = 0;
+    for (NSUInteger index = 0; index < original.count; index++) {
+        id model = original[index];
         NSString *itemID = [self itemID:model];
         if (itemID.length && [watchedIDs containsObject:itemID] && ![itemID isEqual:currentItemID]) continue;
+        BOOL isPinnedAnchor = pinAnchor && index == anchorIndex;
+        if (itemID.length && [shareIDs containsObject:itemID] && !isPinnedAnchor) continue;
         if (itemID.length && [seen containsObject:itemID]) continue;
         [result addObject:model]; if (itemID.length) [seen addObject:itemID];
+        // 插入点按 ID 在原列表中的真实位置计算，不用过滤前后的数字下标猜测。
+        if (anchorIndex != NSNotFound && (index < anchorIndex || isPinnedAnchor)) insertionIndex++;
     }
+    [result insertObjects:shares atIndexes:[NSIndexSet indexSetWithIndexesInRange:NSMakeRange(insertionIndex, shares.count)]];
     return result;
 }
+
 + (BOOL)replaceFeed:(NSArray *)feed controller:(id)controller {
     if (![feed isKindOfClass:NSArray.class] || !controller) return NO;
     @try {

@@ -505,7 +505,13 @@
     for (NSDictionary *row in s.history.pendingRows) if ([desired containsObject:row[@"itemID"]]) [orderedIDs addObject:row[@"itemID"]];
     for (NSString *itemID in desired) if (![orderedIDs containsObject:itemID]) [orderedIDs addObject:itemID];
     NSArray *merged = [DYYYFriendShareDelivery feedWithOriginal:data sharedModels:s.models orderedIDs:orderedIDs
-        watchedIDs:watched currentItemID:preservedCurrent];
+        watchedIDs:watched currentItemID:preservedCurrent anchorItemID:previous insertAfterAnchor:s.selectedOpeningShare];
+    s.state[@"insertionAnchorItemID"] = previous ?: @"";
+    s.state[@"insertionAfterAnchor"] = @(s.selectedOpeningShare);
+    NSUInteger anchorIndex = [data indexOfObjectPassingTest:^BOOL(id model, NSUInteger index, BOOL *stop) {
+        return [[self itemID:model] isEqual:previous];
+    }];
+    s.state[@"insertionAnchorIndex"] = anchorIndex == NSNotFound ? @(-1) : @(anchorIndex);
     s.arranging = YES;
     BOOL submitted = NO;
     @try {
@@ -554,20 +560,17 @@
 + (NSArray *)arrangeData:(NSArray *)data controller:(id)controller {
     DYYYFriendShareService *s = [self shared];
     if (!NSThread.isMainThread || s.arranging || ![self enabled] || ![data isKindOfClass:NSArray.class] || controller != s.home.dataController || ![self syncAccount]) return data;
-    NSMutableSet *watched = [self storedIDs:@"DYYYFriendShareWatchedItemIDs"];
-    NSSet *known = [self storedIDs:@"DYYYFriendShareInsertedItemIDs"];
-    NSMutableArray *result = [NSMutableArray array]; NSMutableSet *seen = [NSMutableSet set];
-    // 正在播放的分享即使已播完一轮也保留，离开它之后才参与过滤。
+    NSSet *watched = s.history.watchedItemIDs;
+    NSString *current = [self visibleHomeItemID] ?: s.displayedID;
+    NSString *preservedCurrent = s.selectedOpeningShare ? current : nil;
+    // 原生 load more/刷新也必须保持浏览位置；不能在每次写入时把 active 全部搬回首行。
     for (NSString *itemID in [s.active copy]) {
-        if ([watched containsObject:itemID] && ![itemID isEqual:s.displayedID]) { [s.active removeObject:itemID]; [s.models removeObjectForKey:itemID]; continue; }
-        if (s.models[itemID]) { [result addObject:s.models[itemID]]; [seen addObject:itemID]; }
+        if ([watched containsObject:itemID] && ![itemID isEqual:preservedCurrent]) {
+            [s.active removeObject:itemID]; [s.models removeObjectForKey:itemID];
+        }
     }
-    for (id model in data) {
-        NSString *itemID = [self itemID:model];
-        if (itemID && [seen containsObject:itemID]) continue;
-        if ([known containsObject:itemID ?: @""] && [watched containsObject:itemID ?: @""] && ![itemID isEqual:s.displayedID]) continue;
-        [result addObject:model]; if (itemID) [seen addObject:itemID];
-    }
+    NSArray *result = [DYYYFriendShareDelivery feedWithOriginal:data sharedModels:s.models orderedIDs:s.active.array
+        watchedIDs:watched currentItemID:preservedCurrent anchorItemID:current insertAfterAnchor:YES];
     NSMutableSet *pending = [NSMutableSet setWithArray:s.queued.array];
     [pending minusSet:s.failed];
     if (pending.count && !s.inFlight.count) dispatch_async(dispatch_get_main_queue(), ^{ [self insertQueued]; });
@@ -588,7 +591,11 @@
         @finally { s.arranging = NO; }
         if (!submitted) return;
         s.feedNeedsReload = YES;
-        s.selectionAfterReload = [self itemID:kept.firstObject];
+        NSString *current = [self visibleHomeItemID] ?: s.displayedID;
+        BOOL containsCurrent = current.length && [kept indexOfObjectPassingTest:^BOOL(id model, NSUInteger index, BOOL *stop) {
+            return [[self itemID:model] isEqual:current];
+        }] != NSNotFound;
+        s.selectionAfterReload = containsCurrent ? current : [self itemID:kept.firstObject];
         s.startAfterReload = !s.selectedOpeningShare || s.resumeAfterPageReturn;
         [self applyPreparedFeed];
         if (!kept.count && [self homeVisible] && [s.home respondsToSelector:@selector(awe_refreshForceRequestWithoutAnimation)]) [s.home awe_refreshForceRequestWithoutAnimation];
@@ -616,6 +623,8 @@
     s.pendingPlaybackID = start ? itemID : nil;
     s.state[@"playbackStage"] = @"selecting_native_cell";
     s.state[@"selectionIndex"] = @(index);
+    BOOL wasArranging = s.arranging;
+    s.arranging = YES; // 重载期间旧可见 Cell 还未切换，不能让原生回调按旧锚点再次重排。
     @try {
         s.state[@"selectionItemID"] = itemID;
         if (![DYYYFriendShareDelivery reloadFeed:home atIndex:index]) {
@@ -634,7 +643,7 @@
         s.pendingPlaybackID = nil;
         s.state[@"playbackStage"] = @"native_selection_exception";
         return;
-    }
+    } @finally { s.arranging = wasArranging; }
     if (!start) { s.state[@"playbackStage"] = @"kept_user_pause"; return; }
     dispatch_async(dispatch_get_main_queue(), ^{
         [self activateSelectedShare:itemID generation:generation ticket:ticket attempt:0];

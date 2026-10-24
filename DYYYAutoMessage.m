@@ -614,7 +614,7 @@ static NSString *const kDYYYFriendShareFriends = @"DYYYFriendShareFeedFriends";
 
     return @[
         [DYYYSettingsHelper createSectionWithTitle:@"自动消息" footerTitle:@"开启后在抖音启动时处理配置；不发送时间段内不会触发。" items:@[enabled, configs, status, keyword, noSend, toast, allToast]],
-        [DYYYSettingsHelper createSectionWithTitle:@"好友分享进推荐" footerTitle:@"未刷分享会保存到下次打开，并与新分享一起排在首页前面；实际播放后滑到下一条，或播完一轮，才记为已刷。只搜索、退出或卡在首帧不会清除待刷记录。" items:@[feedEnabled, autoRefresh, sourceFriends, scan, clear]]
+        [DYYYSettingsHelper createSectionWithTitle:@"好友分享进推荐" footerTitle:@"未刷分享会保存到下次打开；刷视频途中收到的新分享接在当前视频后，刷完后继续原推荐。手动划走或播完一轮记为已刷，搜索或退出保留未刷记录。" items:@[feedEnabled, autoRefresh, sourceFriends, scan, clear]]
     ];
 }
 

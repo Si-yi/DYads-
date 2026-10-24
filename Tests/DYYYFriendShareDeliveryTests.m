@@ -110,6 +110,43 @@
         orderedIDs:@[ @"share-A", @"share-B" ] watchedIDs:watched currentItemID:nil];
     [self check:[delayed isEqual:original] reason:@"整批都已刷后重新打开，旧来源缓存不能复活整批分享"];
 
+    // 已经划过十条普通推荐后才收到分享：历史保留在当前位置上方，不能接在分享后重播。
+    NSMutableArray *normal = [NSMutableArray array];
+    for (NSUInteger i = 0; i < 13; i++) [normal addObject:@{ @"itemID": [NSString stringWithFormat:@"normal-%lu", (unsigned long)i] }];
+    NSArray *normalSnapshot = [normal copy];
+    NSArray *continuing = [DYYYFriendShareDelivery feedWithOriginal:normal sharedModels:cached orderedIDs:@[ @"share-A", @"share-B" ]
+        watchedIDs:[NSSet set] currentItemID:@"normal-10" anchorItemID:@"normal-10" insertAfterAnchor:NO];
+    [self check:[continuing[10] isEqual:shareA] && [continuing[11] isEqual:shareB] && [continuing[12] isEqual:normal[10]]
+        reason:@"首次选择分享后接回插入前的当前视频，不回到开机首条"];
+    [self check:[[continuing subarrayWithRange:NSMakeRange(0, 10)] isEqual:[normal subarrayWithRange:NSMakeRange(0, 10)]] &&
+        [[continuing subarrayWithRange:NSMakeRange(12, 3)] isEqual:[normal subarrayWithRange:NSMakeRange(10, 3)]]
+        reason:@"已刷十条仍在上方历史，下方只有当前位置及后续未刷推荐"];
+    [self check:[normal isEqual:normalSnapshot] && continuing.count == 15 reason:@"插入不能删除或修改原生普通推荐历史"];
+    NSArray *middle = [DYYYFriendShareDelivery feedWithOriginal:normal sharedModels:cached orderedIDs:@[ @"share-A", @"share-B" ]
+        watchedIDs:[NSSet set] currentItemID:@"normal-10" anchorItemID:@"normal-10" insertAfterAnchor:YES];
+    [self check:[middle[10] isEqual:normal[10]] && [middle[11] isEqual:shareA] && [middle[12] isEqual:shareB] && [middle[13] isEqual:normal[11]]
+        reason:@"已经开始刷视频时补入分享，保持当前视频，分享后继续下一条普通推荐"];
+    NSArray *moreShares = [DYYYFriendShareDelivery feedWithOriginal:middle sharedModels:cached orderedIDs:@[ @"share-A", @"share-B", @"share-C" ]
+        watchedIDs:[NSSet set] currentItemID:@"share-A" anchorItemID:@"share-A" insertAfterAnchor:YES];
+    [self check:[moreShares[11] isEqual:shareA] && [moreShares[12] isEqual:shareB] && [moreShares[13] isEqual:shareC] && [moreShares[14] isEqual:normal[11]]
+        reason:@"正在刷分享时补入迟到批次，当前分享位置不变且继续原来的普通推荐"];
+    NSArray *again = [DYYYFriendShareDelivery feedWithOriginal:moreShares sharedModels:cached orderedIDs:@[ @"share-A", @"share-B", @"share-C" ]
+        watchedIDs:[NSSet set] currentItemID:@"share-A" anchorItemID:@"share-A" insertAfterAnchor:YES];
+    [self check:[again isEqual:moreShares] reason:@"原生重复设置完整列表不能重新把分享和历史搬到开头"];
+    NSMutableArray *loadMore = [moreShares mutableCopy];
+    NSDictionary *tail = @{ @"itemID": @"normal-13" }; [loadMore addObject:tail];
+    again = [DYYYFriendShareDelivery feedWithOriginal:loadMore sharedModels:cached orderedIDs:@[ @"share-A", @"share-B", @"share-C" ]
+        watchedIDs:[NSSet setWithArray:@[ @"share-A", @"share-B", @"share-C" ]] currentItemID:@"normal-11" anchorItemID:@"normal-11" insertAfterAnchor:YES];
+    NSMutableArray *expectedNormals = [normal mutableCopy]; [expectedNormals addObject:tail];
+    [self check:[again isEqual:expectedNormals] reason:@"分享刷完后原生加载更多只去掉已刷分享，普通推荐顺序完整保留"];
+    NSDictionary *adBefore = @{ @"itemID": @"ad-before", @"filtered": @YES };
+    again = [DYYYFriendShareDelivery feedWithOriginal:@[ one, adBefore, two ] sharedModels:cached orderedIDs:@[ @"share-A" ]
+        watchedIDs:[NSSet set] currentItemID:@"second-original" anchorItemID:@"second-original" insertAfterAnchor:YES];
+    [self check:[again isEqual:@[ one, adBefore, two, shareA ]] reason:@"原始列表有过滤卡片时仍按 ID 锚定，不能混用过滤列表数字下标"];
+    again = [DYYYFriendShareDelivery feedWithOriginal:original sharedModels:cached orderedIDs:@[ @"share-A" ]
+        watchedIDs:[NSSet set] currentItemID:nil anchorItemID:@"absent-after-native-refresh" insertAfterAnchor:YES];
+    [self check:[again isEqual:@[ shareA, one, two ]] reason:@"原生换了全新列表时没有旧锚点，安全放入新列表并保留其顺序"];
+
     DYYYDeliveryTestController *controller = [DYYYDeliveryTestController new];
     controller.dataSource = [original mutableCopy];
     [controller calculateFilteredDataSource];
@@ -150,6 +187,11 @@
         reason:@"必须先重载实际表格，再选新分享的索引"];
     [self check:[DYYYFriendShareDelivery reloadFeed:nativeFeed atIndex:1] && [nativeFeed.current isEqual:shareB]
         reason:@"重载后选择非零行也应匹配目标视频"];
+    [self check:[DYYYFriendShareDelivery replaceFeed:continuing controller:controller] &&
+        [DYYYFriendShareDelivery reloadFeed:nativeFeed atIndex:10] && [nativeFeed.current isEqual:shareA]
+        reason:@"真实列表提交/原生重载组合应在第十行选择分享，而非跳回零行"];
+    [self check:[DYYYFriendShareDelivery reloadFeed:nativeFeed atIndex:12] && [nativeFeed.current isEqual:normal[10]]
+        reason:@"两条分享刷完后原生下一行必须是中途那条普通视频"];
     DYYYDeliveryInvalidFeed *invalidFeed = [DYYYDeliveryInvalidFeed new];
     [self check:![DYYYFriendShareDelivery reloadFeed:invalidFeed atIndex:0] && !invalidFeed.calls.count
         reason:@"缺少原生表格重载入口时不能假装完成同步"];
