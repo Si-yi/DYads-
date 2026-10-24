@@ -86,9 +86,8 @@
     %orig([DYYYSameStyleVisibility hiddenForView:(UIView *)self nativeHidden:hidden]);
 }
 - (void)layoutSubviews {
-    [DYYYSameStyleVisibility beginNativeUpdate:(UIView *)self];
     %orig;
-    [DYYYSameStyleVisibility endNativeUpdate:(UIView *)self];
+    [DYYYSameStyleVisibility applyToView:(UIView *)self];
 }
 - (void)didMoveToWindow {
     %orig;
