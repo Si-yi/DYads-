@@ -4,6 +4,8 @@
 #import <objc/runtime.h>
 
 static char kDYYYFeedTagGlassKey;
+static char kDYYYFeedTagUpdateDepthKey;
+static char kDYYYFeedTagRefreshKey;
 
 @interface DYYYFeedTagGlassState : NSObject
 @property (nonatomic, weak) UIView *host;
@@ -89,6 +91,7 @@ static char kDYYYFeedTagGlassKey;
 
 + (void)restoreTag:(UIView *)tag {
     if (!NSThread.isMainThread || !tag) return;
+    objc_setAssociatedObject(tag, &kDYYYFeedTagRefreshKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     DYYYFeedTagGlassState *state = objc_getAssociatedObject(tag, &kDYYYFeedTagGlassKey);
     if (!state || state.busy) return;
     state.busy = YES;
@@ -109,6 +112,7 @@ static char kDYYYFeedTagGlassKey;
 
 + (void)decorateTag:(UIView *)tag {
     if (!NSThread.isMainThread || !tag) return;
+    if ([objc_getAssociatedObject(tag, &kDYYYFeedTagUpdateDepthKey) unsignedIntegerValue] > 0) return;
     DYYYFeedTagGlassState *state = objc_getAssociatedObject(tag, &kDYYYFeedTagGlassKey);
     if (state.busy) return;
     if (![self isFeedTag:tag]) { [self restoreTag:tag]; return; }
@@ -149,6 +153,52 @@ static char kDYYYFeedTagGlassKey;
         if (!state.glass.effect) state.glass.effect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterialDark];
         [self prepareLabels:host state:state];
     } @finally { state.busy = NO; }
+}
+
+// 原生状态更新可能嵌套调用背景、文字及动画更新。最外层先还原，结束后接管，
+// 避免把插件的文字/背景当作新模型的原生样式，也避免更新中途重复铺玻璃。
++ (void)beginNativeUpdate:(UIView *)tag {
+    if (!NSThread.isMainThread || !tag) return;
+    NSUInteger depth = [objc_getAssociatedObject(tag, &kDYYYFeedTagUpdateDepthKey) unsignedIntegerValue];
+    objc_setAssociatedObject(tag, &kDYYYFeedTagUpdateDepthKey, @(depth + 1), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if (depth == 0) [self restoreTag:tag];
+}
+
++ (void)refreshAfterNativeUpdate:(UIView *)tag {
+    if (!tag) return;
+    if (!NSThread.isMainThread) {
+        __weak UIView *weakTag = tag;
+        dispatch_async(dispatch_get_main_queue(), ^{ [self refreshAfterNativeUpdate:weakTag]; });
+        return;
+    }
+    [self decorateTag:tag];
+    if (!tag.window || objc_getAssociatedObject(tag, &kDYYYFeedTagRefreshKey)) return;
+    // 合并同一轮事件中的状态切换，在原生动画块/子视图替换提交后再同步一次。
+    // 不轮询、不强制布局；离页或下一次模型更新会取消旧任务。
+    NSObject *ticket = [NSObject new];
+    objc_setAssociatedObject(tag, &kDYYYFeedTagRefreshKey, ticket, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    __weak UIView *weakTag = tag;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIView *current = weakTag;
+        if (!current || objc_getAssociatedObject(current, &kDYYYFeedTagRefreshKey) != ticket) return;
+        objc_setAssociatedObject(current, &kDYYYFeedTagRefreshKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [self decorateTag:current];
+    });
+}
+
++ (void)endNativeUpdate:(UIView *)tag {
+    if (!tag) return;
+    if (!NSThread.isMainThread) {
+        [self refreshAfterNativeUpdate:tag];
+        return;
+    }
+    NSUInteger depth = [objc_getAssociatedObject(tag, &kDYYYFeedTagUpdateDepthKey) unsignedIntegerValue];
+    if (depth > 1) {
+        objc_setAssociatedObject(tag, &kDYYYFeedTagUpdateDepthKey, @(depth - 1), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        return;
+    }
+    objc_setAssociatedObject(tag, &kDYYYFeedTagUpdateDepthKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    [self refreshAfterNativeUpdate:tag];
 }
 
 + (BOOL)isLabelView:(UIView *)view {

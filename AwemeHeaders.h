@@ -540,6 +540,10 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 
 // 39.5.0 运行时导出为 UIView，文字由内部 UILabel 承载。
 @interface AFDRecommendToFriendEntranceLabel : UIView
+- (void)configWithModel:(id)model;
+- (void)updateBGImageViewWithModel:(id)model;
+- (void)updateLabelColorWithModel:(id)model;
+- (void)updateTextWithModel:(id)model;
 @end
 
 @interface AWEStoryContainerCollectionView : UIView
@@ -2037,6 +2041,14 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 
 // 好友推荐
 @interface AFDFriendRecommendTagView : UIView
+- (void)updateWithModel:(id)model;
+- (void)updateUI;
+- (void)updateDynamicUI;
+- (void)updateUIWithAnimation;
+- (void)didAppearWithAnimation;
+- (void)updateBackgroundColor;
+- (void)updateBackgroundImageView;
+- (void)updateText;
 @end
 
 // 39.5.0 导出确认的昵称上方标签容器与“点击推荐”标签。

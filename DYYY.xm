@@ -7733,6 +7733,42 @@ static NSHashTable *processedParentViews = nil;
     [DYYYFeedTagGlass decorateTag:(UIView *)self];
 }
 
+- (void)configWithModel:(id)model {
+    [DYYYFeedTagGlass beginNativeUpdate:(UIView *)self];
+    @try {
+        %orig(model);
+    } @finally {
+        [DYYYFeedTagGlass endNativeUpdate:(UIView *)self];
+    }
+}
+
+- (void)updateBGImageViewWithModel:(id)model {
+    [DYYYFeedTagGlass beginNativeUpdate:(UIView *)self];
+    @try {
+        %orig(model);
+    } @finally {
+        [DYYYFeedTagGlass endNativeUpdate:(UIView *)self];
+    }
+}
+
+- (void)updateLabelColorWithModel:(id)model {
+    [DYYYFeedTagGlass beginNativeUpdate:(UIView *)self];
+    @try {
+        %orig(model);
+    } @finally {
+        [DYYYFeedTagGlass endNativeUpdate:(UIView *)self];
+    }
+}
+
+- (void)updateTextWithModel:(id)model {
+    [DYYYFeedTagGlass beginNativeUpdate:(UIView *)self];
+    @try {
+        %orig(model);
+    } @finally {
+        [DYYYFeedTagGlass endNativeUpdate:(UIView *)self];
+    }
+}
+
 %end
 
 // 隐藏自己无公开作品的视图
@@ -9518,6 +9554,78 @@ static NSHashTable *processedParentViews = nil;
 - (void)didMoveToWindow {
     %orig;
     [DYYYFeedTagGlass decorateTag:(UIView *)self];
+}
+
+- (void)updateWithModel:(id)model {
+    [DYYYFeedTagGlass beginNativeUpdate:(UIView *)self];
+    @try {
+        %orig(model);
+    } @finally {
+        [DYYYFeedTagGlass endNativeUpdate:(UIView *)self];
+    }
+}
+
+- (void)updateUI {
+    [DYYYFeedTagGlass beginNativeUpdate:(UIView *)self];
+    @try {
+        %orig;
+    } @finally {
+        [DYYYFeedTagGlass endNativeUpdate:(UIView *)self];
+    }
+}
+
+- (void)updateDynamicUI {
+    [DYYYFeedTagGlass beginNativeUpdate:(UIView *)self];
+    @try {
+        %orig;
+    } @finally {
+        [DYYYFeedTagGlass endNativeUpdate:(UIView *)self];
+    }
+}
+
+- (void)updateUIWithAnimation {
+    [DYYYFeedTagGlass beginNativeUpdate:(UIView *)self];
+    @try {
+        %orig;
+    } @finally {
+        [DYYYFeedTagGlass endNativeUpdate:(UIView *)self];
+    }
+}
+
+- (void)didAppearWithAnimation {
+    [DYYYFeedTagGlass beginNativeUpdate:(UIView *)self];
+    @try {
+        %orig;
+    } @finally {
+        [DYYYFeedTagGlass endNativeUpdate:(UIView *)self];
+    }
+}
+
+- (void)updateBackgroundColor {
+    [DYYYFeedTagGlass beginNativeUpdate:(UIView *)self];
+    @try {
+        %orig;
+    } @finally {
+        [DYYYFeedTagGlass endNativeUpdate:(UIView *)self];
+    }
+}
+
+- (void)updateBackgroundImageView {
+    [DYYYFeedTagGlass beginNativeUpdate:(UIView *)self];
+    @try {
+        %orig;
+    } @finally {
+        [DYYYFeedTagGlass endNativeUpdate:(UIView *)self];
+    }
+}
+
+- (void)updateText {
+    [DYYYFeedTagGlass beginNativeUpdate:(UIView *)self];
+    @try {
+        %orig;
+    } @finally {
+        [DYYYFeedTagGlass endNativeUpdate:(UIView *)self];
+    }
 }
 
 %end
