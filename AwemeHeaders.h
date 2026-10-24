@@ -1111,7 +1111,12 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @interface AWESharePanelContainerViewController : UIViewController
 @end
 
+// 抖音 39.5.0 调试录制确认使用的分享控制器。
+@interface DYYYLegacySharePanelController : UIViewController
+@end
+
 @interface AWESharePanelViewController : UIViewController
+- (void)awe_themeReload;
 @end
 
 @interface AWESharePanelFunctionCell : UICollectionViewCell

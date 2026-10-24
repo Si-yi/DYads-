@@ -1,5 +1,6 @@
 #import "DYYYDebugMenuView.h"
 #import "DYYYDebugAppearance.h"
+#import "DYYYUtils.h"
 #import <math.h>
 
 @implementation DYYYDebugMenuItem
@@ -14,7 +15,8 @@
 @interface DYYYDebugMenuView ()
 @property (nonatomic, weak) UIViewController *controller;
 @property (nonatomic, strong) UIControl *backdrop;
-@property (nonatomic, strong) UIVisualEffectView *panel;
+@property (nonatomic, strong) UIView *panel;
+@property (nonatomic, strong) UIVisualEffectView *blurView;
 @property (nonatomic, strong) UIScrollView *scroll;
 @property (nonatomic, strong) UILabel *titleLabel;
 @property (nonatomic, strong) UILabel *messageLabel;
@@ -64,13 +66,18 @@
         self.backdrop.backgroundColor = [UIColor colorWithWhite:0 alpha:0.30];
         [self.backdrop addTarget:self action:@selector(cancel) forControlEvents:UIControlEventTouchUpInside];
         [self addSubview:self.backdrop];
-        self.panel = [[UIVisualEffectView alloc] initWithEffect:nil];
+        self.panel = [UIView new];
+        self.panel.backgroundColor = UIColor.clearColor;
         self.panel.layer.cornerRadius = 24;
         self.panel.layer.cornerCurve = kCACornerCurveContinuous;
         self.panel.clipsToBounds = YES;
         [self addSubview:self.panel];
+        self.blurView = [[UIVisualEffectView alloc] initWithEffect:nil];
+        self.blurView.userInteractionEnabled = NO;
+        self.blurView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        [self.panel addSubview:self.blurView];
         self.scroll = [UIScrollView new];
-        [self.panel.contentView addSubview:self.scroll];
+        [self.panel addSubview:self.scroll];
         self.titleLabel = [UILabel new];
         self.titleLabel.font = [UIFont systemFontOfSize:19 weight:UIFontWeightBold];
         self.titleLabel.numberOfLines = 0;
@@ -91,16 +98,21 @@
 - (void)applyStyle {
     UIUserInterfaceStyle style = self.controller.overrideUserInterfaceStyle;
     if (style == UIUserInterfaceStyleUnspecified) style = self.traitCollection.userInterfaceStyle;
-    if (self.appliedStyle == style) return;
-    self.appliedStyle = style;
+    // 默认一直有毛玻璃；透明度只作用于背景，按钮和文字不随之变淡。
+    self.blurView.alpha = [DYYYUtils sharedBlurTransparency];
+    if (self.appliedStyle == style && self.blurView.effect) return;
     BOOL dark = style == UIUserInterfaceStyleDark;
-    self.panel.effect = [UIBlurEffect effectWithStyle:dark ? UIBlurEffectStyleSystemMaterialDark : UIBlurEffectStyleSystemMaterialLight];
-    self.panel.contentView.backgroundColor = [UIColor colorWithWhite:dark ? 0.08 : 1 alpha:0.55];
+    // 等材质视图有实际尺寸后再建立效果，避免先在零尺寸视图上初始化。
+    if (!CGRectIsEmpty(self.blurView.bounds)) {
+        self.blurView.effect = [UIBlurEffect effectWithStyle:dark ? UIBlurEffectStyleDark : UIBlurEffectStyleLight];
+        self.appliedStyle = style;
+    }
+    self.blurView.contentView.backgroundColor = [UIColor colorWithWhite:dark ? 0 : 1 alpha:dark ? 0.12 : 0.08];
     UIColor *text = dark ? UIColor.whiteColor : UIColor.blackColor;
     self.titleLabel.textColor = text;
     self.messageLabel.textColor = dark ? [UIColor colorWithWhite:0.82 alpha:1] : [UIColor colorWithWhite:0.25 alpha:1];
     for (UIButton *button in self.buttons) {
-        button.backgroundColor = [UIColor colorWithWhite:dark ? 1 : 0 alpha:dark ? 0.12 : 0.07];
+        button.backgroundColor = [UIColor colorWithWhite:dark ? 1 : 0 alpha:dark ? 0.10 : 0.05];
         [button setTitleColor:text forState:UIControlStateNormal];
     }
     [self.cancelButton setTitleColor:text forState:UIControlStateNormal];
@@ -113,7 +125,6 @@
 
 - (void)layoutSubviews {
     [super layoutSubviews];
-    [self applyStyle];
     self.backdrop.frame = self.bounds;
     CGFloat width = MIN(380, MAX(0, self.bounds.size.width - 32));
     CGFloat inner = MAX(0, width - 40);
@@ -128,8 +139,10 @@
     CGFloat height = MIN(y, available);
     CGFloat top = self.safeAreaInsets.top + 16 + (available - height) / 2;
     self.panel.frame = CGRectMake((self.bounds.size.width - width) / 2, top, width, height);
+    self.blurView.frame = self.panel.bounds;
     self.scroll.frame = self.panel.bounds;
     self.scroll.contentSize = CGSizeMake(width, y);
+    [self applyStyle];
 }
 
 - (void)selectItem:(UIButton *)button {

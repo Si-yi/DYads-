@@ -1,5 +1,6 @@
 #import "DYYYDebugInspector.h"
 #import "DYYYDebugAppearance.h"
+#import "DYYYPanelBlur.h"
 #import "DYYYDebugMenuView.h"
 #import "DYYYGlassTabBar.h"
 #import "DYYYIMService.h"
@@ -307,6 +308,7 @@ static NSDictionary *DYYYDebugMetadata(void) {
         @"deviceModel": UIDevice.currentDevice.model ?: @"",
         @"debugImplementation": @"global-overlay-r5-layout-pulse",
         @"floatingTabBar": DKGlassGeometryStatus() ?: @"",
+        @"panelBlur": [DYYYPanelBlur diagnostics],
         @"loadedPluginImages": pluginImages,
         @"inputSettings": @{
             @"DYYYEnableFloatingCommentInput": [defaults objectForKey:@"DYYYEnableFloatingCommentInput"] ?: NSNull.null,

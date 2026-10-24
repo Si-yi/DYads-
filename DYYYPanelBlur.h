@@ -7,6 +7,7 @@
 + (void)restoreView:(UIView *)view;
 + (BOOL)isManagedEffectView:(UIView *)view;
 + (void)refreshVisiblePanels;
++ (NSDictionary *)diagnostics;
 @end
 
 @interface DYYYPanelBlur (Hooks)

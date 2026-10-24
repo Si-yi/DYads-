@@ -2,6 +2,28 @@
 #import "DYYYPanelBlur.h"
 #import <objc/runtime.h>
 
+%group DYYYLegacySharePanelBlurHooks
+%hook DYYYLegacySharePanelController
+- (void)viewWillAppear:(BOOL)animated {
+    %orig(animated);
+    [DYYYPanelBlur synchronizeController:(UIViewController *)self];
+}
+- (void)viewDidAppear:(BOOL)animated {
+    %orig(animated);
+    [DYYYPanelBlur synchronizeController:(UIViewController *)self];
+}
+- (void)viewDidLayoutSubviews {
+    %orig;
+    [DYYYPanelBlur synchronizeController:(UIViewController *)self];
+}
+- (void)viewDidDisappear:(BOOL)animated {
+    %orig(animated);
+    UIViewController *controller = (UIViewController *)self;
+    if (!controller.viewIfLoaded.window) [DYYYPanelBlur restoreController:controller];
+}
+%end
+%end
+
 %group DYYYSharePanelBlurHooks
 %hook AWESharePanelContainerViewController
 - (void)viewWillAppear:(BOOL)animated {
@@ -22,7 +44,20 @@
 
 %group DYYYShareContentBlurHooks
 %hook AWESharePanelViewController
+- (void)viewDidAppear:(BOOL)animated {
+    %orig(animated);
+    [DYYYPanelBlur synchronizeController:(UIViewController *)self];
+}
 - (void)viewDidLayoutSubviews {
+    %orig;
+    [DYYYPanelBlur synchronizeController:(UIViewController *)self];
+}
+%end
+%end
+
+%group DYYYShareContentThemeBlurHooks
+%hook AWESharePanelViewController
+- (void)awe_themeReload {
     %orig;
     [DYYYPanelBlur synchronizeController:(UIViewController *)self];
 }
@@ -48,7 +83,12 @@
         dispatch_async(dispatch_get_main_queue(), ^{ [self installHooks]; });
         return;
     }
-    static BOOL containerInstalled, contentInstalled, functionInstalled;
+    static BOOL containerInstalled, contentInstalled, contentThemeInstalled, functionInstalled, legacyInstalled;
+    Class legacy = NSClassFromString(@"AWESharePanelController");
+    if (!legacyInstalled && legacy && [legacy isSubclassOfClass:UIViewController.class]) {
+        %init(DYYYLegacySharePanelBlurHooks, DYYYLegacySharePanelController = legacy);
+        legacyInstalled = YES;
+    }
     Class container = NSClassFromString(@"AWESharePanelContainerViewController");
     if (!containerInstalled && container && [container isSubclassOfClass:UIViewController.class]) {
         %init(DYYYSharePanelBlurHooks);
@@ -58,6 +98,10 @@
     if (!contentInstalled && content && [content isSubclassOfClass:UIViewController.class]) {
         %init(DYYYShareContentBlurHooks);
         contentInstalled = YES;
+    }
+    if (!contentThemeInstalled && content && class_getInstanceMethod(content, @selector(awe_themeReload))) {
+        %init(DYYYShareContentThemeBlurHooks);
+        contentThemeInstalled = YES;
     }
     Class function = NSClassFromString(@"AWESharePanelFunctionCell");
     if (!functionInstalled && function && [function isSubclassOfClass:UICollectionViewCell.class]) {

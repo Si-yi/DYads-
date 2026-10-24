@@ -29,6 +29,7 @@ SOFTWARE.
 #import "DYYYCommentMenuPalette.h"
 #import <QuartzCore/QuartzCore.h>
 #import <objc/runtime.h>
+#import <math.h>
 
 static char kDYYYPanelBlurStateKey;
 static char kDYYYPanelBlurChangesKey;
@@ -71,8 +72,10 @@ static char kDYYYPanelBlurOwnerKey;
 
 + (UIViewController *)ownerForController:(UIViewController *)controller {
     Class share = NSClassFromString(@"AWESharePanelContainerViewController");
+    Class legacy = NSClassFromString(@"AWESharePanelController");
     for (NSUInteger depth = 0; controller && depth < 12; depth++, controller = controller.parentViewController)
-        if ([self isComment:controller] || (share && [controller isKindOfClass:share])) return controller;
+        if ([self isComment:controller] || (share && [controller isKindOfClass:share]) ||
+            (legacy && [controller isKindOfClass:legacy])) return controller;
     return nil;
 }
 
@@ -160,7 +163,60 @@ static char kDYYYPanelBlurOwnerKey;
     }
 }
 
++ (UIView *)hostForLegacyController:(UIViewController *)controller {
+    UIView *root = controller.viewIfLoaded;
+    if (!root.window) return nil;
+    CGRect windowRect = [root convertRect:root.bounds toView:root.window];
+    CGFloat screenHeight = CGRectGetHeight(root.window.bounds);
+    // 有些版本的根视图就是半屏内容，另一些版本在全屏根视图里放底部面板。
+    if (CGRectGetMinY(windowRect) >= screenHeight * 0.15 &&
+        CGRectGetMaxY(windowRect) <= CGRectGetMaxY(root.window.bounds) + 1 &&
+        CGRectGetHeight(windowRect) >= 120 && CGRectGetWidth(windowRect) >= CGRectGetWidth(root.window.bounds) * 0.85)
+        return root;
+    UIView *best = nil;
+    CGFloat bestHeight = 0;
+    NSMutableArray<UIView *> *queue = [NSMutableArray arrayWithObject:root];
+    for (NSUInteger index = 0; index < queue.count && index < 128; index++) {
+        UIView *view = queue[index];
+        if (view.hidden || view.alpha <= 0.01 || [self isManagedEffectView:view]) continue;
+        if ([view isKindOfClass:UIControl.class] || [view isKindOfClass:UIImageView.class] || [view isKindOfClass:UILabel.class]) continue;
+        CGRect rect = [view convertRect:view.bounds toView:root];
+        CGFloat height = CGRectGetHeight(rect);
+        // 仅在已确认的分享控制器内认底部宽面板，不把整屏遮罩或单个按钮当成宿主。
+        if (view != root && view.subviews.count && CGRectGetMinY(rect) >= CGRectGetMinY(root.bounds) + CGRectGetHeight(root.bounds) * 0.15 &&
+            fabs(CGRectGetMaxY(rect) - CGRectGetMaxY(root.bounds)) <= 1 &&
+            fabs(CGRectGetMidX(rect) - CGRectGetMidX(root.bounds)) <= 1 &&
+            CGRectGetWidth(rect) >= CGRectGetWidth(root.bounds) * 0.85 && height >= 120 && height > bestHeight) {
+            best = [view isKindOfClass:UIVisualEffectView.class] ? ((UIVisualEffectView *)view).contentView : view;
+            bestHeight = height;
+        }
+        if ([view isKindOfClass:UIVisualEffectView.class]) [queue addObject:((UIVisualEffectView *)view).contentView];
+        else [queue addObjectsFromArray:view.subviews];
+    }
+    return best;
+}
+
 + (UIView *)hostForController:(UIViewController *)controller {
+    Class legacy = NSClassFromString(@"AWESharePanelController");
+    if (legacy && [controller isKindOfClass:legacy]) return [self hostForLegacyController:controller];
+    // 分享页的实底在内容控制器里。毛玻璃必须挂在这里，不能放在整套导航外壳后方。
+    if (![self isComment:controller]) {
+        Class contentClass = NSClassFromString(@"AWESharePanelViewController");
+        NSMutableArray<UIViewController *> *queue = [NSMutableArray arrayWithObject:controller];
+        for (NSUInteger index = 0; index < queue.count && index < 24; index++) {
+            UIViewController *child = queue[index];
+            if (contentClass && [child isKindOfClass:contentClass] && child.viewIfLoaded &&
+                [child.viewIfLoaded isDescendantOfView:controller.viewIfLoaded]) return child.viewIfLoaded;
+            if ([child isKindOfClass:UINavigationController.class]) {
+                UIViewController *top = ((UINavigationController *)child).topViewController;
+                if (top) [queue addObject:top];
+            } else {
+                [queue addObjectsFromArray:child.childViewControllers];
+            }
+        }
+        // 等实际分享内容页就绪，避免把毛玻璃错误铺在全屏遮罩上。
+        return nil;
+    }
     Class shell = NSClassFromString(@"DUXVisualEffectView");
     for (UIView *view in controller.viewIfLoaded.subviews) {
         if (shell && [view isKindOfClass:shell])
@@ -178,6 +234,7 @@ static char kDYYYPanelBlurOwnerKey;
         [self restoreController:controller];
         return;
     }
+    [[self controllers] addObject:controller];
     UIView *host = [self hostForController:controller];
     if (!host || CGRectIsEmpty(host.bounds)) return;
     DYYYPanelBlurState *state = objc_getAssociatedObject(controller, &kDYYYPanelBlurStateKey);
@@ -203,6 +260,10 @@ static char kDYYYPanelBlurOwnerKey;
     if (state.busy) return;
     state.busy = YES;
     @try {
+        // DUX 的原生 contentColor 会在布局/主题刷新时重新铺底；直接保存并清除其源值。
+        if ([controller respondsToSelector:@selector(contentColor)] &&
+            [controller respondsToSelector:@selector(setContentColor:)])
+            [self write:UIColor.clearColor key:@"contentColor" object:controller state:state];
         BOOL dark = [DYYYUtils isDarkMode];
         if (state.dark != dark && ![self isComment:controller])
             [DYYYCommentMenuPalette restoreController:controller];
@@ -267,7 +328,8 @@ static char kDYYYPanelBlurOwnerKey;
 + (void)restoreController:(UIViewController *)controller {
     if (!NSThread.isMainThread) return;
     DYYYPanelBlurState *state = objc_getAssociatedObject(controller, &kDYYYPanelBlurStateKey);
-    if (!state || state.busy) return;
+    if (!state) { [[self controllers] removeObject:controller]; return; }
+    if (state.busy) return;
     state.busy = YES;
     [state.blur removeFromSuperview];
     for (id object in state.objects.allObjects) [self restoreObject:object];
@@ -285,5 +347,25 @@ static char kDYYYPanelBlurOwnerKey;
         [self synchronizeController:controller];
         [controller.viewIfLoaded setNeedsLayout];
     }
+}
+
++ (NSDictionary *)diagnostics {
+    if (!NSThread.isMainThread) return @{ @"mainThread": @NO };
+    NSMutableArray *panels = [NSMutableArray array];
+    for (UIViewController *controller in [self controllers].allObjects) {
+        DYYYPanelBlurState *state = objc_getAssociatedObject(controller, &kDYYYPanelBlurStateKey);
+        [panels addObject:@{
+            @"controller": NSStringFromClass(controller.class),
+            @"host": state.host ? NSStringFromClass(state.host.class) : @"not_found",
+            @"hostBounds": state.host ? NSStringFromCGRect(state.host.bounds) : @"",
+            @"attached": @(state.blur && state.blur.superview == state.host),
+            @"backgroundAlpha": @(state.transparency),
+            @"managedObjects": @(state.objects.count)
+        }];
+    }
+    return @{ @"panels": panels,
+        @"legacyShareClassAvailable": @(NSClassFromString(@"AWESharePanelController") != Nil),
+        @"shareContainerClassAvailable": @(NSClassFromString(@"AWESharePanelContainerViewController") != Nil),
+        @"shareContentClassAvailable": @(NSClassFromString(@"AWESharePanelViewController") != Nil) };
 }
 @end
