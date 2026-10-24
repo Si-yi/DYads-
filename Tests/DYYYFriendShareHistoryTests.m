@@ -66,6 +66,31 @@
         [self check:history.pendingRows.count == 0 reason:@"本轮刷完后下次不能重复推送"];
         [history mergeRows:[self rowsFrom:0 count:12]];
         [self check:history.pendingRows.count == 0 reason:@"聊天仍未读不等于首页没刷过"];
+        // 模拟真实代理时序：先收到首个进度再开始拖动，旧视频后续进度稍晚才到达，
+        // 下一条已经开始播放后才完成本次滑动；重复代理不能覆盖起点证明。
+        DYYYFriendShareHistory *late = [[DYYYFriendShareHistory alloc] initWithDefaults:defaults account:@"late-progress"];
+        [late mergeRows:[self rowsFrom:0 count:10]];
+        [late recordPlaybackForItemID:@"video-0" time:0.1];
+        [late beginDraggingFromItemID:@"video-0"];
+        [late recordPlaybackForItemID:@"video-0" time:0.3];
+        [late beginDraggingFromItemID:@"video-0"];
+        [self play:@"video-1" in:late];
+        [self check:[[late finishDraggingToItemID:@"video-1"] isEqual:@"video-0"]
+            reason:@"滑动开始后到达的播放进度仍需消费旧视频，不能误记新视频"];
+        [late beginDraggingFromItemID:@"video-1"];
+        [self play:@"video-2" in:late];
+        [self check:[[late finishDraggingToItemID:@"video-2"] isEqual:@"video-1"] reason:@"连续滑动不会丢掉下一条已有的进度"];
+        [late beginDraggingFromItemID:@"video-2"];
+        [self check:[[late finishDraggingToItemID:@"video-3"] isEqual:@"video-2"] reason:@"第三次滑动也须正确消费"];
+        late = [[DYYYFriendShareHistory alloc] initWithDefaults:defaults account:@"late-progress"];
+        [late mergeRows:[self rowsFrom:0 count:12]];
+        [self check:late.pendingRows.count == 9 && late.watchedItemIDs.count == 3 &&
+            [late.pendingRows.firstObject[@"itemID"] isEqual:@"video-3"] reason:@"真实时序刷三条后重启，加两条新消息只推剩余九条"];
+        [self play:@"video-3" in:late];
+        [late beginDraggingFromItemID:@"video-3"];
+        [late resetPlayback];
+        [self check:[late finishDraggingToItemID:@"video-4"] == nil && late.pendingRows.count == 9
+            reason:@"导航或退出使旧结算失效，不能把下一次进入误当成划走"];
         // 切账户隔离；模型加载失败不触碰持久待刷队列。
         DYYYFriendShareHistory *other = [[DYYYFriendShareHistory alloc] initWithDefaults:defaults account:@"B"];
         [other mergeRows:[self rowsFrom:0 count:10]];

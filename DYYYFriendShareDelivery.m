@@ -9,15 +9,21 @@
     } @catch (__unused NSException *exception) { return nil; }
 }
 + (NSArray *)feedWithOriginal:(NSArray *)original sharedModels:(NSDictionary *)models orderedIDs:(NSArray<NSString *> *)orderedIDs {
+    return [self feedWithOriginal:original sharedModels:models orderedIDs:orderedIDs watchedIDs:[NSSet set] currentItemID:nil];
+}
++ (NSArray *)feedWithOriginal:(NSArray *)original sharedModels:(NSDictionary *)models orderedIDs:(NSArray<NSString *> *)orderedIDs
+                  watchedIDs:(NSSet<NSString *> *)watchedIDs currentItemID:(NSString *)currentItemID {
     NSMutableArray *result = [NSMutableArray array];
     NSMutableSet *seen = [NSMutableSet set];
     for (NSString *itemID in orderedIDs) {
+        if ([watchedIDs containsObject:itemID] && ![itemID isEqual:currentItemID]) continue;
         id model = models[itemID];
         if (!model || ![[self itemID:model] isEqual:itemID] || [seen containsObject:itemID]) continue;
         [result addObject:model]; [seen addObject:itemID];
     }
     for (id model in original) {
         NSString *itemID = [self itemID:model];
+        if (itemID.length && [watchedIDs containsObject:itemID] && ![itemID isEqual:currentItemID]) continue;
         if (itemID.length && [seen containsObject:itemID]) continue;
         [result addObject:model]; if (itemID.length) [seen addObject:itemID];
     }

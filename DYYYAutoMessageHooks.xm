@@ -56,19 +56,19 @@
 }
 - (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView {
     %orig;
-    [DYYYFriendShareService homeDidScroll:self scrollView:scrollView];
+    [DYYYFriendShareService homeDidEndScrolling:self scrollView:scrollView];
 }
 - (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView {
-    %orig;
     [DYYYFriendShareService homeWillDrag:self scrollView:scrollView];
+    %orig;
 }
 - (void)scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate {
     %orig;
-    if (!decelerate) [DYYYFriendShareService homeDidScroll:self scrollView:scrollView];
+    if (!decelerate) [DYYYFriendShareService homeDidEndScrolling:self scrollView:scrollView];
 }
 - (void)scrollViewDidEndScrollingAnimation:(UIScrollView *)scrollView {
     %orig;
-    [DYYYFriendShareService homeDidScroll:self scrollView:scrollView];
+    [DYYYFriendShareService homeDidEndScrolling:self scrollView:scrollView];
 }
 - (void)videoPlayer:(id)player didSingleClick:(id)event {
     [DYYYFriendShareService homePlaybackTouched:self];
@@ -79,8 +79,27 @@
     [DYYYFriendShareService homePlaybackAdvanced:self time:time];
 }
 - (void)videoControllerWillStartNextLoop:(id)controller {
-    %orig;
     [DYYYFriendShareService homeWillLoop:self];
+    %orig;
+}
+- (void)pi_scrollViewWillBeginDragging:(UIScrollView *)scrollView {
+    [DYYYFriendShareService homeWillDrag:self scrollView:scrollView];
+    %orig;
+}
+- (void)pi_scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate {
+    %orig;
+    if (!decelerate) [DYYYFriendShareService homeDidEndScrolling:self scrollView:scrollView];
+}
+%end
+
+%hook AWEDPlayerViewController_Merge
+- (void)player:(id)player updatePlayTime:(double)time canPlayTime:(double)buffered totalTime:(double)total {
+    [DYYYFriendShareService playerPlaybackAdvanced:self time:time];
+    %orig(player, time, buffered, total);
+}
+- (void)playerWillStartNextLoop:(id)player {
+    [DYYYFriendShareService playerWillLoop:self];
+    %orig;
 }
 %end
 

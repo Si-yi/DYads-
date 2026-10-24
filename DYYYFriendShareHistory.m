@@ -102,8 +102,11 @@
     // 至少观察到两次递增的时间，单次缓存时间、首帧或播放请求不能算刷过。
     if (time > self.lastTime + 0.02) self.progressed = YES;
     self.lastTime = time;
+    // 手势开始后、滑走前播放器仍可能送来进度；不能只冻结手势开始那一刻的证明。
+    if (self.progressed && [itemID isEqual:self.draggedID]) self.draggedProgressed = YES;
 }
 - (void)beginDraggingFromItemID:(NSString *)itemID {
+    if ([itemID isEqual:self.draggedID]) return; // 原生标准/业务代理可能转发同一次手势。
     self.draggedID = itemID;
     self.draggedProgressed = [itemID isEqual:self.playingID] && self.progressed;
 }

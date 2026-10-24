@@ -30,6 +30,7 @@
 @property (nonatomic, copy) NSString *displayedID;
 @property (nonatomic, copy) NSString *pendingPlaybackID;
 @property (nonatomic) NSUInteger playbackTicket;
+@property (nonatomic) NSUInteger dragTicket;
 @property (nonatomic) NSUInteger playbackSyncTicket;
 @property (nonatomic) BOOL selectedOpeningShare;
 @property (nonatomic) BOOL waitingToInsert;
@@ -131,7 +132,7 @@
 }
 + (void)applicationEnteredBackground {
     DYYYFriendShareService *s = [self shared];
-    [s.history resetPlayback]; s.userDragging = NO;
+    [s.history resetPlayback]; s.userDragging = NO; s.dragTicket++;
     s.backgrounded = YES; s.generation++; s.pendingPlaybackID = nil; s.playbackTicket++; s.selectedOpeningShare = NO; s.waitingToInsert = NO; s.scanScheduled = NO; s.scanInProgress = NO; s.displayedID = nil;
     [s.inFlight removeAllObjects];
 }
@@ -463,13 +464,18 @@
         s.waitingToInsert = YES; return;
     }
     s.waitingToInsert = NO;
-    NSString *previous = s.displayedID ?: (home.isViewLoaded ? [self itemID:home.currentAweme] : nil);
+    NSString *previous = (home.isViewLoaded ? [self itemID:home.currentAweme] : nil) ?: s.displayedID;
+    // active 是本轮缓存，不是未刷清单。新一轮启动不保留上次已刷的当前 Cell。
+    NSString *preservedCurrent = s.selectedOpeningShare ? previous : nil;
+    for (NSString *itemID in [s.active copy])
+        if ([watched containsObject:itemID] && ![itemID isEqual:preservedCurrent]) [s.active removeObject:itemID];
     NSMutableOrderedSet *desired = [s.active mutableCopy];
     [desired addObjectsFromArray:ready];
     NSMutableArray *orderedIDs = [NSMutableArray array];
     for (NSDictionary *row in s.history.pendingRows) if ([desired containsObject:row[@"itemID"]]) [orderedIDs addObject:row[@"itemID"]];
     for (NSString *itemID in desired) if (![orderedIDs containsObject:itemID]) [orderedIDs addObject:itemID];
-    NSArray *merged = [DYYYFriendShareDelivery feedWithOriginal:data sharedModels:s.models orderedIDs:orderedIDs];
+    NSArray *merged = [DYYYFriendShareDelivery feedWithOriginal:data sharedModels:s.models orderedIDs:orderedIDs
+        watchedIDs:watched currentItemID:preservedCurrent];
     s.arranging = YES;
     BOOL submitted = NO;
     @try {
@@ -676,28 +682,78 @@
     s.state[@"playbackStage"] = @"user_controlled";
 }
 + (void)homePlaybackAdvanced:(UIViewController *)feed time:(NSTimeInterval)time {
+    if (![self enabled] || [self shared].home != feed) return;
+    NSString *itemID = [self itemID:[self value:feed key:@"currentAweme"]];
+    NSUInteger generation = [self shared].generation;
     if (!NSThread.isMainThread) {
         __weak UIViewController *weakFeed = feed;
-        dispatch_async(dispatch_get_main_queue(), ^{ [self homePlaybackAdvanced:weakFeed time:time]; });
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (generation == [self shared].generation) [self recordHomePlayback:weakFeed itemID:itemID time:time];
+        });
         return;
     }
+    [self recordHomePlayback:feed itemID:itemID time:time];
+}
+// 39.5 直接观察实际播放器进度，不能只依赖 Feed 代理是否继续转发。
++ (BOOL)isCurrentHomePlayer:(UIViewController *)controller itemID:(NSString *)itemID {
     DYYYFriendShareService *s = [self shared];
-    if (s.home != feed || time <= 0 || ![self enabled]) return;
-    if (s.waitingToInsert && [self homeVisible] && [s.home respondsToSelector:@selector(isPlaying)] && [s.home isPlaying]) {
+    if (!controller || !itemID.length || ![self enabled] || ![self homeVisible] ||
+        ![[self itemID:s.home.currentAweme] isEqual:itemID] ||
+        ![[self itemID:[self value:controller key:@"model"]] isEqual:itemID]) return NO;
+    UIViewController *cell = nil;
+    BOOL underHome = NO;
+    for (UIViewController *parent = controller; parent; parent = parent.parentViewController) {
+        if ([parent isKindOfClass:NSClassFromString(@"AWEFeedCellViewController")]) cell = parent;
+        if (parent == s.home) { underHome = YES; break; }
+    }
+    return underHome && cell && [s.home respondsToSelector:@selector(getCurrentCellVC)] && [s.home getCurrentCellVC] == cell;
+}
++ (void)playerPlaybackAdvanced:(UIViewController *)controller time:(NSTimeInterval)time {
+    if (![self enabled]) return;
+    NSString *itemID = [self itemID:[self value:controller key:@"model"]];
+    NSUInteger generation = [self shared].generation;
+    __weak UIViewController *weakPlayer = controller;
+    void (^record)(void) = ^{
+        if (generation != [self shared].generation || ![self isCurrentHomePlayer:weakPlayer itemID:itemID]) return;
+        [self shared].state[@"progressSource"] = @"native_player";
+        [self recordHomePlayback:[self shared].home itemID:itemID time:time];
+    };
+    if (NSThread.isMainThread) record(); else dispatch_async(dispatch_get_main_queue(), record);
+}
++ (void)playerWillLoop:(UIViewController *)controller {
+    if (![self enabled]) return;
+    NSString *itemID = [self itemID:[self value:controller key:@"model"]];
+    NSUInteger generation = [self shared].generation;
+    __weak UIViewController *weakPlayer = controller;
+    void (^record)(void) = ^{
+        if (generation == [self shared].generation && [self isCurrentHomePlayer:weakPlayer itemID:itemID])
+            [self homeWillLoop:[self shared].home];
+    };
+    if (NSThread.isMainThread) record(); else dispatch_async(dispatch_get_main_queue(), record);
+}
++ (void)recordHomePlayback:(UIViewController *)feed itemID:(NSString *)itemID time:(NSTimeInterval)time {
+    DYYYFriendShareService *s = [self shared];
+    if (s.home != feed || time <= 0 || ![self enabled] || ![self homeVisible] ||
+        ![itemID isEqual:[self itemID:s.home.currentAweme]]) return;
+    if (s.waitingToInsert && [s.home respondsToSelector:@selector(isPlaying)] && [s.home isPlaying]) {
         s.waitingToInsert = NO;
         dispatch_async(dispatch_get_main_queue(), ^{ [self insertQueued]; });
     }
-    if ([self homeVisible]) [s.history recordPlaybackForItemID:[self itemID:s.home.currentAweme] time:time];
-    if (!s.pendingPlaybackID.length || ![self homeVisible]) return;
+    [s.history recordPlaybackForItemID:itemID time:time];
+    if (!s.pendingPlaybackID.length) return;
     if (![@[ @"native_play_requested", @"waiting_first_progress", @"cell_play_requested" ] containsObject:s.state[@"playbackStage"] ?: @""]) return;
-    if (![[self itemID:s.home.currentAweme] isEqual:s.pendingPlaybackID]) return;
+    if (![itemID isEqual:s.pendingPlaybackID]) return;
     s.pendingPlaybackID = nil;
     s.state[@"playbackStage"] = @"progress_confirmed";
     s.state[@"confirmedPlayTime"] = @(time);
 }
 // history 已完成真实观看判定并持久化；这里只清理本轮加载队列，保留当前 Cell。
 + (void)didConsumeItemID:(NSString *)itemID {
-    if (itemID.length) [[self shared].queued removeObject:itemID];
+    if (!itemID.length) return;
+    DYYYFriendShareService *s = [self shared];
+    [s.queued removeObject:itemID];
+    s.state[@"lastConsumedItemID"] = itemID;
+    s.state[@"consumedCount"] = @([s.state[@"consumedCount"] unsignedIntegerValue] + 1);
 }
 + (void)homeDidScroll:(UIViewController *)feed {
     DYYYFriendShareService *s = [self shared];
@@ -706,6 +762,16 @@
     if ([table isKindOfClass:UIScrollView.class] && ([table isTracking] || [table isDragging] || [table isDecelerating])) return;
     NSString *current = [self itemID:s.home.currentAweme];
     if (!current.length) return;
+    if (s.userDragging && [table isKindOfClass:UITableView.class] && [s.home respondsToSelector:@selector(dataSourceModelForIndexPath:)]) {
+        UITableView *list = table;
+        NSIndexPath *path = [list indexPathForRowAtPoint:CGPointMake(CGRectGetMidX(list.bounds), CGRectGetMidY(list.bounds))];
+        NSString *visibleID = path ? [self itemID:[s.home dataSourceModelForIndexPath:path]] : nil;
+        if (visibleID.length && ![visibleID isEqual:current]) return;
+    }
+    if (s.userDragging && [s.home respondsToSelector:@selector(getCurrentCellVC)]) {
+        NSString *cellID = [self itemID:[self value:[s.home getCurrentCellVC] key:@"model"]];
+        if (![cellID isEqual:current]) return; // 等原生 Cell 与当前模型同步后再结束本次手势。
+    }
     if (s.userDragging) [self didConsumeItemID:[s.history finishDraggingToItemID:current]];
     s.userDragging = NO; s.displayedID = current;
     if (s.queued.count && !s.inFlight.count) [self insertQueued];
@@ -715,11 +781,44 @@
     if (scrollView != [self value:feed key:@"tableView"]) return;
     [self homeDidScroll:feed];
 }
+// UIKit 在结束代理内部可能仍报告 decelerating/tracking=YES；出栈后再结算。
++ (void)homeDidEndScrolling:(UIViewController *)feed scrollView:(UIScrollView *)scrollView {
+    DYYYFriendShareService *s = [self shared];
+    if (s.home != feed || scrollView != [self value:feed key:@"tableView"] || !s.userDragging) return;
+    NSUInteger generation = s.generation, ticket = s.dragTicket;
+    __weak UIViewController *weakFeed = feed;
+    __weak UIScrollView *weakScroll = scrollView;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self settleHomeScroll:weakFeed scrollView:weakScroll generation:generation ticket:ticket attempt:0];
+    });
+}
++ (void)settleHomeScroll:(UIViewController *)feed scrollView:(UIScrollView *)scrollView
+            generation:(NSUInteger)generation ticket:(NSUInteger)ticket attempt:(NSUInteger)attempt {
+    DYYYFriendShareService *s = [self shared];
+    if (generation != s.generation || ticket != s.dragTicket || !s.userDragging || s.home != feed ||
+        !scrollView || scrollView != [self value:feed key:@"tableView"] || ![self enabled] || ![self homeVisible]) return;
+    [self homeDidScroll:feed];
+    // 仅这次结束事件的短补同步，不持续轮询；新手势/离页/后台会使任务失效。
+    if (s.userDragging && attempt < 4) {
+        __weak UIViewController *weakFeed = feed;
+        __weak UIScrollView *weakScroll = scrollView;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 20), dispatch_get_main_queue(), ^{
+            [self settleHomeScroll:weakFeed scrollView:weakScroll generation:generation ticket:ticket attempt:attempt + 1];
+        });
+    }
+}
 + (void)homeWillDrag:(UIViewController *)feed scrollView:(UIScrollView *)scrollView {
     DYYYFriendShareService *s = [self shared];
     if (s.home != feed || scrollView != [self value:feed key:@"tableView"] || ![self enabled] || ![self homeVisible] || ![self syncAccount]) return;
+    NSString *current = [self itemID:s.home.currentAweme];
+    if (s.userDragging) {
+        // 同一次手势的代理转发不重置；快速开始下一次手势时先结算上一次。
+        if ([current isEqual:[s.history diagnostics][@"draggedID"]]) return;
+        [self didConsumeItemID:[s.history finishDraggingToItemID:current]];
+    }
+    s.dragTicket++;
     [self homePlaybackTouched:feed];
-    [s.history beginDraggingFromItemID:[self itemID:s.home.currentAweme]];
+    [s.history beginDraggingFromItemID:current];
     s.userDragging = YES;
 }
 + (void)homeWillLoop:(UIViewController *)feed {
@@ -737,7 +836,7 @@
     DYYYFriendShareService *s = [self shared];
     if (s.home != feed) return;
     s.resumeAfterPageReturn = [s.home respondsToSelector:@selector(isPlaying)] && [s.home isPlaying];
-    [s.history resetPlayback]; s.userDragging = NO;
+    [s.history resetPlayback]; s.userDragging = NO; s.dragTicket++;
     s.playbackTicket++; s.pendingPlaybackID = nil;
 }
 + (void)clearWatched {

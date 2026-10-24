@@ -471,6 +471,7 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 // 39.5.0 完整导出确认的原生选中与播放入口。
 - (void)reloadWithCurrentIndex:(long long)index;
 - (id)getCurrentCellVC;
+- (id)dataSourceModelForIndexPath:(NSIndexPath *)indexPath;
 - (void)playVideoOnScrollDidEnd;
 - (void)playIfActive;
 - (BOOL)currentVCIsActive;
@@ -481,6 +482,8 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @property (nonatomic, readonly) long long currentPlayIndex;
 - (void)awe_refreshForceRequestWithoutAnimation;
 - (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView;
+- (void)pi_scrollViewWillBeginDragging:(UIScrollView *)scrollView;
+- (void)pi_scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate;
 - (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView;
 - (void)scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate;
 - (void)scrollViewDidEndScrollingAnimation:(UIScrollView *)scrollView;
@@ -1382,6 +1385,9 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @end
 
 @interface AWEDPlayerViewController_Merge : UIViewController
+@property(nonatomic, strong) AWEAwemeModel *model;
+- (void)player:(id)player updatePlayTime:(double)time canPlayTime:(double)buffered totalTime:(double)total;
+- (void)playerWillStartNextLoop:(id)player;
 @property(nonatomic) UIView *contentView;
 - (BOOL)enableHDR;
 - (void)setVideoControllerPlaybackRate:(double)arg0;

@@ -67,6 +67,23 @@
     feed = [DYYYFriendShareDelivery feedWithOriginal:original sharedModels:@{ @"share-A": shareB } orderedIDs:@[ @"share-A" ]];
     [self check:[feed isEqual:original] reason:@"缓存模型 ID 不匹配时不能混入首页"];
 
+    NSSet *watched = [NSSet setWithArray:@[ @"share-A", @"share-B" ]];
+    NSDictionary *shareC = @{ @"itemID": @"share-C" }, *shareD = @{ @"itemID": @"share-D" };
+    NSDictionary *cached = @{ @"share-A": shareA, @"share-B": shareB, @"share-C": shareC, @"share-D": shareD };
+    NSArray *delayed = [DYYYFriendShareDelivery feedWithOriginal:@[ shareA, shareB, shareC, one, two ] sharedModels:cached
+        orderedIDs:@[ @"share-C", @"share-D", @"share-A", @"share-B" ] watchedIDs:watched currentItemID:@"share-C"];
+    [self check:[delayed isEqual:@[ shareC, shareD, one, two ]]
+        reason:@"后续批次不得从 active 缓存或原列表重推已经划走的分享"];
+    delayed = [DYYYFriendShareDelivery feedWithOriginal:@[ shareC, one ] sharedModels:cached
+        orderedIDs:@[ @"share-D", @"share-C" ] watchedIDs:[NSSet setWithArray:@[ @"share-C" ]] currentItemID:@"share-C"];
+    [self check:[delayed containsObject:shareC] reason:@"播完一轮但仍显示的当前 Cell 不可立即删除"];
+    delayed = [DYYYFriendShareDelivery feedWithOriginal:delayed sharedModels:cached orderedIDs:@[ @"share-D", @"share-C" ]
+        watchedIDs:[NSSet setWithArray:@[ @"share-C" ]] currentItemID:@"share-D"];
+    [self check:[delayed isEqual:@[ shareD, one ]] reason:@"离开已完成的当前 Cell 后，不得再将其排回列表"];
+    delayed = [DYYYFriendShareDelivery feedWithOriginal:@[ shareA, shareB, one, two ] sharedModels:cached
+        orderedIDs:@[ @"share-A", @"share-B" ] watchedIDs:watched currentItemID:nil];
+    [self check:[delayed isEqual:original] reason:@"整批都已刷后重新打开，旧来源缓存不能复活整批分享"];
+
     DYYYDeliveryTestController *controller = [DYYYDeliveryTestController new];
     controller.dataSource = [original mutableCopy];
     [controller calculateFilteredDataSource];
