@@ -1,6 +1,7 @@
 #import "DYYYFriendShareService.h"
 #import "DYYYIMService.h"
 #import "DYYYFriendShareHistory.h"
+#import "DYYYFriendShareDelivery.h"
 #import "DYYYUtils.h"
 #import "AwemeHeaders.h"
 #include <string.h>
@@ -32,6 +33,13 @@
 @property (nonatomic) NSUInteger playbackSyncTicket;
 @property (nonatomic) BOOL selectedOpeningShare;
 @property (nonatomic) BOOL waitingToInsert;
+@property (nonatomic) BOOL feedNeedsReload;
+@property (nonatomic, copy) NSString *selectionAfterReload;
+@property (nonatomic) BOOL startAfterReload;
+@property (nonatomic) BOOL resumeAfterPageReturn;
+@property (nonatomic) NSUInteger cellRepairTicket;
+@property (nonatomic, strong) NSMutableSet *retriedModels;
+@property (nonatomic) BOOL modelWarningShown;
 @end
 
 @implementation DYYYFriendShareService
@@ -46,6 +54,7 @@
         service.sources = [NSMutableDictionary dictionary];
         service.inFlight = [NSMutableSet set];
         service.failed = [NSMutableSet set];
+        service.retriedModels = [NSMutableSet set];
         service.state = [NSMutableDictionary dictionary];
         service.openingPending = YES;
         service.backgrounded = YES;
@@ -65,6 +74,8 @@
     state[@"watchHistory"] = [s.history diagnostics] ?: @{};
     state[@"pendingPlayback"] = @(s.pendingPlaybackID.length > 0);
     state[@"waitingToInsert"] = @(s.waitingToInsert);
+    state[@"feedNeedsReload"] = @(s.feedNeedsReload);
+    state[@"homeVisible"] = @([self homeVisible]);
     state[@"currentItemID"] = [self itemID:s.home.currentAweme] ?: @"";
     if ([s.home respondsToSelector:@selector(isPlaying)]) state[@"nativePlaying"] = @([s.home isPlaying]);
     if ([s.home respondsToSelector:@selector(currentIndex)]) state[@"currentIndex"] = @(s.home.currentIndex);
@@ -98,8 +109,9 @@
     if (![s.account isEqual:account]) {
         s.account = account;
         s.generation++; s.scanInProgress = NO; s.pendingPlaybackID = nil; s.playbackTicket++; s.selectedOpeningShare = NO; s.waitingToInsert = NO;
+        s.feedNeedsReload = NO; s.selectionAfterReload = nil; s.resumeAfterPageReturn = NO;
         [s.queued removeAllObjects]; [s.active removeAllObjects]; [s.models removeAllObjects];
-        [s.inFlight removeAllObjects]; [s.failed removeAllObjects];
+        [s.inFlight removeAllObjects]; [s.failed removeAllObjects]; [s.retriedModels removeAllObjects]; s.modelWarningShown = NO;
         NSString *sourceKey = [self key:@"DYYYFriendShareSources"];
         NSDictionary *storedSources = sourceKey ? [NSUserDefaults.standardUserDefaults dictionaryForKey:sourceKey] : nil;
         s.sources = storedSources ? [storedSources mutableCopy] : [NSMutableDictionary dictionary];
@@ -132,7 +144,7 @@
     if (!s.backgrounded) return;
     s.backgrounded = NO; s.generation++; s.attempts = 0; s.selectedOpeningShare = NO;
     s.openingPending = YES; s.scanScheduled = NO; s.scanInProgress = NO; s.displayedID = nil;
-    [s.failed removeAllObjects];
+    [s.failed removeAllObjects]; [s.retriedModels removeAllObjects]; s.modelWarningShown = NO;
     [s.history resetPlayback];
     if ([self automatic]) [self restoreSavedShares];
     [self tryOpeningScan];
@@ -140,10 +152,15 @@
 + (void)bindHomeFeed:(UIViewController *)feed {
     AWEFeedTableViewController *home = (id)feed;
     if (![home respondsToSelector:@selector(dataController)] || ![home.dataController isKindOfClass:NSClassFromString(@"AWEHotListDataController")]) return;
+    BOOL underHomeRoot = NO;
+    Class rootClass = NSClassFromString(@"AWEFeedRootViewController");
+    for (UIViewController *parent = home.parentViewController; parent; parent = parent.parentViewController)
+        if (rootClass && [parent isKindOfClass:rootClass]) { underHomeRoot = YES; break; }
+    if (!underHomeRoot) return;
     [self shared].home = home;
     if ([self automatic]) [self restoreSavedShares];
     if ([self shared].openingPending && [self automatic]) [self cleanOpeningCache];
-    [self tryOpeningScan]; [self insertQueued]; [self homeDidScroll:feed];
+    [self tryOpeningScan]; [self insertQueued]; [self applyPreparedFeed]; [self homeDidScroll:feed];
 }
 + (void)restoreSavedShares {
     if (![self enabled] || NSClassFromString(@"FriendShareFeedService") || ![self syncAccount]) return;
@@ -177,7 +194,7 @@
 }
 + (void)tryOpeningScan {
     DYYYFriendShareService *s = [self shared];
-    if (![self enabled] || ![self automatic] || !s.openingPending || s.scanScheduled || s.scanInProgress || s.attempts >= 8 || ![self homeVisible]) return;
+    if (![self enabled] || ![self automatic] || !s.openingPending || s.scanScheduled || s.scanInProgress || s.attempts >= 8 || UIApplication.sharedApplication.applicationState != UIApplicationStateActive) return;
     if (NSClassFromString(@"FriendShareFeedService")) return;
     // 先同步账户和持久待刷队列；即使本次消息读取失败也能恢复上次未刷分享。
     [self syncAccount];
@@ -187,7 +204,7 @@
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 2), dispatch_get_main_queue(), ^{
         if (generation != s.generation) return;
         s.scanScheduled = NO;
-        if (![self enabled] || ![self homeVisible] || !s.openingPending || s.scanInProgress) return;
+        if (![self enabled] || UIApplication.sharedApplication.applicationState != UIApplicationStateActive || !s.openingPending || s.scanInProgress) return;
         NSArray *users = [NSUserDefaults.standardUserDefaults arrayForKey:@"DYYYFriendShareFeedFriends"] ?: @[];
         if (!users.count) { s.openingPending = NO; return; }
         s.scanInProgress = YES;
@@ -212,7 +229,7 @@
     if (s.scanInProgress) { if (showToast) [DYYYUtils showToast:@"正在扫描好友分享，请稍候"]; return; }
     NSArray *users = [NSUserDefaults.standardUserDefaults arrayForKey:@"DYYYFriendShareFeedFriends"] ?: @[];
     if (!users.count) { if (showToast) [DYYYUtils showToast:@"请先选择分享来源好友"]; return; }
-    [s.failed removeAllObjects];
+    [s.failed removeAllObjects]; [s.retriedModels removeAllObjects]; s.modelWarningShown = NO;
     s.selectedOpeningShare = NO;
     s.restoredGeneration = NSNotFound;
     [self restoreSavedShares];
@@ -271,7 +288,7 @@
     if (sourceKey) [NSUserDefaults.standardUserDefaults setObject:s.sources forKey:sourceKey];
     s.state[@"scanVideoCount"] = @(rows.count);
     [self insertQueued];
-    if (toast) [DYYYUtils showToast:s.queued.count ? @"已找到未刷分享，正在加载真实视频；返回首页后插入" : @"没有新的未刷分享视频"];
+    if (toast) [DYYYUtils showToast:s.queued.count ? @"已找到未刷分享，正在准备首页列表，可继续使用其他页面" : @"没有新的未刷分享视频"];
 }
 
 // 标签仅属于这份首页数据，不能因相同视频 ID 出现在聊天或博主页就跟过去。
@@ -356,6 +373,11 @@
                     if (generation != s.generation || ![account isEqual:[DYYYIMService accountID]] || ![self enabled]) return;
                     [self collectModels:result allowed:allowed depth:0];
                     s.state[@"resultClass"] = result ? NSStringFromClass([result class]) : @"nil";
+                    // 超时后才到达的有效模型仍应入队，不能永久受 failed 标记阻挡。
+                    for (NSString *itemID in allowed) if (s.models[itemID]) {
+                        [s.failed removeObject:itemID]; [s.inFlight removeObject:itemID];
+                    }
+                    [self insertQueued];
                 });
             };
             if (callback) [call setArgument:&resultHandler atIndex:4];
@@ -371,16 +393,35 @@
     DYYYFriendShareService *s = [self shared];
     if (generation != s.generation || ![account isEqual:[DYYYIMService accountID]] || ![self enabled]) return;
     NSMutableArray *missing = [NSMutableArray array];
+    BOOL ready = NO;
     for (NSString *itemID in ids) {
         id model = s.models[itemID] ?: [self cachedModel:itemID];
-        if (model) { s.models[itemID] = model; [s.inFlight removeObject:itemID]; }
-        else [missing addObject:itemID];
+        if (model) {
+            s.models[itemID] = model; [s.inFlight removeObject:itemID]; [s.failed removeObject:itemID];
+            if ([s.queued containsObject:itemID]) ready = YES;
+        } else [missing addObject:itemID];
     }
-    if (!missing.count || attempt >= 30) {
-        for (NSString *itemID in missing) { [s.inFlight removeObject:itemID]; [s.failed addObject:itemID]; }
-        s.state[@"stage"] = missing.count ? @"model_load_timeout" : @"models_ready";
-        if (missing.count) [DYYYUtils showToast:@"部分分享视频暂未加载成功，保留待加载记录，可手动重试"];
-        [self insertQueued]; return;
+    if (ready) [self insertQueued];
+    if (!missing.count) { s.state[@"modelStage"] = @"models_ready"; return; }
+    if (attempt >= 30) {
+        NSMutableArray *retry = [NSMutableArray array];
+        for (NSString *itemID in missing) {
+            [s.inFlight removeObject:itemID]; [s.failed addObject:itemID];
+            if (![s.retriedModels containsObject:itemID]) { [s.retriedModels addObject:itemID]; [retry addObject:itemID]; }
+        }
+        s.state[@"modelStage"] = @"model_load_timeout";
+        s.state[@"unloadedItemIDs"] = missing;
+        if (!s.modelWarningShown) {
+            s.modelWarningShown = YES;
+            [DYYYUtils showToast:@"部分分享暂未加载，已保留待刷记录，将自动重试"];
+        }
+        [self insertQueued];
+        if (retry.count) dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+            if (generation != s.generation || ![account isEqual:[DYYYIMService accountID]] || ![self enabled]) return;
+            [s.failed minusSet:[NSSet setWithArray:retry]];
+            [self insertQueued];
+        });
+        return;
     }
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 3), dispatch_get_main_queue(), ^{
         [self pollModels:missing account:account generation:generation attempt:attempt + 1];
@@ -388,78 +429,84 @@
 }
 + (void)insertQueued {
     DYYYFriendShareService *s = [self shared];
-    if (![self enabled] || NSClassFromString(@"FriendShareFeedService") || ![self syncAccount] || ![self homeVisible] || s.arranging || !s.queued.count) return;
-    AWEFeedTableViewController *home = s.home;
-    id nativeTable = [self value:home key:@"tableView"];
-    if ([nativeTable isKindOfClass:UIScrollView.class] && ([nativeTable isTracking] || [nativeTable isDragging] || [nativeTable isDecelerating])) return;
-    if (s.inFlight.count) return;
-    // 用户已接管并暂停时，先保留队列，等实际恢复播放/滑动结束再插入，
-    // 避免原生重载入口重建 Cell 时破坏暂停意图。
-    if (s.selectedOpeningShare && [home respondsToSelector:@selector(isPlaying)] && ![home isPlaying] && [self itemID:home.currentAweme].length) {
-        s.waitingToInsert = YES;
-        return;
-    }
-    s.waitingToInsert = NO;
-    SEL insert = @selector(insertAwemeModel:atIndex:shouldForceReload:byBiz:);
-    if (![home respondsToSelector:insert]) { s.state[@"stage"] = @"model_insert_unavailable"; return; }
-    NSArray *data = [(AWEListDataController *)home.dataController dataSource];
-    if (![data isKindOfClass:NSArray.class] || !data.count) return;
+    if (![self enabled] || NSClassFromString(@"FriendShareFeedService") || ![self syncAccount] ||
+        UIApplication.sharedApplication.applicationState != UIApplicationStateActive || s.arranging || !s.queued.count) return;
     NSMutableArray *ready = [NSMutableArray array], *missing = [NSMutableArray array];
-    NSSet *watched = [self storedIDs:@"DYYYFriendShareWatchedItemIDs"];
+    NSSet *watched = s.history.watchedItemIDs;
     for (NSString *itemID in [s.queued copy]) {
         if ([watched containsObject:itemID]) { [s.queued removeObject:itemID]; continue; }
         if ([s.failed containsObject:itemID]) continue;
         id model = s.models[itemID] ?: [self cachedModel:itemID];
         if (model) { s.models[itemID] = model; [ready addObject:itemID]; }
-        else if (![s.inFlight containsObject:itemID] && ![s.failed containsObject:itemID] && missing.count < 20) [missing addObject:itemID];
+        else if (![s.inFlight containsObject:itemID] && missing.count < 20) [missing addObject:itemID];
     }
-    BOOL inserted = NO;
-    NSString *previousItemID = [self itemID:home.currentAweme];
-    BOOL wasPlaying = [home respondsToSelector:@selector(isPlaying)] && [home isPlaying];
-    NSUInteger selectionTicket = s.playbackTicket;
-    NSMutableSet *known = [self storedIDs:@"DYYYFriendShareInsertedItemIDs"];
-    // 整批插入期间暂停自定义排序，避免原生插入中途再次改写模型/索引。
+    // 模型获取独立于首页：尚未创建首页、在消息/搜索页、首页暂停都不影响请求。
+    if (missing.count && !s.inFlight.count) {
+        [s.inFlight addObjectsFromArray:missing];
+        if ([self requestModels:missing]) {
+            NSString *account = [s.account copy];
+            NSUInteger generation = s.generation;
+            dispatch_async(dispatch_get_main_queue(), ^{ [self pollModels:missing account:account generation:generation attempt:0]; });
+        }
+        else {
+            [s.inFlight minusSet:[NSSet setWithArray:missing]];
+            [s.failed addObjectsFromArray:missing]; s.state[@"stage"] = @"model_request_unavailable";
+        }
+    }
+    if (!ready.count) return;
+    AWEFeedTableViewController *home = s.home;
+    id controller = home.dataController;
+    if (!home || ![controller respondsToSelector:@selector(updateAwemeList:)]) { s.state[@"stage"] = @"prepared_waiting_feed"; return; }
+    NSArray *data = [(AWEListDataController *)controller dataSource];
+    if (![data isKindOfClass:NSArray.class]) { s.state[@"stage"] = @"prepared_waiting_feed_data"; return; }
+    BOOL visible = [self homeVisible];
+    id table = visible ? [self value:home key:@"tableView"] : nil;
+    if (visible && [table isKindOfClass:UIScrollView.class] && ([table isTracking] || [table isDragging] || [table isDecelerating])) return;
+    BOOL wasPlaying = home.isViewLoaded && [home respondsToSelector:@selector(isPlaying)] && [home isPlaying];
+    if (visible && s.selectedOpeningShare && !wasPlaying && [self itemID:home.currentAweme].length) {
+        s.waitingToInsert = YES; return;
+    }
+    s.waitingToInsert = NO;
+    NSString *previous = s.displayedID ?: (home.isViewLoaded ? [self itemID:home.currentAweme] : nil);
+    NSMutableOrderedSet *desired = [s.active mutableCopy];
+    [desired addObjectsFromArray:ready];
+    NSMutableArray *orderedIDs = [NSMutableArray array];
+    for (NSDictionary *row in s.history.pendingRows) if ([desired containsObject:row[@"itemID"]]) [orderedIDs addObject:row[@"itemID"]];
+    for (NSString *itemID in desired) if (![orderedIDs containsObject:itemID]) [orderedIDs addObject:itemID];
+    NSArray *merged = [DYYYFriendShareDelivery feedWithOriginal:data sharedModels:s.models orderedIDs:orderedIDs];
     s.arranging = YES;
     @try {
-        for (NSString *itemID in ready.reverseObjectEnumerator) {
-            BOOL exists = NO;
-            for (id model in [(AWEListDataController *)home.dataController dataSource]) if ([[self itemID:model] isEqual:itemID]) { exists = YES; break; }
-            if (!exists) {
-                @try {
-                    [home insertAwemeModel:s.models[itemID] atIndex:0 shouldForceReload:NO byBiz:0];
-                } @catch (__unused NSException *e) { s.state[@"stage"] = @"insert_exception"; }
-                for (id model in [(AWEListDataController *)home.dataController dataSource]) if ([[self itemID:model] isEqual:itemID]) { exists = YES; break; }
-            }
-            if (exists) { [s.active insertObject:itemID atIndex:0]; [s.queued removeObject:itemID]; [known addObject:itemID]; inserted = YES; }
-            else { [s.failed addObject:itemID]; s.state[@"stage"] = @"insert_not_confirmed"; }
-        }
+        // 一次提交完整模型列表。逐条插入会在中途创建/停用多批 Cell，造成首播状态残留。
+        [(AWEHotListDataController *)controller updateAwemeList:merged];
+    } @catch (__unused NSException *exception) {
+        s.state[@"stage"] = @"batch_update_exception";
+        return;
     } @finally { s.arranging = NO; }
+    NSArray *actual = [(AWEListDataController *)controller dataSource];
+    NSMutableSet *confirmed = [NSMutableSet set];
+    for (id model in actual) { NSString *itemID = [self itemID:model]; if (itemID.length) [confirmed addObject:itemID]; }
+    NSMutableSet *known = [self storedIDs:@"DYYYFriendShareInsertedItemIDs"];
+    BOOL inserted = NO;
+    for (NSString *itemID in ready) if ([confirmed containsObject:itemID]) {
+        [s.active addObject:itemID]; [s.queued removeObject:itemID]; [known addObject:itemID]; inserted = YES;
+    }
+    if (!inserted) { s.state[@"stage"] = @"batch_update_not_confirmed"; return; }
     [self orderActiveShares];
-    if (inserted) {
-        [self saveIDs:known name:@"DYYYFriendShareInsertedItemIDs"];
-        s.state[@"stage"] = @"inserted";
-        NSUInteger generation = s.generation;
-        dispatch_async(dispatch_get_main_queue(), ^{
-            if (generation != s.generation || selectionTicket != s.playbackTicket || ![self homeVisible] || s.userDragging) return;
-            NSArray *data = [(AWEListDataController *)home.dataController dataSource];
-            NSArray *ordered = [self arrangeData:data controller:home.dataController];
-            if (ordered != data) [(AWEHotListDataController *)home.dataController updateAwemeList:ordered];
-            // 首批主动展示分享；后续批次保留当前视频和用户暂停状态。
-            BOOL firstSelection = !s.selectedOpeningShare;
-            NSString *target = firstSelection ? s.active.firstObject : previousItemID;
-            s.selectedOpeningShare = YES;
-            [self selectShare:target startPlayback:firstSelection || wasPlaying generation:generation];
-        });
-    }
-    if (missing.count && !s.inFlight.count) {
-        if ([self requestModels:missing]) {
-            [s.inFlight addObjectsFromArray:missing];
-            [self pollModels:missing account:s.account generation:s.generation attempt:0];
-        } else {
-            [s.failed addObjectsFromArray:missing]; s.state[@"stage"] = @"model_request_unavailable";
-            [DYYYUtils showToast:@"当前版本的视频模型加载入口不可用，未改动首页，请导出调试记录"];
-        }
-    }
+    [self saveIDs:known name:@"DYYYFriendShareInsertedItemIDs"];
+    s.state[@"stage"] = visible ? @"batch_inserted" : @"batch_inserted_offscreen";
+    s.feedNeedsReload = YES;
+    s.selectionAfterReload = s.selectedOpeningShare ? previous : s.active.firstObject;
+    s.startAfterReload = !s.selectedOpeningShare || (visible ? wasPlaying : s.resumeAfterPageReturn);
+    [self applyPreparedFeed];
+}
+
++ (void)applyPreparedFeed {
+    DYYYFriendShareService *s = [self shared];
+    if (!s.feedNeedsReload || ![self homeVisible] || s.userDragging || ![self enabled]) return;
+    NSString *target = s.selectionAfterReload;
+    if (!target.length) return;
+    s.selectedOpeningShare = YES;
+    [self selectShare:target startPlayback:s.startAfterReload generation:s.generation];
 }
 
 #pragma mark - 首页列表保持与已刷记录
@@ -496,8 +543,10 @@
     NSArray *kept = [self arrangeData:data controller:s.home.dataController];
     if (kept != data) {
         [(AWEHotListDataController *)s.home.dataController updateAwemeList:kept];
-        id table = [self value:s.home key:@"tableView"];
-        if ([table isKindOfClass:UITableView.class]) [table reloadData];
+        s.feedNeedsReload = YES;
+        s.selectionAfterReload = [self itemID:kept.firstObject];
+        s.startAfterReload = !s.selectedOpeningShare || s.resumeAfterPageReturn;
+        [self applyPreparedFeed];
         if (!kept.count && [self homeVisible] && [s.home respondsToSelector:@selector(awe_refreshForceRequestWithoutAnimation)]) [s.home awe_refreshForceRequestWithoutAnimation];
     }
 }
@@ -518,6 +567,7 @@
         return;
     }
     NSUInteger ticket = ++s.playbackTicket;
+    s.feedNeedsReload = NO;
     s.pendingPlaybackID = start ? itemID : nil;
     s.state[@"playbackStage"] = @"selecting_native_cell";
     s.state[@"selectionIndex"] = @(index);
@@ -563,6 +613,9 @@
                 if ([home respondsToSelector:@selector(playIfActive)]) {
                     s.state[@"playbackStage"] = @"native_play_requested";
                     [home playIfActive];
+                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 2), dispatch_get_main_queue(), ^{
+                        [self verifySelectedShare:itemID generation:generation ticket:ticket];
+                    });
                     return; // 后续由真实播放进度确认，不用定时器反复强制播放。
                 }
                 s.state[@"playbackStage"] = @"native_play_unavailable";
@@ -578,6 +631,33 @@
     if (attempt < 5) dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 5), dispatch_get_main_queue(), ^{
         [self activateSelectedShare:itemID generation:generation ticket:ticket attempt:attempt + 1];
     });
+}
+
++ (void)verifySelectedShare:(NSString *)itemID generation:(NSUInteger)generation ticket:(NSUInteger)ticket {
+    DYYYFriendShareService *s = [self shared];
+    if (generation != s.generation || ticket != s.playbackTicket || ![itemID isEqual:s.pendingPlaybackID] ||
+        ![self enabled] || ![self homeVisible] || s.userDragging || s.cellRepairTicket == ticket) return;
+    AWEFeedTableViewController *home = s.home;
+    if (![[self itemID:home.currentAweme] isEqual:itemID]) return;
+    if ([home respondsToSelector:@selector(isPlaying)] && [home isPlaying]) { s.state[@"playbackStage"] = @"waiting_first_progress"; return; }
+    id cell = [home respondsToSelector:@selector(getCurrentCellVC)] ? [home getCurrentCellVC] : nil;
+    s.state[@"currentCellClass"] = cell ? NSStringFromClass([cell class]) : @"nil";
+    s.state[@"currentCellItemID"] = [self itemID:[self value:cell key:@"model"]] ?: @"";
+    if (![cell isKindOfClass:NSClassFromString(@"AWEFeedCellViewController")]) { s.state[@"playbackStage"] = @"waiting_feed_cell"; return; }
+    id player = [self value:home key:@"currentVideoController"];
+    NSMutableDictionary *playerState = [NSMutableDictionary dictionary];
+    if (player) playerState[@"class"] = NSStringFromClass([player class]);
+    for (NSString *key in @[ @"holdStopping", @"isPrepared", @"hasPreparedToPlay", @"isPausedByUserClick", @"pausedByDisappear", @"isPlayStarted" ]) {
+        if (![player respondsToSelector:NSSelectorFromString(key)]) continue;
+        id value = [self value:player key:key];
+        if ([value isKindOfClass:NSNumber.class]) playerState[key] = value;
+    }
+    s.state[@"playerBeforeCellPrepare"] = playerState;
+    s.cellRepairTicket = ticket;
+    BOOL active = ![home respondsToSelector:@selector(currentVCIsActive)] || [home currentVCIsActive];
+    if ([DYYYFriendShareDelivery prepareAndPlayCell:cell itemID:itemID allowed:active]) {
+        if ([itemID isEqual:s.pendingPlaybackID]) s.state[@"playbackStage"] = @"cell_play_requested";
+    } else s.state[@"playbackStage"] = @"cell_prepare_rejected";
 }
 
 + (void)homePlaybackTouched:(UIViewController *)feed {
@@ -600,7 +680,7 @@
     }
     if ([self homeVisible]) [s.history recordPlaybackForItemID:[self itemID:s.home.currentAweme] time:time];
     if (!s.pendingPlaybackID.length || ![self homeVisible]) return;
-    if (![s.state[@"playbackStage"] isEqual:@"native_play_requested"]) return;
+    if (![@[ @"native_play_requested", @"waiting_first_progress", @"cell_play_requested" ] containsObject:s.state[@"playbackStage"] ?: @""]) return;
     if (![[self itemID:s.home.currentAweme] isEqual:s.pendingPlaybackID]) return;
     s.pendingPlaybackID = nil;
     s.state[@"playbackStage"] = @"progress_confirmed";
@@ -620,6 +700,7 @@
     if (s.userDragging) [self didConsumeItemID:[s.history finishDraggingToItemID:current]];
     s.userDragging = NO; s.displayedID = current;
     if (s.queued.count && !s.inFlight.count) [self insertQueued];
+    [self applyPreparedFeed];
 }
 + (void)homeDidScroll:(UIViewController *)feed scrollView:(UIScrollView *)scrollView {
     if (scrollView != [self value:feed key:@"tableView"]) return;
@@ -646,6 +727,7 @@
 + (void)homeDidLeave:(UIViewController *)feed {
     DYYYFriendShareService *s = [self shared];
     if (s.home != feed) return;
+    s.resumeAfterPageReturn = [s.home respondsToSelector:@selector(isPlaying)] && [s.home isPlaying];
     [s.history resetPlayback]; s.userDragging = NO;
     s.playbackTicket++; s.pendingPlaybackID = nil;
 }

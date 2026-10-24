@@ -9,3 +9,6 @@ xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
 xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
     DYYYFriendShareHistory.m Tests/DYYYFriendShareHistoryTests.m -o "$test_dir/share-history-tests"
 "$test_dir/share-history-tests"
+xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
+    DYYYFriendShareDelivery.m Tests/DYYYFriendShareDeliveryTests.m -o "$test_dir/share-delivery-tests"
+"$test_dir/share-delivery-tests"

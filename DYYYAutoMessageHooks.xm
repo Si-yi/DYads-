@@ -37,13 +37,22 @@
 %end
 
 %hook AWEFeedTableViewController
+- (void)viewDidLoad {
+    %orig;
+    [DYYYFriendShareService bindHomeFeed:self];
+}
+- (void)setDataController:(id)controller {
+    %orig(controller);
+    __weak UIViewController *weakFeed = self;
+    dispatch_async(dispatch_get_main_queue(), ^{ [DYYYFriendShareService bindHomeFeed:weakFeed]; });
+}
 - (void)viewDidAppear:(BOOL)animated {
     %orig;
     [DYYYFriendShareService bindHomeFeed:self];
 }
-- (void)viewDidDisappear:(BOOL)animated {
-    %orig;
+- (void)viewWillDisappear:(BOOL)animated {
     [DYYYFriendShareService homeDidLeave:self];
+    %orig;
 }
 - (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView {
     %orig;
