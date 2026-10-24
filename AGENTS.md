@@ -3,7 +3,7 @@
 本项目是基于 Theos/Logos 的抖音 UI 调整 Tweak。当前仓库 README 标注仅在 **抖音 36.5.0** 版本测试；回答需求时请以仓库现状为准，不要沿用旧版本描述。
 
 ## 工程关键点
-- **昵称上方标签与头像光圈**：`DYYYFeedTagGlass.(h/m)` 默认给原生标签行的点击推荐、好友推荐、通用/轮播标签等铺深色薄毛玻璃，共用透明度；只替换已有背景槽，保留内容、点击和原生尺寸。不得给整条元素栈铺满背景，离开视频交互层时恢复。`DYYYAvatarRing.(h/m)` 仅管理作者头像内的 `AFDColorRingView` 绘制子视图，不能隐藏光圈根视图、改根 alpha 或移除手势；开关 `DYYYHideAvatarColorRing` 默认关闭，在隐藏设置→视频播放界面→标签栏。原生配置/动画更新前恢复、结束后重新应用，嵌套更新只在最外层处理，关闭/复用恢复原生显隐。共享 Hook 见 `DYYYFeedDecorationsHooks.xm`。
+- **昵称上方标签与头像光圈**：`DYYYFeedTagGlass.(h/m)` 默认给原生标签行的点击推荐、好友推荐、通用/轮播标签等铺深色薄毛玻璃，固定 alpha 为 0.9、不跟随共享透明度设置；只替换已有背景槽，保留内容、点击和原生尺寸。不得给整条元素栈铺满背景，离开视频交互层时恢复。`DYYYAvatarRing.(h/m)` 仅管理作者头像内的 `AFDColorRingView` 绘制子视图，不能隐藏光圈根视图、改根 alpha 或移除手势；开关 `DYYYHideAvatarColorRing` 默认关闭，直接平铺在隐藏设置的「视频播放界面」分组，与头像相关开关相邻，不新增二级菜单。原生配置/动画更新前恢复、结束后重新应用，嵌套更新只在最外层处理，关闭/复用恢复原生显隐。共享 Hook 见 `DYYYFeedDecorationsHooks.xm`。
 - **39.5 分享控制器与调试玻璃**：录制确认实际分享控制器为 `AWESharePanelController`，需与新版容器并行适配；仅在该控制器内按半屏根视图或底部宽面板识别背景宿主，不猜私有字段、不把玻璃铺满整屏遮罩。新版分享页把玻璃挂在实际内容控制器根视图，原生 `contentColor` 源值需保存、清除和恢复。调试菜单默认使用独立毛玻璃背景层，共用透明度，文字与按钮在上层保持可读；材质在非零尺寸时创建。轻量导出包含 `panelBlur` 的宿主、挂载状态和透明度，便于核查未适配层级。
 - **分享与评论长按毛玻璃**：`DYYYPanelBlur.(h/m)` 和 Hooks 分别使用 `DYYYEnableSharePanelBlur`、`DYYYEnableCommentMenuBlur` 两个独立开关，默认关闭；位于界面设置的透明度设置内。与评论区、通知栏共用 `DYYYCommentBlurTransparent`，由 `DYYYUtils.sharedBlurTransparency` 统一校验（默认 0.9，允许 0–1）。只在面板外壳内铺一层普通毛玻璃并清理中性底板，不能修改整个面板或文字图标的 alpha；保留好友头像、彩色图标与外部遮罩。复用/关闭/离页时先恢复毛玻璃接管值，再恢复菜单调色值，避免残留底色。共享原生 Cell 的布局时只处理当前面板，不挂全局 UIView/CALayer 写入 Hook。
 - **首页文章底栏黑边**：`DYYYArticleBackdrop.(h/m)` 与 Hooks 仅处理首页 `AWEFeedGeneralArticleCellViewController` 下的文章页。保留原生 Lynx 视口与正文位置，用内容底边的不透明像素行延展背景至全高宿主底部；不改全局窗口、正文 Frame 或交互层。取样合并为短延迟与一次补取样，换模型/复用/离页移除，关闭全屏或尺寸不符时恢复。Hook 复用搜索框架延迟加载安装入口；参考 DYKiller 的 DKFeedCardFit 并保留 MIT 声明。

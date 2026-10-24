@@ -5,7 +5,6 @@
 #import "DYYYUtils.h"
 #import "DYYYPanelBlur.h"
 #import "DYYYAvatarRing.h"
-#import "DYYYFeedTagGlass.h"
 
 #import "DYYYAboutDialogView.h"
 #import "DYYYCustomInputView.h"
@@ -22,7 +21,6 @@
 + (void)setUserDefaults:(id)object forKey:(NSString *)key {
     [[NSUserDefaults standardUserDefaults] setObject:object forKey:key];
     if ([key isEqualToString:@"DYYYHideAvatarColorRing"]) [DYYYAvatarRing refreshVisibleRings];
-    if ([key isEqualToString:@"DYYYCommentBlurTransparent"]) [DYYYFeedTagGlass refreshVisibleTags];
     if ([@[ @"DYYYEnableSharePanelBlur", @"DYYYEnableCommentMenuBlur", @"DYYYCommentBlurTransparent" ] containsObject:key]) {
         [DYYYPanelBlur refreshVisiblePanels];
     }
@@ -73,7 +71,7 @@
           // ===== 条件依赖配置 =====
           // 一些设置项依赖于多个其他设置项的复杂条件
           @"conditionalDependencies" : @{
-              // 昵称上方标签默认使用毛玻璃，共享透明度始终可调。
+              // 调试菜单默认使用毛玻璃，共享面板透明度始终可调。
           },
 
           // ===== 冲突配置 =====

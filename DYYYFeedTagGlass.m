@@ -16,13 +16,6 @@ static char kDYYYFeedTagGlassKey;
 
 @implementation DYYYFeedTagGlass
 
-+ (NSHashTable<UIView *> *)tags {
-    static NSHashTable *tags;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{ tags = [NSHashTable weakObjectsHashTable]; });
-    return tags;
-}
-
 + (BOOL)isFeedTag:(UIView *)tag {
     if (!tag.window) return NO;
     for (UIView *parent = tag; parent; parent = parent.superview)
@@ -98,7 +91,6 @@ static char kDYYYFeedTagGlassKey;
     if (!NSThread.isMainThread || !tag) return;
     DYYYFeedTagGlassState *state = objc_getAssociatedObject(tag, &kDYYYFeedTagGlassKey);
     if (!state || state.busy) return;
-    [[self tags] removeObject:tag];
     state.busy = YES;
     [state.glass removeFromSuperview];
     for (UIView *view in state.changes.keyEnumerator.allObjects) {
@@ -123,7 +115,6 @@ static char kDYYYFeedTagGlassKey;
     UIView *host = [self existingView:@"containerView" inTag:tag] ?: tag;
     if (CGRectIsEmpty(host.bounds)) { [self restoreTag:tag]; return; }
     if (state && state.host != host) { [self restoreTag:tag]; state = nil; }
-    [[self tags] addObject:tag];
     if (!state) {
         state = [DYYYFeedTagGlassState new];
         state.host = host;
@@ -152,7 +143,8 @@ static char kDYYYFeedTagGlassKey;
         state.glass.layer.borderWidth = 0.5;
         state.glass.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.18].CGColor;
         state.glass.contentView.backgroundColor = [UIColor colorWithWhite:0 alpha:0.06];
-        state.glass.alpha = [DYYYUtils sharedBlurTransparency];
+        // 昵称上方标签固定为薄毛玻璃，不跟随面板的共享透明度设置。
+        state.glass.alpha = 0.9;
         if (host.subviews.firstObject != state.glass) [host insertSubview:state.glass atIndex:0];
         if (!state.glass.effect) state.glass.effect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterialDark];
         [self prepareLabels:host state:state];
@@ -180,11 +172,4 @@ static char kDYYYFeedTagGlassKey;
     }
 }
 
-+ (void)refreshVisibleTags {
-    if (!NSThread.isMainThread) {
-        dispatch_async(dispatch_get_main_queue(), ^{ [self refreshVisibleTags]; });
-        return;
-    }
-    for (UIView *tag in [self tags].allObjects) [self decorateTag:tag];
-}
 @end
