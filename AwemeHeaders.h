@@ -538,7 +538,8 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @interface AFDRecommendToFriendTagView : UIView
 @end
 
-@interface AFDRecommendToFriendEntranceLabel : UILabel
+// 39.5.0 运行时导出为 UIView，文字由内部 UILabel 承载。
+@interface AFDRecommendToFriendEntranceLabel : UIView
 @end
 
 @interface AWEStoryContainerCollectionView : UIView
@@ -2036,6 +2037,23 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 
 // 好友推荐
 @interface AFDFriendRecommendTagView : UIView
+@end
+
+// 39.5.0 导出确认的昵称上方标签容器与“点击推荐”标签。
+@interface AWEPlayInteractionTagsStackView : UIStackView
+@end
+@interface AWEPlayInteractionGeneralTagView : UIView
+@end
+@interface AWEPlayInteractionTagsContainerLabelView : UIView
+@end
+
+// 头像彩色光圈。保留其手势与外层头像，仅控制其内部绘制视图。
+@interface AFDColorRingView : UIView
+- (void)updateDisplayConfig:(id)config;
+- (void)startAnimationWithType:(NSInteger)type;
+- (void)stopAnimation;
+- (void)addAttachmentView;
+- (void)prepareForReuse;
 @end
 
 // 顶栏选中指示线

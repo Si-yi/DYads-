@@ -49,6 +49,7 @@ DYYY_FILES += DYYYCommentHeaderLayout.m DYYYCommentHeaderLayoutHooks.xm
 DYYY_FILES += DYYYSearchClean.m DYYYSearchCleanHooks.xm
 DYYY_FILES += DYYYArticleBackdrop.m DYYYArticleBackdropHooks.xm
 DYYY_FILES += DYYYPanelBlur.m DYYYPanelBlurHooks.xm
+DYYY_FILES += DYYYFeedTagGlass.m DYYYAvatarRing.m DYYYFeedDecorationsHooks.xm
 DYYY_CFLAGS = -fobjc-arc -w
 DYYY_LDFLAGS = -weak_framework AVFAudio -lz
 DYYY_FRAMEWORKS = CoreAudio PhotosUI

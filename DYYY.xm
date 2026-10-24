@@ -20,6 +20,7 @@
 #import "CityManager.h"
 #import "DYYYBottomAlertView.h"
 #import "DYYYManager.h"
+#import "DYYYFeedTagGlass.h"
 #import "DYYYSettingsHelper.h"
 
 #import "AWMSafeDispatchTimer.h"
@@ -7724,6 +7725,12 @@ static NSHashTable *processedParentViews = nil;
             [self removeFromSuperview];
         }
     }
+    [DYYYFeedTagGlass decorateTag:(UIView *)self];
+}
+
+- (void)didMoveToWindow {
+    %orig;
+    [DYYYFeedTagGlass decorateTag:(UIView *)self];
 }
 
 %end
@@ -9500,10 +9507,17 @@ static NSHashTable *processedParentViews = nil;
 
 - (void)layoutSubviews {
 	if (DYYYGetBool(@"DYYYHideFriendRecommend")) {
+		[DYYYFeedTagGlass restoreTag:(UIView *)self];
 		self.hidden = YES;
 		return;
 	}
 	%orig;
+	[DYYYFeedTagGlass decorateTag:(UIView *)self];
+}
+
+- (void)didMoveToWindow {
+    %orig;
+    [DYYYFeedTagGlass decorateTag:(UIView *)self];
 }
 
 %end

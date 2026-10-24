@@ -2041,6 +2041,19 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
           [videoUiItems addObject:item];
       }
 
+      AWESettingItemModel *hideAvatarRing = [DYYYSettingsHelper createSettingItem:@{
+          @"identifier" : @"DYYYHideAvatarColorRing",
+          @"title" : @"隐藏头像光圈",
+          @"subTitle" : @"仅隐藏彩色光圈，保留头像和原有点击动作",
+          @"cellType" : @6,
+          @"imageName" : @"ic_eyeslash_outlined_16"
+      }];
+      AWESettingItemModel *tagBarEntry = DYYYMakePageEntry(rootVC, @"标签栏", @"ic_tag_outlined_20",
+          @"隐藏设置 · 视频播放界面 · 标签栏", @[
+              [DYYYSettingsHelper createSectionWithTitle:@"头像标签" items:@[ hideAvatarRing ]]
+          ]);
+      [videoUiItems addObject:tagBarEntry];
+
       // 【侧边栏】分类
       NSMutableArray<AWESettingItemModel *> *sidebarItems = [NSMutableArray array];
       NSArray *sidebarSettings = @[

@@ -313,6 +313,7 @@ static NSDictionary *DYYYDebugMetadata(void) {
         @"inputSettings": @{
             @"DYYYEnableFloatingCommentInput": [defaults objectForKey:@"DYYYEnableFloatingCommentInput"] ?: NSNull.null,
             @"DYYYEnableFullScreen": [defaults objectForKey:@"DYYYEnableFullScreen"] ?: NSNull.null,
+            @"DYYYHideAvatarColorRing": [defaults objectForKey:@"DYYYHideAvatarColorRing"] ?: NSNull.null,
             @"DYYYEnableCommentBlur": [defaults objectForKey:@"DYYYEnableCommentBlur"] ?: NSNull.null,
             @"DYYYEnableSharePanelBlur": [defaults objectForKey:@"DYYYEnableSharePanelBlur"] ?: NSNull.null,
             @"DYYYEnableCommentMenuBlur": [defaults objectForKey:@"DYYYEnableCommentMenuBlur"] ?: NSNull.null,
