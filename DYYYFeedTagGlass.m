@@ -16,6 +16,13 @@ static char kDYYYFeedTagGlassKey;
 
 @implementation DYYYFeedTagGlass
 
++ (NSHashTable<UIView *> *)tags {
+    static NSHashTable *tags;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ tags = [NSHashTable weakObjectsHashTable]; });
+    return tags;
+}
+
 + (BOOL)isFeedTag:(UIView *)tag {
     if (!tag.window) return NO;
     for (UIView *parent = tag; parent; parent = parent.superview)
@@ -91,6 +98,7 @@ static char kDYYYFeedTagGlassKey;
     if (!NSThread.isMainThread || !tag) return;
     DYYYFeedTagGlassState *state = objc_getAssociatedObject(tag, &kDYYYFeedTagGlassKey);
     if (!state || state.busy) return;
+    [[self tags] removeObject:tag];
     state.busy = YES;
     [state.glass removeFromSuperview];
     for (UIView *view in state.changes.keyEnumerator.allObjects) {
@@ -115,6 +123,7 @@ static char kDYYYFeedTagGlassKey;
     UIView *host = [self existingView:@"containerView" inTag:tag] ?: tag;
     if (CGRectIsEmpty(host.bounds)) { [self restoreTag:tag]; return; }
     if (state && state.host != host) { [self restoreTag:tag]; state = nil; }
+    [[self tags] addObject:tag];
     if (!state) {
         state = [DYYYFeedTagGlassState new];
         state.host = host;
@@ -169,5 +178,13 @@ static char kDYYYFeedTagGlassKey;
         if (![view isKindOfClass:UIImageView.class] && ![view isKindOfClass:UILabel.class] && ![view isKindOfClass:UIVisualEffectView.class])
             [queue addObjectsFromArray:view.subviews];
     }
+}
+
++ (void)refreshVisibleTags {
+    if (!NSThread.isMainThread) {
+        dispatch_async(dispatch_get_main_queue(), ^{ [self refreshVisibleTags]; });
+        return;
+    }
+    for (UIView *tag in [self tags].allObjects) [self decorateTag:tag];
 }
 @end
