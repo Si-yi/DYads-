@@ -14,6 +14,6 @@
 + (void)sendText:(NSString *)text toUserID:(NSString *)userID completion:(void (^)(BOOL success, NSString *reason))completion;
 + (void)sendText:(NSString *)text toUserID:(NSString *)userID manualTest:(BOOL)manualTest completion:(void (^)(BOOL success, NSString *reason))completion;
 + (NSString *)dailyStateForUserID:(NSString *)userID;
-+ (NSArray<NSDictionary *> *)unreadSharesForUsers:(NSArray<NSString *> *)userIDs error:(NSString **)error;
++ (void)unreadSharesForUsers:(NSArray<NSString *> *)userIDs completion:(void (^)(NSArray<NSDictionary *> *rows, NSString *warning))completion;
 @end
 

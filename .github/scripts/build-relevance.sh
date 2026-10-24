@@ -8,7 +8,7 @@ is_direct_build_path() {
     local path=$1
 
     case "$path" in
-        DYYY.plist|control|Resources/*|layout/*)
+        DYYY.plist|control|Resources/*|layout/*|Tests/*|.github/scripts/test-im-history.sh)
             return 0
             ;;
     esac

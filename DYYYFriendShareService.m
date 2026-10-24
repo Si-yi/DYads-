@@ -18,6 +18,7 @@
 @property (nonatomic) BOOL arranging;
 @property (nonatomic) BOOL openingPending;
 @property (nonatomic) BOOL scanScheduled;
+@property (nonatomic) BOOL scanInProgress;
 @property (nonatomic) BOOL backgrounded;
 @property (nonatomic) BOOL userDragging;
 @property (nonatomic) NSUInteger generation;
@@ -79,7 +80,7 @@
     NSString *account = [DYYYIMService accountID];
     if (![s.account isEqual:account]) {
         s.account = account;
-        s.generation++;
+        s.generation++; s.scanInProgress = NO;
         [s.queued removeAllObjects]; [s.active removeAllObjects]; [s.models removeAllObjects];
         [s.inFlight removeAllObjects]; [s.failed removeAllObjects];
         NSString *sourceKey = [self key:@"DYYYFriendShareSources"];
@@ -99,7 +100,7 @@
 }
 + (void)applicationEnteredBackground {
     DYYYFriendShareService *s = [self shared];
-    s.backgrounded = YES; s.generation++; s.scanScheduled = NO; s.displayedID = nil;
+    s.backgrounded = YES; s.generation++; s.scanScheduled = NO; s.scanInProgress = NO; s.displayedID = nil;
     [s.inFlight removeAllObjects];
 }
 + (void)applicationOpened {
@@ -109,7 +110,7 @@
     DYYYFriendShareService *s = [self shared];
     if (!s.backgrounded) return;
     s.backgrounded = NO; s.generation++; s.attempts = 0;
-    s.openingPending = YES; s.scanScheduled = NO; s.displayedID = nil;
+    s.openingPending = YES; s.scanScheduled = NO; s.scanInProgress = NO; s.displayedID = nil;
     [s.failed removeAllObjects];
     [self tryOpeningScan];
 }
@@ -122,7 +123,7 @@
 }
 + (void)tryOpeningScan {
     DYYYFriendShareService *s = [self shared];
-    if (![self enabled] || ![self automatic] || !s.openingPending || s.scanScheduled || s.attempts >= 8 || ![self homeVisible]) return;
+    if (![self enabled] || ![self automatic] || !s.openingPending || s.scanScheduled || s.scanInProgress || s.attempts >= 8 || ![self homeVisible]) return;
     if (NSClassFromString(@"FriendShareFeedService")) return;
     // 先同步账户，避免首次同步改变 generation 而取消本轮扫描。
     [self syncAccount];
@@ -131,13 +132,20 @@
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 2), dispatch_get_main_queue(), ^{
         if (generation != s.generation) return;
         s.scanScheduled = NO;
-        if (![self enabled] || ![self homeVisible] || !s.openingPending) return;
+        if (![self enabled] || ![self homeVisible] || !s.openingPending || s.scanInProgress) return;
         NSArray *users = [NSUserDefaults.standardUserDefaults arrayForKey:@"DYYYFriendShareFeedFriends"] ?: @[];
         if (!users.count) { s.openingPending = NO; return; }
-        NSString *failure = nil;
-        NSArray *rows = [DYYYIMService unreadSharesForUsers:users error:&failure];
-        if (failure) { if ([failure hasPrefix:@"本地消息服务尚未就绪"]) [self tryOpeningScan]; else s.openingPending = NO; return; }
-        s.openingPending = NO; [self queueRows:rows toast:NO];
+        s.scanInProgress = YES;
+        [DYYYIMService unreadSharesForUsers:users completion:^(NSArray *rows, NSString *warning) {
+            if (generation != s.generation) return;
+            s.scanInProgress = NO;
+            if (![users isEqualToArray:[NSUserDefaults.standardUserDefaults arrayForKey:@"DYYYFriendShareFeedFriends"] ?: @[]]) return;
+            if (![self enabled] || ![self automatic]) return;
+            s.state[@"lastScanWarning"] = warning ?: @"";
+            if (rows.count) [self queueRows:rows toast:NO];
+            if ([warning hasPrefix:@"本地消息服务尚未就绪"]) [self tryOpeningScan];
+            else s.openingPending = NO;
+        }];
     });
 }
 + (void)scanWithToast:(BOOL)showToast {
@@ -145,13 +153,24 @@
     if (![self enabled]) { if (showToast) [DYYYUtils showToast:@"请先开启好友分享进推荐"]; return; }
     if (NSClassFromString(@"FriendShareFeedService")) { if (showToast) [DYYYUtils showToast:@"请先移除原版自动消息插件，避免两套分享服务同时运行"]; return; }
     if (![self syncAccount]) { if (showToast) [DYYYUtils showToast:@"当前登录账户尚未就绪"]; return; }
-    [[self shared].failed removeAllObjects];
-    NSString *failure = nil;
+    DYYYFriendShareService *s = [self shared];
+    if (s.scanInProgress) { if (showToast) [DYYYUtils showToast:@"正在扫描好友分享，请稍候"]; return; }
     NSArray *users = [NSUserDefaults.standardUserDefaults arrayForKey:@"DYYYFriendShareFeedFriends"] ?: @[];
     if (!users.count) { if (showToast) [DYYYUtils showToast:@"请先选择分享来源好友"]; return; }
-    NSArray *rows = [DYYYIMService unreadSharesForUsers:users error:&failure];
-    if (failure) { if (showToast) [DYYYUtils showToast:failure]; return; }
-    [self queueRows:rows toast:showToast];
+    [s.failed removeAllObjects];
+    s.scanInProgress = YES;
+    NSUInteger generation = s.generation;
+    if (showToast) [DYYYUtils showToast:@"正在读取好友近期分享"];
+    [DYYYIMService unreadSharesForUsers:users completion:^(NSArray *rows, NSString *warning) {
+        if (generation != s.generation) return;
+        s.scanInProgress = NO;
+        s.openingPending = NO;
+        if (![users isEqualToArray:[NSUserDefaults.standardUserDefaults arrayForKey:@"DYYYFriendShareFeedFriends"] ?: @[]]) return;
+        if (![self enabled]) return;
+        s.state[@"lastScanWarning"] = warning ?: @"";
+        if (rows.count || !warning) [self queueRows:rows toast:showToast && !warning];
+        if (showToast && warning) [DYYYUtils showToast:warning];
+    }];
 }
 + (void)queueRows:(NSArray *)rows toast:(BOOL)toast {
     if (![self syncAccount]) return;

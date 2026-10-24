@@ -1,5 +1,6 @@
 #import "DYYYIMService.h"
 #import "AwemeHeaders.h"
+#import "DYYYIMHistoryReader.h"
 
 @interface DYYYIMService ()
 @property (nonatomic, strong) NSMapTable *services;
@@ -42,122 +43,128 @@
     }
 }
 
-// 运行时接口只声明 id：不能把所有版本的查询结果都假定为 NSArray。
+// 文字类型识别与分享扫描共用结果解包，支持原生按会话分组的返回值。
 + (NSArray *)messageArray:(id)value {
-    if ([value isKindOfClass:NSArray.class]) return value;
-    if ([value isKindOfClass:NSOrderedSet.class]) return [value array];
-    if ([value isKindOfClass:NSSet.class]) return [value allObjects];
-    if ([value isKindOfClass:NSDictionary.class]) {
-        for (NSString *key in @[@"messages", @"messageList", @"list", @"data"]) {
-            id list = value[key];
-            if ([list isKindOfClass:NSArray.class]) return list;
-            if ([list isKindOfClass:NSOrderedSet.class]) return [list array];
-        }
-        NSArray *objects = [value allValues];
-        if (!objects.count) return @[];
-        BOOL messages = YES;
-        for (id object in objects) if (![object respondsToSelector:@selector(belongingConversationIdentifier)]) { messages = NO; break; }
-        if (messages) return objects;
-    }
-    return nil;
+    return [DYYYIMHistoryReader messageArray:value];
 }
 
-+ (NSArray<NSDictionary *> *)unreadSharesForUsers:(NSArray<NSString *> *)userIDs error:(NSString **)error {
-    [self shared].scanState = [@{@"selectedUserCount":@(userIDs.count), @"stage":@"initializing"} mutableCopy];
++ (dispatch_queue_t)historyQueue {
+    static dispatch_queue_t queue;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ queue = dispatch_queue_create("com.dyyy.im-history", DISPATCH_QUEUE_SERIAL); });
+    return queue;
+}
+
++ (void)unreadSharesForUsers:(NSArray<NSString *> *)userIDs completion:(void (^)(NSArray<NSDictionary *> *, NSString *))completion {
+    if (!NSThread.isMainThread) {
+        dispatch_async(dispatch_get_main_queue(), ^{ [self unreadSharesForUsers:userIDs completion:completion]; });
+        return;
+    }
+    if (!completion) return;
+    NSMutableDictionary *state = [@{ @"selectedUserCount": @(userIDs.count), @"stage": @"initializing" } mutableCopy];
+    [self shared].scanState = state;
+    if (!userIDs.count) { completion(@[], nil); return; }
     NSString *account = [self accountID];
-    if (!userIDs.count) return @[];
     id sender = [[self shared].services objectForKey:@"sender"];
     TIMXOConversationManager *manager = [self serviceForRole:@"conversations" root:[self value:sender key:@"sdkRoot"]];
-    TIMXOMessageManager *messages = nil;
     id root = [self value:manager key:@"r"];
-    messages = [self serviceForRole:@"messages" root:root];
+    TIMXOMessageManager *messages = [self serviceForRole:@"messages" root:root];
     if (!account.length || !manager || !messages || !root || [self value:messages key:@"r"] != root) {
-        [self shared].scanState[@"stage"] = @"services_not_ready";
-        if (error) *error = @"本地消息服务尚未就绪，请先打开好友聊天再返回扫描";
-        return @[];
+        state[@"stage"] = @"services_not_ready";
+        completion(@[], @"本地消息服务尚未就绪，请先打开消息页再返回扫描");
+        return;
     }
     Class convClass = NSClassFromString(@"TIMXOConversation");
     if (![convClass respondsToSelector:@selector(instanceWithRootObject:identifier:)]) {
-        if (error) *error = @"当前版本的会话读取入口不可用";
-        return @[];
+        state[@"stage"] = @"conversation_api_unavailable";
+        completion(@[], @"当前版本的会话读取入口不可用");
+        return;
     }
-    NSString *historyKind = [[self shared].historyArguments objectForKey:messages];
-    [self shared].scanState[@"historyKind"] = historyKind ?: @"identifier_query";
-    NSMutableArray *rows = [NSMutableArray array];
-    NSMutableSet *seen = [NSMutableSet set];
-    @try {
-        for (NSString *peer in userIDs) {
-            if (![peer isKindOfClass:NSString.class] || peer.longLongValue <= 0 || [peer isEqual:account]) continue;
+    NSString *historyKind = [[[self shared].historyArguments objectForKey:messages] copy];
+    state[@"historyKind"] = historyKind ?: @"recent_with_identifier_fallback";
+    NSMutableArray *requests = [NSMutableArray array];
+    __block NSUInteger failed = 0;
+    // 在主线程校验账户及会话，后台只执行原生只读查询和消息解析。
+    for (NSString *peer in userIDs) {
+        if (![peer isKindOfClass:NSString.class] || peer.longLongValue <= 0 || [peer isEqual:account]) continue;
+        @try {
             NSString *cid = [manager conversationIDFor1to1ChatWithOtherUserID:peer.longLongValue inbox:0];
             if (!cid.length || ![manager conversationExitsInDB:cid]) continue;
             TIMXOConversation *conv = [(id)convClass instanceWithRootObject:root identifier:cid];
-            if (![self validateConversation:conv manager:manager account:account peer:peer identifier:cid]) {
-                [self shared].lastFailure = @"scan: participant validation failed";
-                if (error) *error = @"会话参与者未就绪，请稍后重试扫描";
-                return @[];
-            }
-            unsigned long long unread = conv.unreadCount;
-            if (!unread) continue;
-            id argument = [historyKind isEqual:@"identifier"] ? (id)cid : conv;
-            id raw = nil;
-            NSArray *result = nil;
-            BOOL usedEarliest = NO;
-            if (historyKind.length) {
-                raw = [messages messagesInConversation:argument excludeMessageTypes:@[] limit:MIN(MAX(unread, 100ULL), 2000ULL)];
-                result = [self messageArray:raw];
-            }
-            // 明确接收会话 identifier 的原生入口，不再依赖返回类型未确认的全局时间查询。
-            if (!result && [messages respondsToSelector:@selector(earliestMessagesInConversationWithIdentifier:limit:)]) {
-                usedEarliest = YES;
-                raw = [messages earliestMessagesInConversationWithIdentifier:cid limit:2000];
-                result = [self messageArray:raw];
-            }
-            [self shared].scanState[@"query"] = usedEarliest ? @"earliest_by_identifier" : @"observed_conversation_query";
-            [self shared].scanState[@"returnClass"] = raw ? NSStringFromClass([raw class]) : @"nil";
-            if (!result) {
-                [self shared].scanState[@"stage"] = @"unreadable_result";
-                if (error) *error = @"该好友的本地消息查询未返回可读取列表，请导出当前记录";
-                return @[];
-            }
-            [self shared].scanState[@"messageCount"] = @(result.count);
-            NSString *lastID = conv.lastMessage.identifier;
-            BOOL coversLatest = NO;
-            for (TIMXOMessage *message in result) if ([message.identifier isEqual:lastID]) { coversLatest = YES; break; }
-            if (usedEarliest && result.count >= 2000 && !coversLatest) {
-                [self shared].scanState[@"stage"] = @"history_window_incomplete";
-                if (error) *error = @"该好友历史消息超过读取窗口，请先打开好友聊天后重新扫描";
-                return @[];
-            }
-            // 先按时间排序，避免底层返回顺序变化时取到旧的已读消息。
-            NSArray *history = [result sortedArrayUsingComparator:^NSComparisonResult(TIMXOMessage *a, TIMXOMessage *b) {
-                NSDate *da = a.createdAt, *db = b.createdAt;
-                return [da isKindOfClass:NSDate.class] && [db isKindOfClass:NSDate.class] ? [db compare:da] : NSOrderedSame;
-            }];
-            NSString *boundary = conv.firstUnreadMessageID;
-            NSUInteger incoming = 0;
-            for (TIMXOMessage *message in history) {
-                BOOL lastUnread = boundary.length && [message.identifier isEqual:boundary];
-                if (incoming >= unread) break;
-                if (message.sender != peer.longLongValue) { if (lastUnread) break; else continue; }
-                incoming++;
-                NSMutableOrderedSet *itemIDs = [NSMutableOrderedSet orderedSet];
-                NSUInteger budget = 500;
-                [self collectSharedIDs:message.content into:itemIDs depth:0 budget:&budget];
-                for (NSString *itemID in itemIDs) {
-                    if ([seen containsObject:itemID]) continue;
-                    [seen addObject:itemID];
-                    [rows addObject:@{@"itemID":itemID, @"friendID":peer}];
-                }
-                if (lastUnread) break;
+            if (![self validateConversation:conv manager:manager account:account peer:peer identifier:cid]) { failed++; continue; }
+            if (!conv.unreadCount) continue;
+            id latest = conv.lastMessage;
+            if (!latest) { failed++; continue; }
+            [requests addObject:@{ @"peer": peer, @"cid": cid, @"conversation": conv, @"latest": latest,
+                @"unread": @(conv.unreadCount), @"boundary": conv.firstUnreadMessageID ?: @"" }];
+        } @catch (__unused NSException *exception) { failed++; }
+    }
+    state[@"stage"] = @"reading_recent";
+    state[@"unreadConversationCount"] = @(requests.count);
+    dispatch_async([self historyQueue], ^{
+        NSMutableArray *rows = [NSMutableArray array];
+        NSMutableSet *seen = [NSMutableSet set];
+        NSMutableArray *queries = [NSMutableArray array];
+        for (NSDictionary *request in requests) {
+            @autoreleasepool {
+                NSMutableDictionary *diagnostics = [NSMutableDictionary dictionary];
+                [queries addObject:diagnostics];
+                NSString *cid = request[@"cid"], *peer = request[@"peer"];
+                @try {
+                    id observed = nil;
+                    if (historyKind.length && [messages respondsToSelector:@selector(messagesInConversation:excludeMessageTypes:limit:)]) {
+                        // 仅使用已经观察到的参数类型，不能根据 id 声明猜会话对象/字符串。
+                        id argument = [historyKind isEqual:@"identifier"] ? (id)cid : request[@"conversation"];
+                        @try { observed = [messages messagesInConversation:argument excludeMessageTypes:@[] limit:2000]; }
+                        @catch (__unused NSException *exception) { diagnostics[@"observedQueryFailed"] = @YES; }
+                    }
+                    id (^recentQuery)(NSTimeInterval, NSUInteger) = nil;
+                    if ([messages respondsToSelector:@selector(messagesBeforeTime:inTypes:limit:)]) {
+                        recentQuery = ^id(NSTimeInterval before, NSUInteger limit) {
+                            return [messages messagesBeforeTime:before inTypes:nil limit:limit];
+                        };
+                    }
+                    id (^earliestQuery)(NSUInteger) = nil;
+                    if ([messages respondsToSelector:@selector(earliestMessagesInConversationWithIdentifier:limit:)]) {
+                        earliestQuery = ^id(NSUInteger limit) {
+                            return [messages earliestMessagesInConversationWithIdentifier:cid limit:(long long)limit];
+                        };
+                    }
+                    NSArray *history = [DYYYIMHistoryReader historyForConversation:cid latestMessage:request[@"latest"]
+                        observedResult:observed recentQuery:recentQuery earliestQuery:earliestQuery diagnostics:diagnostics];
+                    if (!history) { failed++; continue; }
+                    diagnostics[@"messageCount"] = @(history.count);
+                    NSArray *incoming = [DYYYIMHistoryReader unreadIncomingMessages:history peerID:peer.longLongValue
+                        unreadCount:[request[@"unread"] unsignedIntegerValue] firstUnreadID:request[@"boundary"]];
+                    diagnostics[@"incomingCount"] = @(incoming.count);
+                    for (TIMXOMessage *message in incoming) {
+                        NSMutableOrderedSet *ids = [NSMutableOrderedSet orderedSet];
+                        NSUInteger budget = 500;
+                        [self collectSharedIDs:message.content into:ids depth:0 budget:&budget];
+                        for (NSString *itemID in ids) {
+                            if ([seen containsObject:itemID]) continue;
+                            [seen addObject:itemID];
+                            [rows addObject:@{ @"itemID": itemID, @"friendID": peer }];
+                        }
+                    }
+                } @catch (__unused NSException *exception) { diagnostics[@"query"] = @"query_exception"; failed++; }
             }
         }
-    } @catch (__unused NSException *exception) {
-        if (error) *error = @"读取本地未读消息失败，未修改会话或推荐列表";
-        return @[];
-    }
-    [self shared].scanState[@"stage"] = @"complete";
-    [self shared].scanState[@"sharedVideoCount"] = @(rows.count);
-    return rows;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            // 读取途中切换账户时整批丢弃，不向新账户插入上一账户的分享。
+            if (![[self accountID] isEqual:account]) {
+                state[@"stage"] = @"account_changed";
+                completion(@[], @"扫描时登录账户已变化，请重新扫描");
+                return;
+            }
+            state[@"queries"] = queries;
+            state[@"failedConversationCount"] = @(failed);
+            state[@"sharedVideoCount"] = @(rows.count);
+            state[@"stage"] = failed ? @"partial" : @"complete";
+            NSString *warning = failed ? (rows.count ? @"部分好友近期消息暂不可读，已继续加载其余好友的分享" : @"好友近期消息暂不可读，请导出本次调试记录") : nil;
+            completion(rows, warning);
+        });
+    });
 }
 
 + (instancetype)shared {

@@ -20,6 +20,8 @@ on:
       - 'Makefile'
       - 'Resources/**'
       - 'layout/**'
+      - 'Tests/**'
+      - '.github/scripts/test-im-history.sh'
   workflow_dispatch:
     inputs:
       scheme:
@@ -72,6 +74,9 @@ jobs:
         with:
           submodules: true
           fetch-depth: 0
+
+      - name: Test IM history reading
+        run: bash .github/scripts/test-im-history.sh
 
       - name: Check cache
         run: |
