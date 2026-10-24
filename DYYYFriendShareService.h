@@ -9,7 +9,9 @@
 + (void)scanWithToast:(BOOL)showToast;
 + (NSArray *)arrangeData:(NSArray *)data controller:(id)controller;
 + (void)homeDidScroll:(UIViewController *)feed;
-+ (void)homeWillDrag:(UIViewController *)feed;
++ (void)homeDidScroll:(UIViewController *)feed scrollView:(UIScrollView *)scrollView;
++ (void)homeWillDrag:(UIViewController *)feed scrollView:(UIScrollView *)scrollView;
++ (void)homeDidLeave:(UIViewController *)feed;
 + (void)homeWillLoop:(UIViewController *)feed;
 + (void)homePlaybackTouched:(UIViewController *)feed;
 + (void)homePlaybackAdvanced:(UIViewController *)feed time:(NSTimeInterval)time;

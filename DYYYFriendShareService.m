@@ -1,5 +1,6 @@
 #import "DYYYFriendShareService.h"
 #import "DYYYIMService.h"
+#import "DYYYFriendShareHistory.h"
 #import "DYYYUtils.h"
 #import "AwemeHeaders.h"
 #include <string.h>
@@ -7,6 +8,8 @@
 @interface DYYYFriendShareService ()
 @property (nonatomic, weak) AWEFeedTableViewController *home;
 @property (nonatomic, copy) NSString *account;
+@property (nonatomic, strong) DYYYFriendShareHistory *history;
+@property (nonatomic) NSUInteger restoredGeneration;
 @property (nonatomic, strong) NSMutableOrderedSet *queued;
 @property (nonatomic, strong) NSMutableOrderedSet *active;
 @property (nonatomic, strong) NSMutableDictionary *models;
@@ -57,6 +60,9 @@
     state[@"readyCount"] = @(s.models.count);
     state[@"insertedCount"] = @(s.active.count);
     state[@"sourceCount"] = @(s.sources.count);
+    state[@"persistedPendingCount"] = @(s.history.pendingRows.count);
+    state[@"watchedCount"] = @(s.history.watchedItemIDs.count);
+    state[@"watchHistory"] = [s.history diagnostics] ?: @{};
     state[@"pendingPlayback"] = @(s.pendingPlaybackID.length > 0);
     state[@"waitingToInsert"] = @(s.waitingToInsert);
     state[@"currentItemID"] = [self itemID:s.home.currentAweme] ?: @"";
@@ -97,6 +103,9 @@
         NSString *sourceKey = [self key:@"DYYYFriendShareSources"];
         NSDictionary *storedSources = sourceKey ? [NSUserDefaults.standardUserDefaults dictionaryForKey:sourceKey] : nil;
         s.sources = storedSources ? [storedSources mutableCopy] : [NSMutableDictionary dictionary];
+        s.history = [[DYYYFriendShareHistory alloc] initWithDefaults:NSUserDefaults.standardUserDefaults account:account];
+        [s.history importLegacySources:s.sources];
+        s.restoredGeneration = NSNotFound;
         s.pool = nil; s.displayedID = nil;
     }
     return account.length > 0;
@@ -111,6 +120,7 @@
 }
 + (void)applicationEnteredBackground {
     DYYYFriendShareService *s = [self shared];
+    [s.history resetPlayback]; s.userDragging = NO;
     s.backgrounded = YES; s.generation++; s.pendingPlaybackID = nil; s.playbackTicket++; s.selectedOpeningShare = NO; s.waitingToInsert = NO; s.scanScheduled = NO; s.scanInProgress = NO; s.displayedID = nil;
     [s.inFlight removeAllObjects];
 }
@@ -123,21 +133,55 @@
     s.backgrounded = NO; s.generation++; s.attempts = 0; s.selectedOpeningShare = NO;
     s.openingPending = YES; s.scanScheduled = NO; s.scanInProgress = NO; s.displayedID = nil;
     [s.failed removeAllObjects];
+    [s.history resetPlayback];
+    if ([self automatic]) [self restoreSavedShares];
     [self tryOpeningScan];
 }
 + (void)bindHomeFeed:(UIViewController *)feed {
     AWEFeedTableViewController *home = (id)feed;
     if (![home respondsToSelector:@selector(dataController)] || ![home.dataController isKindOfClass:NSClassFromString(@"AWEHotListDataController")]) return;
     [self shared].home = home;
+    if ([self automatic]) [self restoreSavedShares];
     if ([self shared].openingPending && [self automatic]) [self cleanOpeningCache];
     [self tryOpeningScan]; [self insertQueued]; [self homeDidScroll:feed];
+}
++ (void)restoreSavedShares {
+    if (![self enabled] || NSClassFromString(@"FriendShareFeedService") || ![self syncAccount]) return;
+    DYYYFriendShareService *s = [self shared];
+    if (s.restoredGeneration == s.generation) return;
+    s.restoredGeneration = s.generation;
+    [self enqueueSavedRowsIncludingActive:YES];
+    s.state[@"restoredPendingCount"] = @(s.queued.count);
+    [self insertQueued];
+}
++ (void)enqueueSavedRowsIncludingActive:(BOOL)includeActive {
+    DYYYFriendShareService *s = [self shared];
+    NSSet *selected = [NSSet setWithArray:[NSUserDefaults.standardUserDefaults arrayForKey:@"DYYYFriendShareFeedFriends"] ?: @[]];
+    for (NSDictionary *row in s.history.pendingRows) {
+        NSString *itemID = row[@"itemID"];
+        if (![selected containsObject:row[@"friendID"] ?: @""]) continue;
+        NSMutableDictionary *source = [row mutableCopy];
+        [source removeObjectForKey:@"itemID"];
+        s.sources[itemID] = source;
+        if (includeActive || ![s.active containsObject:itemID]) [s.queued addObject:itemID];
+    }
+}
++ (void)orderActiveShares {
+    DYYYFriendShareService *s = [self shared];
+    NSMutableOrderedSet *ordered = [NSMutableOrderedSet orderedSet];
+    for (NSDictionary *row in s.history.pendingRows)
+        if ([s.active containsObject:row[@"itemID"]]) [ordered addObject:row[@"itemID"]];
+    // 已播完但仍在屏幕上的当前视频不能立即从列表移走。
+    [ordered addObjectsFromArray:s.active.array];
+    s.active = ordered;
 }
 + (void)tryOpeningScan {
     DYYYFriendShareService *s = [self shared];
     if (![self enabled] || ![self automatic] || !s.openingPending || s.scanScheduled || s.scanInProgress || s.attempts >= 8 || ![self homeVisible]) return;
     if (NSClassFromString(@"FriendShareFeedService")) return;
-    // 先同步账户，避免首次同步改变 generation 而取消本轮扫描。
+    // 先同步账户和持久待刷队列；即使本次消息读取失败也能恢复上次未刷分享。
     [self syncAccount];
+    [self restoreSavedShares];
     s.attempts++; s.scanScheduled = YES;
     NSUInteger generation = s.generation;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 2), dispatch_get_main_queue(), ^{
@@ -170,6 +214,8 @@
     if (!users.count) { if (showToast) [DYYYUtils showToast:@"请先选择分享来源好友"]; return; }
     [s.failed removeAllObjects];
     s.selectedOpeningShare = NO;
+    s.restoredGeneration = NSNotFound;
+    [self restoreSavedShares];
     s.scanInProgress = YES;
     NSUInteger generation = s.generation;
     if (showToast) [DYYYUtils showToast:@"正在读取好友近期分享"];
@@ -194,24 +240,32 @@
     for (NSDictionary *friend in friends) {
         if ([friend isKindOfClass:NSDictionary.class] && [friend[@"userID"] isKindOfClass:NSString.class]) friendsByID[friend[@"userID"]] = friend;
     }
+    NSMutableArray *saved = [NSMutableArray array];
     for (NSDictionary *row in rows) {
         NSString *itemID = row[@"itemID"], *friendID = row[@"friendID"];
         if (![itemID isKindOfClass:NSString.class] || !itemID.length || [watched containsObject:itemID]) continue;
+        NSMutableDictionary *pending = [row mutableCopy];
         if ([friendID isKindOfClass:NSString.class] && friendID.length) {
             NSDictionary *friend = friendsByID[friendID];
-            NSString *name = [friend[@"name"] isKindOfClass:NSString.class] ? friend[@"name"] : @"好友";
-            NSString *avatar = [friend[@"avatar"] isKindOfClass:NSString.class] ? friend[@"avatar"] : @"";
-            s.sources[itemID] = @{ @"friendID": friendID, @"name": name.length ? name : @"好友", @"avatar": avatar,
-                                  @"collectedAt": @(NSDate.date.timeIntervalSince1970) };
+            pending[@"name"] = [friend[@"name"] isKindOfClass:NSString.class] ? friend[@"name"] : @"好友";
+            pending[@"avatar"] = [friend[@"avatar"] isKindOfClass:NSString.class] ? friend[@"avatar"] : @"";
+            pending[@"collectedAt"] = @(NSDate.date.timeIntervalSince1970);
         }
-        if (![s.active containsObject:itemID]) [s.queued addObject:itemID];
+        [saved addObject:pending];
     }
-    // 分享来源与聊天已读状态独立保存；只保留最近 256 条，避免缓存持续增长。
-    if (s.sources.count > 256) {
-        NSArray *oldest = [s.sources keysSortedByValueUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
+    // 先落盘再加载/插入。模型失败、尚未显示、聊天已读或进程退出都不会消费队列。
+    [s.history mergeRows:saved];
+    [self enqueueSavedRowsIncludingActive:NO];
+    // 待刷来源全部保留；只裁剪已完成的旧来源，不能因超过 256 条丢未刷分享。
+    NSMutableSet *pendingIDs = [NSMutableSet set];
+    for (NSDictionary *row in s.history.pendingRows) [pendingIDs addObject:row[@"itemID"]];
+    NSMutableDictionary *completed = [s.sources mutableCopy];
+    [completed removeObjectsForKeys:pendingIDs.allObjects];
+    if (completed.count > 256) {
+        NSArray *oldest = [completed keysSortedByValueUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
             return [@([a[@"collectedAt"] doubleValue]) compare:@([b[@"collectedAt"] doubleValue])];
         }];
-        [s.sources removeObjectsForKeys:[oldest subarrayWithRange:NSMakeRange(0, s.sources.count - 256)]];
+        [s.sources removeObjectsForKeys:[oldest subarrayWithRange:NSMakeRange(0, completed.count - 256)]];
     }
     NSString *sourceKey = [self key:@"DYYYFriendShareSources"];
     if (sourceKey) [NSUserDefaults.standardUserDefaults setObject:s.sources forKey:sourceKey];
@@ -334,7 +388,7 @@
 }
 + (void)insertQueued {
     DYYYFriendShareService *s = [self shared];
-    if (![self enabled] || ![self syncAccount] || ![self homeVisible] || s.arranging || !s.queued.count) return;
+    if (![self enabled] || NSClassFromString(@"FriendShareFeedService") || ![self syncAccount] || ![self homeVisible] || s.arranging || !s.queued.count) return;
     AWEFeedTableViewController *home = s.home;
     id nativeTable = [self value:home key:@"tableView"];
     if ([nativeTable isKindOfClass:UIScrollView.class] && ([nativeTable isTracking] || [nativeTable isDragging] || [nativeTable isDecelerating])) return;
@@ -380,6 +434,7 @@
             else { [s.failed addObject:itemID]; s.state[@"stage"] = @"insert_not_confirmed"; }
         }
     } @finally { s.arranging = NO; }
+    [self orderActiveShares];
     if (inserted) {
         [self saveIDs:known name:@"DYYYFriendShareInsertedItemIDs"];
         s.state[@"stage"] = @"inserted";
@@ -532,12 +587,18 @@
     s.state[@"playbackStage"] = @"user_controlled";
 }
 + (void)homePlaybackAdvanced:(UIViewController *)feed time:(NSTimeInterval)time {
+    if (!NSThread.isMainThread) {
+        __weak UIViewController *weakFeed = feed;
+        dispatch_async(dispatch_get_main_queue(), ^{ [self homePlaybackAdvanced:weakFeed time:time]; });
+        return;
+    }
     DYYYFriendShareService *s = [self shared];
     if (s.home != feed || time <= 0 || ![self enabled]) return;
     if (s.waitingToInsert && [self homeVisible] && [s.home respondsToSelector:@selector(isPlaying)] && [s.home isPlaying]) {
         s.waitingToInsert = NO;
         dispatch_async(dispatch_get_main_queue(), ^{ [self insertQueued]; });
     }
+    if ([self homeVisible]) [s.history recordPlaybackForItemID:[self itemID:s.home.currentAweme] time:time];
     if (!s.pendingPlaybackID.length || ![self homeVisible]) return;
     if (![s.state[@"playbackStage"] isEqual:@"native_play_requested"]) return;
     if (![[self itemID:s.home.currentAweme] isEqual:s.pendingPlaybackID]) return;
@@ -545,25 +606,54 @@
     s.state[@"playbackStage"] = @"progress_confirmed";
     s.state[@"confirmedPlayTime"] = @(time);
 }
-+ (void)markWatched:(NSString *)itemID {
-    DYYYFriendShareService *s = [self shared];
-    if (!itemID.length || ![self enabled] || ![self syncAccount]) return;
-    if (![s.active containsObject:itemID] && ![[self storedIDs:@"DYYYFriendShareInsertedItemIDs"] containsObject:itemID]) return;
-    NSMutableSet *watched = [self storedIDs:@"DYYYFriendShareWatchedItemIDs"];
-    if ([watched containsObject:itemID]) return;
-    [watched addObject:itemID]; [self saveIDs:watched name:@"DYYYFriendShareWatchedItemIDs"];
-    [s.queued removeObject:itemID];
+// history 已完成真实观看判定并持久化；这里只清理本轮加载队列，保留当前 Cell。
++ (void)didConsumeItemID:(NSString *)itemID {
+    if (itemID.length) [[self shared].queued removeObject:itemID];
 }
 + (void)homeDidScroll:(UIViewController *)feed {
     DYYYFriendShareService *s = [self shared];
     if (s.home != feed || ![self enabled] || ![self homeVisible] || ![self syncAccount]) return;
+    id table = [self value:s.home key:@"tableView"];
+    if ([table isKindOfClass:UIScrollView.class] && ([table isTracking] || [table isDragging] || [table isDecelerating])) return;
     NSString *current = [self itemID:s.home.currentAweme];
     if (!current.length) return;
-    if (![current isEqual:s.displayedID] && s.userDragging && s.displayedID.length) [self markWatched:s.displayedID];
+    if (s.userDragging) [self didConsumeItemID:[s.history finishDraggingToItemID:current]];
     s.userDragging = NO; s.displayedID = current;
     if (s.queued.count && !s.inFlight.count) [self insertQueued];
 }
-+ (void)homeWillDrag:(UIViewController *)feed { if ([self shared].home == feed && [self homeVisible]) { [self homePlaybackTouched:feed]; [self homeDidScroll:feed]; [self shared].userDragging = YES; } }
-+ (void)homeWillLoop:(UIViewController *)feed { if ([self shared].home == feed && [self homeVisible]) [self markWatched:[self itemID:[self shared].home.currentAweme]]; }
-+ (void)clearWatched { NSString *key = [self key:@"DYYYFriendShareWatchedItemIDs"]; if (key) [NSUserDefaults.standardUserDefaults removeObjectForKey:key]; }
++ (void)homeDidScroll:(UIViewController *)feed scrollView:(UIScrollView *)scrollView {
+    if (scrollView != [self value:feed key:@"tableView"]) return;
+    [self homeDidScroll:feed];
+}
++ (void)homeWillDrag:(UIViewController *)feed scrollView:(UIScrollView *)scrollView {
+    DYYYFriendShareService *s = [self shared];
+    if (s.home != feed || scrollView != [self value:feed key:@"tableView"] || ![self enabled] || ![self homeVisible] || ![self syncAccount]) return;
+    [self homePlaybackTouched:feed];
+    [s.history beginDraggingFromItemID:[self itemID:s.home.currentAweme]];
+    s.userDragging = YES;
+}
++ (void)homeWillLoop:(UIViewController *)feed {
+    if (!NSThread.isMainThread) {
+        __weak UIViewController *weakFeed = feed;
+        dispatch_async(dispatch_get_main_queue(), ^{ [self homeWillLoop:weakFeed]; });
+        return;
+    }
+    DYYYFriendShareService *s = [self shared];
+    if (s.home != feed || ![self enabled] || ![self homeVisible] || ![self syncAccount]) return;
+    NSString *itemID = [self itemID:s.home.currentAweme];
+    if ([s.history completeLoopForItemID:itemID]) [self didConsumeItemID:itemID];
+}
++ (void)homeDidLeave:(UIViewController *)feed {
+    DYYYFriendShareService *s = [self shared];
+    if (s.home != feed) return;
+    [s.history resetPlayback]; s.userDragging = NO;
+    s.playbackTicket++; s.pendingPlaybackID = nil;
+}
++ (void)clearWatched {
+    if (![self syncAccount]) return;
+    DYYYFriendShareService *s = [self shared];
+    [s.history clearWatched];
+    [s.history importLegacySources:s.sources];
+    s.restoredGeneration = NSNotFound;
+}
 @end

@@ -556,7 +556,7 @@ static NSString *const kDYYYFriendShareFriends = @"DYYYFriendShareFeedFriends";
     AWESettingItemModel *allToast = [self setting:@{ @"identifier" : kDYYYAutoMessageAllSentToast, @"title" : @"显示已全部发送提示", @"detail" : @"", @"cellType" : @6, @"imageName" : @"ic_bell_outlined_20" }];
 
     AWESettingItemModel *feedEnabled = [self setting:@{ @"identifier" : kDYYYFriendShareEnabled, @"title" : @"启用好友分享进推荐", @"detail" : @"", @"cellType" : @6, @"imageName" : @"ic_video_outlined_20" }];
-    AWESettingItemModel *autoRefresh = [self setting:@{ @"identifier" : kDYYYFriendShareAutoRefresh, @"title" : @"每次打开抖音刷新", @"subTitle" : @"新分享置顶，原首条接在后面", @"detail" : @"", @"cellType" : @6, @"imageName" : @"ic_circlearrowin_outlined_20" }];
+    AWESettingItemModel *autoRefresh = [self setting:@{ @"identifier" : kDYYYFriendShareAutoRefresh, @"title" : @"每次打开抖音刷新", @"subTitle" : @"继续推送未刷分享，并加入新分享", @"detail" : @"", @"cellType" : @6, @"imageName" : @"ic_circlearrowin_outlined_20" }];
     AWESettingItemModel *sourceFriends = [self setting:@{ @"identifier" : kDYYYFriendShareFriends, @"title" : @"选择分享来源好友", @"detail" : @"", @"cellType" : @26, @"imageName" : @"ic_user_outlined_20" }];
     sourceFriends.detail = [NSString stringWithFormat:@"%lu 人", (unsigned long)[[[self defaults] arrayForKey:kDYYYFriendShareFriends] count]];
     sourceFriends.cellTappedBlock = ^{
@@ -575,7 +575,7 @@ static NSString *const kDYYYFriendShareFriends = @"DYYYFriendShareFeedFriends";
 
     return @[
         [DYYYSettingsHelper createSectionWithTitle:@"自动消息" footerTitle:@"开启后在抖音启动时处理配置；不发送时间段内不会触发。" items:@[enabled, configs, status, keyword, noSend, toast, allToast]],
-        [DYYYSettingsHelper createSectionWithTitle:@"好友分享进推荐" footerTitle:@"冷启动或从后台返回时，新分享排在原首条之前；播放结束或手动滑走后记为已刷，聊天未读也不会重复推送。" items:@[feedEnabled, autoRefresh, sourceFriends, scan, clear]]
+        [DYYYSettingsHelper createSectionWithTitle:@"好友分享进推荐" footerTitle:@"未刷分享会保存到下次打开，并与新分享一起排在首页前面；实际播放后滑到下一条，或播完一轮，才记为已刷。只搜索、退出或卡在首帧不会清除待刷记录。" items:@[feedEnabled, autoRefresh, sourceFriends, scan, clear]]
     ];
 }
 

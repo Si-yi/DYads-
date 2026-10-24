@@ -41,21 +41,25 @@
     %orig;
     [DYYYFriendShareService bindHomeFeed:self];
 }
+- (void)viewDidDisappear:(BOOL)animated {
+    %orig;
+    [DYYYFriendShareService homeDidLeave:self];
+}
 - (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView {
     %orig;
-    [DYYYFriendShareService homeDidScroll:self];
+    [DYYYFriendShareService homeDidScroll:self scrollView:scrollView];
 }
 - (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView {
     %orig;
-    [DYYYFriendShareService homeWillDrag:self];
+    [DYYYFriendShareService homeWillDrag:self scrollView:scrollView];
 }
 - (void)scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate {
     %orig;
-    if (!decelerate) [DYYYFriendShareService homeDidScroll:self];
+    if (!decelerate) [DYYYFriendShareService homeDidScroll:self scrollView:scrollView];
 }
 - (void)scrollViewDidEndScrollingAnimation:(UIScrollView *)scrollView {
     %orig;
-    [DYYYFriendShareService homeDidScroll:self];
+    [DYYYFriendShareService homeDidScroll:self scrollView:scrollView];
 }
 - (void)videoPlayer:(id)player didSingleClick:(id)event {
     [DYYYFriendShareService homePlaybackTouched:self];
