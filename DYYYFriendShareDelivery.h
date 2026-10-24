@@ -8,6 +8,8 @@
                   watchedIDs:(NSSet<NSString *> *)watchedIDs currentItemID:(NSString *)currentItemID;
 /// 通过原生数据源 setter 一次替换列表，再重算供首页播放的过滤列表。
 + (BOOL)replaceFeed:(NSArray *)feed controller:(id)controller;
+/// 重载原生表格，再同步目标索引，避免只更新数据源仍显示旧 Cell。
++ (BOOL)reloadFeed:(id)feed atIndex:(NSUInteger)index;
 /// 只准备并播放身份匹配的 Cell；allowed 由首页可见性及用户操作校验决定。
 + (BOOL)prepareAndPlayCell:(id)cell itemID:(NSString *)itemID allowed:(BOOL)allowed;
 @end

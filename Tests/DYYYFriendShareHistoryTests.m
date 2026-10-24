@@ -40,11 +40,11 @@
         [history mergeRows:[self rowsFrom:10 count:2]];
         [history mergeRows:[self rowsFrom:0 count:12]];
         [self check:history.pendingRows.count == 9 reason:@"七条未刷加两条新分享，重复扫描不能复活已刷或生成重复项"];
-        // 只搜索/退后台、单个缓存进度、卡在首帧、取消滑动均不能消费。
+        // 只搜索/退后台、单个缓存进度或取消滑动不能消费。
         [history recordPlaybackForItemID:@"video-3" time:0];
         [history recordPlaybackForItemID:@"video-3" time:0];
         [history beginDraggingFromItemID:@"video-3"];
-        [self check:[history finishDraggingToItemID:@"video-4"] == nil reason:@"卡首帧后切走仍保留"];
+        [self check:[history finishDraggingToItemID:@"video-3"] == nil reason:@"卡首帧停留或取消滑动仍保留"];
         [history resetPlayback];
         [history recordPlaybackForItemID:@"video-3" time:5];
         [self check:![history completeLoopForItemID:@"video-3"] reason:@"单个缓存时间不能伪装完成播放"];
@@ -91,6 +91,34 @@
         [late resetPlayback];
         [self check:[late finishDraggingToItemID:@"video-4"] == nil && late.pendingRows.count == 9
             reason:@"导航或退出使旧结算失效，不能把下一次进入误当成划走"];
+        // 实际手动划走不要求播放器送来两次进度，快速跳过、暂停/图文也不能重推。
+        DYYYFriendShareHistory *manual = [[DYYYFriendShareHistory alloc] initWithDefaults:defaults account:@"manual-swipe"];
+        [manual mergeRows:[self rowsFrom:0 count:10]];
+        [self check:[manual finishDraggingToItemID:@"video-1"] == nil reason:@"没有实际手势起点，自动换页不能消费"];
+        [manual beginDraggingFromItemID:@"video-0"];
+        [self check:[manual finishDraggingToItemID:@"video-0"] == nil reason:@"无进度且取消滑动仍保留"];
+        for (NSUInteger i = 0; i < 3; i++) {
+            NSString *start = [NSString stringWithFormat:@"video-%lu", (unsigned long)i];
+            NSString *end = [NSString stringWithFormat:@"video-%lu", (unsigned long)(i + 1)];
+            [manual beginDraggingFromItemID:start];
+            [self check:[[manual finishDraggingToItemID:end] isEqual:start] reason:@"明确划走当前可见视频，即使无进度也记已刷"];
+        }
+        manual = [[DYYYFriendShareHistory alloc] initWithDefaults:defaults account:@"manual-swipe"];
+        [self check:manual.pendingRows.count == 7 && manual.watchedItemIDs.count == 3 reason:@"无进度刷三条后重启，也只恢复七条"];
+        [manual mergeRows:[self rowsFrom:0 count:12]];
+        [self check:manual.pendingRows.count == 9 reason:@"合并两条新分享不能复活已划走的三条"];
+        [manual beginDraggingFromItemID:@"video-3"];
+        [manual resetPlayback];
+        [self check:[manual finishDraggingToItemID:@"video-4"] == nil && manual.pendingRows.count == 9
+            reason:@"进入搜索/退出使手势失效，不能消费未刷项目"];
+        for (NSDictionary *row in manual.pendingRows) {
+            [manual beginDraggingFromItemID:row[@"itemID"]];
+            [manual finishDraggingToItemID:@"native-next-video"];
+        }
+        manual = [[DYYYFriendShareHistory alloc] initWithDefaults:defaults account:@"manual-swipe"];
+        [manual mergeRows:[self rowsFrom:0 count:12]];
+        [self check:manual.pendingRows.count == 0 && manual.watchedItemIDs.count == 12
+            reason:@"无进度手动刷完整批后重启和重复扫描都不能再推"];
         // 切账户隔离；模型加载失败不触碰持久待刷队列。
         DYYYFriendShareHistory *other = [[DYYYFriendShareHistory alloc] initWithDefaults:defaults account:@"B"];
         [other mergeRows:[self rowsFrom:0 count:10]];

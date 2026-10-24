@@ -1,5 +1,6 @@
 #import "DYYYFriendShareDelivery.h"
 #include <string.h>
+#include <limits.h>
 
 @implementation DYYYFriendShareDelivery
 + (NSString *)itemID:(id)model {
@@ -49,6 +50,25 @@
         calculateCall.target = controller; calculateCall.selector = calculate;
         [calculateCall invoke];
         // YES 仅表示完成调用；服务仍必须回读两个列表，逐 ID 确认。
+        return YES;
+    } @catch (__unused NSException *exception) { return NO; }
+}
++ (BOOL)reloadFeed:(id)feed atIndex:(NSUInteger)index {
+    if (!feed || index > LLONG_MAX) return NO;
+    @try {
+        SEL reload = NSSelectorFromString(@"reloadTableViewData");
+        SEL select = NSSelectorFromString(@"reloadWithCurrentIndex:");
+        NSMethodSignature *reloadSignature = [feed methodSignatureForSelector:reload];
+        NSMethodSignature *selectSignature = [feed methodSignatureForSelector:select];
+        if (!reloadSignature || reloadSignature.numberOfArguments != 2 || strcmp(reloadSignature.methodReturnType, "v") != 0 ||
+            !selectSignature || selectSignature.numberOfArguments != 3 || strcmp(selectSignature.methodReturnType, "v") != 0 ||
+            strcmp([selectSignature getArgumentTypeAtIndex:2], "q") != 0) return NO;
+        NSInvocation *reloadCall = [NSInvocation invocationWithMethodSignature:reloadSignature];
+        reloadCall.target = feed; reloadCall.selector = reload; [reloadCall invoke];
+        long long selectedIndex = (long long)index;
+        NSInvocation *selectCall = [NSInvocation invocationWithMethodSignature:selectSignature];
+        selectCall.target = feed; selectCall.selector = select;
+        [selectCall setArgument:&selectedIndex atIndex:2]; [selectCall invoke];
         return YES;
     } @catch (__unused NSException *exception) { return NO; }
 }

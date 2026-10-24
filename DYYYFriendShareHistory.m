@@ -13,6 +13,7 @@
 @property (nonatomic) BOOL progressed;
 @property (nonatomic, copy) NSString *draggedID;
 @property (nonatomic) BOOL draggedProgressed;
+@property (nonatomic, copy) NSDictionary *lastDragDecision;
 @end
 
 @implementation DYYYFriendShareHistory
@@ -41,7 +42,8 @@
 - (NSDictionary *)diagnostics {
     return @{ @"pendingCount": @(self.order.count), @"watchedCount": @(self.watched.count),
               @"playingID": self.playingID ?: @"", @"lastTime": @(self.lastTime), @"progressed": @(self.progressed),
-              @"draggedID": self.draggedID ?: @"", @"draggedProgressed": @(self.draggedProgressed) };
+              @"draggedID": self.draggedID ?: @"", @"draggedProgressed": @(self.draggedProgressed),
+              @"lastDragDecision": self.lastDragDecision ?: @{} };
 }
 - (void)savePending { [self.defaults setObject:self.pendingRows forKey:self.pendingKey]; }
 - (void)mergeRows:(NSArray<NSDictionary *> *)rows {
@@ -112,7 +114,11 @@
 }
 - (NSString *)finishDraggingToItemID:(NSString *)itemID {
     NSString *finished = self.draggedID;
-    BOOL consumed = finished.length && itemID.length && ![finished isEqual:itemID] && self.draggedProgressed && self.rows[finished];
+    // 用户明确划过的内容已经刷过，不能因首帧/图文/暂停缺少进度而每次启动重推。
+    // 调用方保证起点来自实际可见 Cell、终点来自手动垂直滑动完成后的可见 Cell。
+    BOOL consumed = finished.length && itemID.length && ![finished isEqual:itemID] && self.rows[finished];
+    self.lastDragDecision = @{ @"from": finished ?: @"", @"to": itemID ?: @"", @"consumed": @(consumed),
+        @"hadProgress": @(self.draggedProgressed) };
     self.draggedID = nil;
     self.draggedProgressed = NO;
     if (consumed) { [self consumeItemID:finished]; return finished; }

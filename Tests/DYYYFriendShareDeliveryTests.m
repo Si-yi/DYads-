@@ -41,6 +41,32 @@
     return [super methodSignatureForSelector:selector];
 }
 @end
+// 原生索引重载并不等于刷新 UITableView 的已有行缓存。
+@interface DYYYDeliveryTestFeed : NSObject
+@property (nonatomic, strong) DYYYDeliveryTestController *dataController;
+@property (nonatomic, copy) NSArray *rendered;
+@property (nonatomic, strong) id current;
+@property (nonatomic, strong) NSMutableArray *calls;
+@end
+@implementation DYYYDeliveryTestFeed
+- (instancetype)init { if ((self = [super init])) _calls = [NSMutableArray array]; return self; }
+- (void)reloadTableViewData {
+    [self.calls addObject:@"table"];
+    self.rendered = [self.dataController.filteredDataSource copy];
+}
+- (void)reloadWithCurrentIndex:(long long)index {
+    [self.calls addObject:@"selection"];
+    self.current = self.rendered[(NSUInteger)index];
+}
+@end
+@interface DYYYDeliveryInvalidFeed : DYYYDeliveryTestFeed
+@end
+@implementation DYYYDeliveryInvalidFeed
+- (NSMethodSignature *)methodSignatureForSelector:(SEL)selector {
+    if (selector == NSSelectorFromString(@"reloadTableViewData")) return nil;
+    return [super methodSignatureForSelector:selector];
+}
+@end
 @interface DYYYFriendShareDeliveryTests : NSObject
 + (void)run;
 @end
@@ -109,6 +135,24 @@
     [self check:![DYYYFriendShareDelivery replaceFeed:merged controller:unsupported] &&
         [unsupported.dataSource isEqual:original] && !unsupported.calculations
         reason:@"缺少原生过滤入口时不能只写入半套列表"];
+
+    // 数据源已经包含新分享，但实际表格仍显示上次旧视频；单独重设索引不能修复。
+    DYYYDeliveryTestFeed *nativeFeed = [DYYYDeliveryTestFeed new];
+    nativeFeed.dataController = controller;
+    nativeFeed.rendered = original;
+    [self check:[DYYYFriendShareDelivery replaceFeed:merged controller:controller] reason:@"准备完整新列表"];
+    [nativeFeed reloadWithCurrentIndex:0];
+    [self check:[nativeFeed.current isEqual:one] && nativeFeed.rendered.count == 2
+        reason:@"复现更新数据源和重设索引后仍显示旧 Cell"];
+    [nativeFeed.calls removeAllObjects];
+    [self check:[DYYYFriendShareDelivery reloadFeed:nativeFeed atIndex:0] && [nativeFeed.current isEqual:shareA] &&
+        [nativeFeed.rendered isEqual:merged] && [nativeFeed.calls isEqual:@[ @"table", @"selection" ]]
+        reason:@"必须先重载实际表格，再选新分享的索引"];
+    [self check:[DYYYFriendShareDelivery reloadFeed:nativeFeed atIndex:1] && [nativeFeed.current isEqual:shareB]
+        reason:@"重载后选择非零行也应匹配目标视频"];
+    DYYYDeliveryInvalidFeed *invalidFeed = [DYYYDeliveryInvalidFeed new];
+    [self check:![DYYYFriendShareDelivery reloadFeed:invalidFeed atIndex:0] && !invalidFeed.calls.count
+        reason:@"缺少原生表格重载入口时不能假装完成同步"];
 
     DYYYDeliveryTestCell *cell = [DYYYDeliveryTestCell new]; cell.model = shareA;
     [self check:![DYYYFriendShareDelivery prepareAndPlayCell:cell itemID:@"share-A" allowed:NO] && !cell.calls.count

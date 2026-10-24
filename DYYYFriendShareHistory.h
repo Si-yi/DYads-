@@ -11,7 +11,7 @@
 - (NSDictionary *)diagnostics;
 - (void)recordPlaybackForItemID:(NSString *)itemID time:(NSTimeInterval)time;
 - (void)beginDraggingFromItemID:(NSString *)itemID;
-/// 仅在确有播放进度、且垂直滑动切到另一个作品后返回刚记为已刷的 ID。
+/// 从实际可见 Cell 开始的手动垂直滑动完成后记已刷；不依赖播放进度回调。
 - (NSString *)finishDraggingToItemID:(NSString *)itemID;
 - (BOOL)completeLoopForItemID:(NSString *)itemID;
 - (void)resetPlayback;

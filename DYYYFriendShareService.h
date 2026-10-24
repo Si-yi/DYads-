@@ -10,6 +10,7 @@
 + (NSArray *)arrangeData:(NSArray *)data controller:(id)controller;
 + (void)homeDidScroll:(UIViewController *)feed;
 + (void)homeDidScroll:(UIViewController *)feed scrollView:(UIScrollView *)scrollView;
++ (void)homeCellDidDisplay:(UIViewController *)cell;
 + (void)homeDidEndScrolling:(UIViewController *)feed scrollView:(UIScrollView *)scrollView;
 + (void)playerPlaybackAdvanced:(UIViewController *)controller time:(NSTimeInterval)time;
 + (void)playerWillLoop:(UIViewController *)controller;

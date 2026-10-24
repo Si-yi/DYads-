@@ -76,11 +76,41 @@
     state[@"waitingToInsert"] = @(s.waitingToInsert);
     state[@"feedNeedsReload"] = @(s.feedNeedsReload);
     state[@"homeVisible"] = @([self homeVisible]);
-    state[@"currentItemID"] = [self itemID:s.home.currentAweme] ?: @"";
+    NSString *current = [self itemID:s.home.currentAweme];
+    NSString *visible = [self visibleHomeItemID];
+    state[@"currentItemID"] = current ?: @"";
+    state[@"visibleItemID"] = visible ?: @"";
+    state[@"visibleItemWatched"] = @([s.history.watchedItemIDs containsObject:visible ?: @""]);
+    NSMutableArray *pendingIDs = [NSMutableArray array];
+    for (NSDictionary *row in s.history.pendingRows) [pendingIDs addObject:row[@"itemID"]];
+    state[@"pendingItemIDs"] = pendingIDs.count > 64 ? [pendingIDs subarrayWithRange:NSMakeRange(0, 64)] : pendingIDs;
+    state[@"visibleItemPending"] = @([pendingIDs containsObject:visible ?: @""]);
+    id table = s.home.isViewLoaded ? [self value:s.home key:@"tableView"] : nil;
+    if ([table isKindOfClass:UITableView.class]) state[@"tableRowCount"] = @([table numberOfSections] > 0 ? [table numberOfRowsInSection:0] : 0);
     if ([s.home respondsToSelector:@selector(isPlaying)]) state[@"nativePlaying"] = @([s.home isPlaying]);
     if ([s.home respondsToSelector:@selector(currentIndex)]) state[@"currentIndex"] = @(s.home.currentIndex);
     if ([s.home respondsToSelector:@selector(currentPlayIndex)]) state[@"currentPlayIndex"] = @(s.home.currentPlayIndex);
     return state;
+}
+// 以表格中心实际显示的 Cell 为准；currentAweme/下标可能仍是重载前的缓存。
++ (AWEFeedCellViewController *)visibleHomeCell {
+    DYYYFriendShareService *s = [self shared];
+    if (!NSThread.isMainThread || !s.home.isViewLoaded) return nil;
+    id table = [self value:s.home key:@"tableView"];
+    if (![table isKindOfClass:UITableView.class]) return nil;
+    UITableView *list = table;
+    CGPoint center = CGPointMake(CGRectGetMidX(list.bounds), CGRectGetMidY(list.bounds));
+    Class cellClass = NSClassFromString(@"AWEFeedViewCell");
+    for (UITableViewCell *row in list.visibleCells) {
+        if (!cellClass || ![row isKindOfClass:cellClass] || row.hidden || row.alpha <= 0.01 || row.window != list.window || !CGRectContainsPoint([row convertRect:row.bounds toView:list], center)) continue;
+        AWEFeedCellViewController *cell = [(AWEFeedViewCell *)row viewController];
+        for (UIViewController *parent = cell; parent; parent = parent.parentViewController)
+            if (parent == s.home) return cell;
+    }
+    return nil;
+}
++ (NSString *)visibleHomeItemID {
+    return [self itemID:[self visibleHomeCell].model];
 }
 + (BOOL)enabled { return [NSUserDefaults.standardUserDefaults boolForKey:@"DYYYFriendShareFeedEnabled"]; }
 + (BOOL)automatic { return [NSUserDefaults.standardUserDefaults boolForKey:@"DYYYFriendShareAutoRefreshEnabled"]; }
@@ -464,7 +494,7 @@
         s.waitingToInsert = YES; return;
     }
     s.waitingToInsert = NO;
-    NSString *previous = (home.isViewLoaded ? [self itemID:home.currentAweme] : nil) ?: s.displayedID;
+    NSString *previous = [self visibleHomeItemID] ?: s.displayedID ?: (home.isViewLoaded ? [self itemID:home.currentAweme] : nil);
     // active 是本轮缓存，不是未刷清单。新一轮启动不保留上次已刷的当前 Cell。
     NSString *preservedCurrent = s.selectedOpeningShare ? previous : nil;
     for (NSString *itemID in [s.active copy])
@@ -577,7 +607,7 @@
         return [[self itemID:model] isEqual:itemID];
     }];
     if (index == NSNotFound) return;
-    if (![home respondsToSelector:@selector(reloadWithCurrentIndex:)]) {
+    if (![home respondsToSelector:@selector(reloadWithCurrentIndex:)] || ![home respondsToSelector:@selector(reloadTableViewData)]) {
         s.state[@"playbackStage"] = @"native_selection_unavailable";
         return;
     }
@@ -587,7 +617,13 @@
     s.state[@"playbackStage"] = @"selecting_native_cell";
     s.state[@"selectionIndex"] = @(index);
     @try {
-        [home reloadWithCurrentIndex:(long long)index];
+        s.state[@"selectionItemID"] = itemID;
+        if (![DYYYFriendShareDelivery reloadFeed:home atIndex:index]) {
+            s.feedNeedsReload = YES;
+            s.pendingPlaybackID = nil;
+            s.state[@"playbackStage"] = @"native_table_reload_unavailable";
+            return;
+        }
         id table = [self value:home key:@"tableView"];
         if ([table isKindOfClass:UITableView.class]) {
             [table layoutIfNeeded];
@@ -624,6 +660,13 @@
             }
             if (generation != s.generation || ticket != s.playbackTicket) return;
             if ([[self itemID:home.currentAweme] isEqual:itemID]) {
+                if (![[self visibleHomeItemID] isEqual:itemID]) {
+                    s.state[@"playbackStage"] = @"waiting_visible_target";
+                    if (attempt < 5) dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 5), dispatch_get_main_queue(), ^{
+                        [self activateSelectedShare:itemID generation:generation ticket:ticket attempt:attempt + 1];
+                    });
+                    return;
+                }
                 s.displayedID = itemID;
                 if ([home respondsToSelector:@selector(playIfActive)]) {
                     s.state[@"playbackStage"] = @"native_play_requested";
@@ -653,9 +696,9 @@
     if (generation != s.generation || ticket != s.playbackTicket || ![itemID isEqual:s.pendingPlaybackID] ||
         ![self enabled] || ![self homeVisible] || s.userDragging || s.cellRepairTicket == ticket) return;
     AWEFeedTableViewController *home = s.home;
-    if (![[self itemID:home.currentAweme] isEqual:itemID]) return;
+    if (![[self visibleHomeItemID] isEqual:itemID]) return;
     if ([home respondsToSelector:@selector(isPlaying)] && [home isPlaying]) { s.state[@"playbackStage"] = @"waiting_first_progress"; return; }
-    id cell = [home respondsToSelector:@selector(getCurrentCellVC)] ? [home getCurrentCellVC] : nil;
+    id cell = [self visibleHomeCell];
     s.state[@"currentCellClass"] = cell ? NSStringFromClass([cell class]) : @"nil";
     s.state[@"currentCellItemID"] = [self itemID:[self value:cell key:@"model"]] ?: @"";
     if (![cell isKindOfClass:NSClassFromString(@"AWEFeedCellViewController")]) { s.state[@"playbackStage"] = @"waiting_feed_cell"; return; }
@@ -698,7 +741,7 @@
 + (BOOL)isCurrentHomePlayer:(UIViewController *)controller itemID:(NSString *)itemID {
     DYYYFriendShareService *s = [self shared];
     if (!controller || !itemID.length || ![self enabled] || ![self homeVisible] ||
-        ![[self itemID:s.home.currentAweme] isEqual:itemID] ||
+        ![[self visibleHomeItemID] isEqual:itemID] ||
         ![[self itemID:[self value:controller key:@"model"]] isEqual:itemID]) return NO;
     UIViewController *cell = nil;
     BOOL underHome = NO;
@@ -706,7 +749,7 @@
         if ([parent isKindOfClass:NSClassFromString(@"AWEFeedCellViewController")]) cell = parent;
         if (parent == s.home) { underHome = YES; break; }
     }
-    return underHome && cell && [s.home respondsToSelector:@selector(getCurrentCellVC)] && [s.home getCurrentCellVC] == cell;
+    return underHome && cell && [self visibleHomeCell] == cell;
 }
 + (void)playerPlaybackAdvanced:(UIViewController *)controller time:(NSTimeInterval)time {
     if (![self enabled]) return;
@@ -734,7 +777,7 @@
 + (void)recordHomePlayback:(UIViewController *)feed itemID:(NSString *)itemID time:(NSTimeInterval)time {
     DYYYFriendShareService *s = [self shared];
     if (s.home != feed || time <= 0 || ![self enabled] || ![self homeVisible] ||
-        ![itemID isEqual:[self itemID:s.home.currentAweme]]) return;
+        ![itemID isEqual:[self visibleHomeItemID]]) return;
     if (s.waitingToInsert && [s.home respondsToSelector:@selector(isPlaying)] && [s.home isPlaying]) {
         s.waitingToInsert = NO;
         dispatch_async(dispatch_get_main_queue(), ^{ [self insertQueued]; });
@@ -760,17 +803,11 @@
     if (s.home != feed || ![self enabled] || ![self homeVisible] || ![self syncAccount]) return;
     id table = [self value:s.home key:@"tableView"];
     if ([table isKindOfClass:UIScrollView.class] && ([table isTracking] || [table isDragging] || [table isDecelerating])) return;
-    NSString *current = [self itemID:s.home.currentAweme];
-    if (!current.length) return;
-    if (s.userDragging && [table isKindOfClass:UITableView.class] && [s.home respondsToSelector:@selector(dataSourceModelForIndexPath:)]) {
-        UITableView *list = table;
-        NSIndexPath *path = [list indexPathForRowAtPoint:CGPointMake(CGRectGetMidX(list.bounds), CGRectGetMidY(list.bounds))];
-        NSString *visibleID = path ? [self itemID:[s.home dataSourceModelForIndexPath:path]] : nil;
-        if (visibleID.length && ![visibleID isEqual:current]) return;
-    }
-    if (s.userDragging && [s.home respondsToSelector:@selector(getCurrentCellVC)]) {
-        NSString *cellID = [self itemID:[self value:[s.home getCurrentCellVC] key:@"model"]];
-        if (![cellID isEqual:current]) return; // 等原生 Cell 与当前模型同步后再结束本次手势。
+    NSString *current = [self visibleHomeItemID];
+    if (!current.length) { s.state[@"dragStage"] = @"waiting_visible_cell"; return; }
+    if (s.userDragging) {
+        s.state[@"lastDragTo"] = current;
+        s.state[@"dragStage"] = @"settled_visible_cell";
     }
     if (s.userDragging) [self didConsumeItemID:[s.history finishDraggingToItemID:current]];
     s.userDragging = NO; s.displayedID = current;
@@ -780,6 +817,12 @@
 + (void)homeDidScroll:(UIViewController *)feed scrollView:(UIScrollView *)scrollView {
     if (scrollView != [self value:feed key:@"tableView"]) return;
     [self homeDidScroll:feed];
+}
+// 实际 Cell 显示事件补齐原生结束代理没有同步完成的时序，不因预加载而消费。
++ (void)homeCellDidDisplay:(UIViewController *)cell {
+    DYYYFriendShareService *s = [self shared];
+    if (!NSThread.isMainThread || ![self enabled] || !s.userDragging || ![self homeVisible] || [self visibleHomeCell] != cell) return;
+    [self homeDidEndScrolling:s.home scrollView:[self value:s.home key:@"tableView"]];
 }
 // UIKit 在结束代理内部可能仍报告 decelerating/tracking=YES；出栈后再结算。
 + (void)homeDidEndScrolling:(UIViewController *)feed scrollView:(UIScrollView *)scrollView {
@@ -810,7 +853,8 @@
 + (void)homeWillDrag:(UIViewController *)feed scrollView:(UIScrollView *)scrollView {
     DYYYFriendShareService *s = [self shared];
     if (s.home != feed || scrollView != [self value:feed key:@"tableView"] || ![self enabled] || ![self homeVisible] || ![self syncAccount]) return;
-    NSString *current = [self itemID:s.home.currentAweme];
+    NSString *current = [self visibleHomeItemID];
+    if (!current.length) { s.state[@"dragStage"] = @"no_visible_start"; return; }
     if (s.userDragging) {
         // 同一次手势的代理转发不重置；快速开始下一次手势时先结算上一次。
         if ([current isEqual:[s.history diagnostics][@"draggedID"]]) return;
@@ -819,6 +863,8 @@
     s.dragTicket++;
     [self homePlaybackTouched:feed];
     [s.history beginDraggingFromItemID:current];
+    s.state[@"lastDragFrom"] = current;
+    s.state[@"dragStage"] = @"started_visible_cell";
     s.userDragging = YES;
 }
 + (void)homeWillLoop:(UIViewController *)feed {
@@ -829,7 +875,7 @@
     }
     DYYYFriendShareService *s = [self shared];
     if (s.home != feed || ![self enabled] || ![self homeVisible] || ![self syncAccount]) return;
-    NSString *itemID = [self itemID:s.home.currentAweme];
+    NSString *itemID = [self visibleHomeItemID];
     if ([s.history completeLoopForItemID:itemID]) [self didConsumeItemID:itemID];
 }
 + (void)homeDidLeave:(UIViewController *)feed {

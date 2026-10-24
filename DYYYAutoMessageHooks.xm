@@ -92,6 +92,13 @@
 }
 %end
 
+%hook AWEFeedCellViewController
+- (void)didDisplay {
+    %orig;
+    [DYYYFriendShareService homeCellDidDisplay:self];
+}
+%end
+
 %hook AWEDPlayerViewController_Merge
 - (void)player:(id)player updatePlayTime:(double)time canPlayTime:(double)buffered totalTime:(double)total {
     [DYYYFriendShareService playerPlaybackAdvanced:self time:time];

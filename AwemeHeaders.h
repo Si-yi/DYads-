@@ -465,11 +465,18 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @property (nonatomic, strong) AWEAwemeModel *model;
 - (void)prepareForDisplay;
 - (void)play;
+- (void)didDisplay;
+@end
+
+// 39.5 完整导出：实际 UITableViewCell 持有显示内容的控制器。
+@interface AWEFeedViewCell : UITableViewCell
+@property (nonatomic, strong) AWEFeedCellViewController *viewController;
 @end
 
 @interface AWEFeedTableViewController : UIViewController
 // 39.5.0 完整导出确认的原生选中与播放入口。
 - (void)reloadWithCurrentIndex:(long long)index;
+- (void)reloadTableViewData;
 - (id)getCurrentCellVC;
 - (id)dataSourceModelForIndexPath:(NSIndexPath *)indexPath;
 - (void)playVideoOnScrollDidEnd;
