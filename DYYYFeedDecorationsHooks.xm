@@ -1,6 +1,7 @@
 #import "AwemeHeaders.h"
 #import "DYYYFeedTagGlass.h"
 #import "DYYYAvatarRing.h"
+#import "DYYYSameStyleVisibility.h"
 
 %group DYYYTagStackGlassHooks
 %hook AWEPlayInteractionTagsStackView
@@ -79,6 +80,43 @@
 %end
 %end
 
+%group DYYYSameStyleVisibilityHooks
+%hook AWEPlayInteractionSingleSongMusicStyleView
+- (void)setHidden:(BOOL)hidden {
+    %orig([DYYYSameStyleVisibility hiddenForView:(UIView *)self nativeHidden:hidden]);
+}
+- (void)layoutSubviews {
+    [DYYYSameStyleVisibility beginNativeUpdate:(UIView *)self];
+    %orig;
+    [DYYYSameStyleVisibility endNativeUpdate:(UIView *)self];
+}
+- (void)didMoveToWindow {
+    %orig;
+    [DYYYSameStyleVisibility applyToView:(UIView *)self];
+}
+- (void)setAwemeModel:(id)model {
+    [DYYYSameStyleVisibility beginNativeUpdate:(UIView *)self];
+    %orig(model);
+    [DYYYSameStyleVisibility endNativeUpdate:(UIView *)self];
+}
+- (void)updatePlayInteractionTitle:(id)title {
+    [DYYYSameStyleVisibility beginNativeUpdate:(UIView *)self];
+    %orig(title);
+    [DYYYSameStyleVisibility endNativeUpdate:(UIView *)self];
+}
+- (void)updatePlayInteractionDecorationHidden:(BOOL)hidden {
+    [DYYYSameStyleVisibility beginNativeUpdate:(UIView *)self];
+    %orig(hidden);
+    [DYYYSameStyleVisibility endNativeUpdate:(UIView *)self];
+}
+- (void)updatePlayInteractionLayout:(double)layout {
+    [DYYYSameStyleVisibility beginNativeUpdate:(UIView *)self];
+    %orig(layout);
+    [DYYYSameStyleVisibility endNativeUpdate:(UIView *)self];
+}
+%end
+%end
+
 %ctor {
     // 均位于 AwemeCore，按实际存在的类分别安装，不依赖未出现的标签种类。
     if (NSClassFromString(@"AWEPlayInteractionTagsStackView")) {
@@ -92,5 +130,8 @@
     }
     if (NSClassFromString(@"AFDColorRingView")) {
         %init(DYYYAvatarRingHooks);
+    }
+    if (NSClassFromString(@"AWEPlayInteractionSingleSongMusicStyleView")) {
+        %init(DYYYSameStyleVisibilityHooks);
     }
 }

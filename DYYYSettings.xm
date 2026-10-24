@@ -2026,6 +2026,12 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
             @"detail" : @"",
             @"cellType" : @6,
             @"imageName" : @"ic_eyeslash_outlined_16"},
+          @{@"identifier" : @"DYYYHideSameStyleButton",
+            @"title" : @"隐藏拍同款",
+            @"subTitle" : @"隐藏右下角分享按钮下方的拍同款入口",
+            @"detail" : @"",
+            @"cellType" : @6,
+            @"imageName" : @"ic_eyeslash_outlined_16"},
           @{
               @"identifier" : @"DYYYHideGradient",
               @"title" : @"隐藏遮罩效果",
