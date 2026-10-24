@@ -140,7 +140,7 @@
     UIButton *close = [self button:self.pickingFriends ? @"取消" : @"关闭" color:UIColor.labelColor action:@selector(closePanel)];
     if (self.pickingFriends) {
         self.search = [UISearchBar new];
-        self.search.placeholder = @"搜索好友昵称或 ID";
+        self.search.placeholder = @"搜索好友备注、昵称或 ID";
         self.search.searchBarStyle = UISearchBarStyleMinimal;
         self.search.delegate = self;
         [content addSubview:self.search];
@@ -209,7 +209,9 @@
     NSString *query = self.search.text.lowercaseString ?: @"";
     NSMutableArray *flame = [NSMutableArray array], *other = [NSMutableArray array];
     for (NSDictionary *friend in self.friends) {
-        NSString *haystack = [[NSString stringWithFormat:@"%@ %@ %@", friend[@"name"], friend[@"userID"], friend[@"displayID"] ?: @""] lowercaseString];
+        NSArray *aliases = [friend[@"aliases"] isKindOfClass:NSArray.class] ? friend[@"aliases"] : @[];
+        NSString *haystack = [[NSString stringWithFormat:@"%@ %@ %@ %@", friend[@"name"], friend[@"userID"],
+            friend[@"displayID"] ?: @"", [aliases componentsJoinedByString:@" "]] lowercaseString];
         if (query.length && ![haystack containsString:query]) continue;
         [([friend[@"hasFlame"] boolValue] ? flame : other) addObject:friend];
     }

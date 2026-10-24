@@ -384,6 +384,17 @@ static NSString *const kDYYYFriendShareFriends = @"DYYYFriendShareFeedFriends";
     return nil;
 }
 
+// 昵称与备注均只接收非空文本，跳过空白、NSNull 及未适配的字段类型。
++ (NSString *)friendTextInSources:(NSArray *)sources keys:(NSArray<NSString *> *)keys {
+    for (id source in sources) for (NSString *key in keys) {
+        id value = [self friendValue:source keys:@[key]];
+        if (![value isKindOfClass:NSString.class]) continue;
+        NSString *text = [value stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        if (text.length) return text;
+    }
+    return nil;
+}
+
 + (NSString *)avatarURL:(id)value depth:(NSUInteger)depth {
     if (!value || depth > 5) return nil;
     if ([value isKindOfClass:NSURL.class]) value = [value absoluteString];
@@ -408,6 +419,9 @@ static NSString *const kDYYYFriendShareFriends = @"DYYYFriendShareFeedFriends";
     if (![rows isKindOfClass:NSArray.class]) return @[];
     NSMutableArray *friends = [NSMutableArray array];
     NSMutableSet *seen = [NSMutableSet set];
+    // 已在当前账户中加载的原生用户可补足数据库中没有的备注/头像，不发逐人网络请求。
+    Class userManagerClass = NSClassFromString(@"AWEIMUserManager");
+    AWEIMUserManager *userManager = [userManagerClass respondsToSelector:@selector(sharedManager)] ? [(id)userManagerClass sharedManager] : nil;
     for (id row in rows) {
         id nested = [self friendValue:row keys:@[@"user", @"userModel", @"imUser", @"userInfo"]];
         id model = nested ?: row;
@@ -420,8 +434,16 @@ static NSString *const kDYYYFriendShareFriends = @"DYYYFriendShareFeedFriends";
         NSString *uid = [uidValue isKindOfClass:NSString.class] ? uidValue : ([uidValue isKindOfClass:NSNumber.class] ? [uidValue stringValue] : nil);
         if (!uid.length || [seen containsObject:uid]) continue;
         [seen addObject:uid];
-        id nameValue = [self friendValue:model keys:@[@"name", @"nickname", @"nickName", @"displayName", @"display_name", @"contactName"]];
-        NSString *name = [nameValue isKindOfClass:NSString.class] ? nameValue : uid;
+        id cachedUser = nil;
+        @try {
+            if ([userManager respondsToSelector:@selector(localCachedUserForUserID:)]) cachedUser = [userManager localCachedUserForUserID:uid];
+        } @catch (__unused NSException *exception) {}
+        NSArray *nameSources = cachedUser ? @[model, row, cachedUser] : @[model, row];
+        NSString *nickname = [self friendTextInSources:nameSources keys:@[@"nickname", @"nickName", @"name", @"displayName", @"display_name"]] ?: uid;
+        // 39.5 的 AWEIMUser/AWEUserModel 使用 alias 保存好友备注，不取群昵称。
+        NSString *remark = [self friendTextInSources:nameSources keys:@[@"alias"]] ?:
+            [self friendTextInSources:nameSources keys:@[@"remarkName", @"remark", @"remark_name"]];
+        NSString *name = remark ?: nickname;
         id displayValue = [self friendValue:model keys:@[@"displayID", @"uniqueID", @"uniqueId", @"shortID", @"shortId", @"short_id", @"username"]];
         NSString *display = [displayValue isKindOfClass:NSString.class] ? displayValue : uid;
         id flameInfo = [self friendValue:row keys:@[@"streakInfo", @"flameInfo"]];
@@ -439,22 +461,24 @@ static NSString *const kDYYYFriendShareFriends = @"DYYYFriendShareFeedFriends";
         }
         if (!avatar.length) {
             // 联系人数据库可能只存基础字段；复用抖音内存中已加载的完整用户，不发起逐人网络请求。
-            Class userManagerClass = NSClassFromString(@"AWEIMUserManager");
-            if ([userManagerClass respondsToSelector:@selector(sharedManager)]) {
-                AWEIMUserManager *userManager = [(id)userManagerClass sharedManager];
-                id cachedUser = [userManager respondsToSelector:@selector(localCachedUserForUserID:)] ? [userManager localCachedUserForUserID:uid] : nil;
-                for (NSString *key in @[@"avatarThumb", @"avatarURLSmall", @"avatarSmallStrUrl", @"avatarMedium", @"avatarStrUrls", @"avatarURL", @"avatar"]) {
-                    avatar = [self avatarURL:[self friendValue:cachedUser keys:@[key]] depth:0];
-                    if (avatar.length) break;
-                }
+            for (NSString *key in @[@"avatarThumb", @"avatarURLSmall", @"avatarSmallStrUrl", @"avatarMedium", @"avatarStrUrls", @"avatarURL", @"avatar"]) {
+                avatar = [self avatarURL:[self friendValue:cachedUser keys:@[key]] depth:0];
+                if (avatar.length) break;
             }
         }
         NSMutableOrderedSet *aliases = [NSMutableOrderedSet orderedSet];
-        for (id source in @[model, row]) for (NSString *key in @[@"nickname", @"nickName", @"displayName", @"contactName", @"remarkName", @"remark", @"uniqueID", @"uniqueId"] ) {
-            id value = [self friendValue:source keys:@[key]];
-            if ([value isKindOfClass:NSString.class] && [value length]) [aliases addObject:value];
+        [aliases addObject:nickname];
+        if (remark.length) [aliases addObject:remark];
+        for (id source in nameSources) {
+            for (NSString *key in @[@"name", @"nickname", @"nickName", @"displayName", @"contactName", @"alias", @"remarkName", @"remark", @"remark_name", @"uniqueID", @"uniqueId"] ) {
+                NSString *value = [self friendTextInSources:@[source] keys:@[key]];
+                if (value.length) [aliases addObject:value];
+            }
+            id storedAliases = [self friendValue:source keys:@[@"aliases"]];
+            if ([storedAliases isKindOfClass:NSArray.class]) for (id value in storedAliases)
+                if ([value isKindOfClass:NSString.class] && [value length]) [aliases addObject:value];
         }
-        [friends addObject:@{ @"userID":uid, @"name":name, @"displayID":display, @"aliases":aliases.array,
+        [friends addObject:@{ @"userID":uid, @"name":name, @"nickname":nickname, @"remarkName":remark ?: @"", @"displayID":display, @"aliases":aliases.array,
             @"avatar":[avatar isKindOfClass:NSString.class] ? avatar : @"",
             @"hasFlame":@([hasFlame respondsToSelector:@selector(boolValue)] ? [hasFlame boolValue] : days > 0), @"flameDays":@(MAX(0, days)) }];
     }
@@ -487,7 +511,10 @@ static NSString *const kDYYYFriendShareFriends = @"DYYYFriendShareFeedFriends";
     NSString *account = [DYYYIMService accountID];
     NSString *cacheKey = account.length ? [@"DYYYMutualFriendsCache." stringByAppendingString:account] : nil;
     if (friends.count && cacheKey) [[self defaults] setObject:friends forKey:cacheKey];
-    if (!friends.count && cacheKey) friends = [[self defaults] arrayForKey:cacheKey] ?: @[];
+    if (!friends.count && cacheKey) {
+        // 离线缓存也重新应用备注优先规则，保留 UID、火花、头像和原选择。
+        friends = [self normalizedFriends:[[self defaults] arrayForKey:cacheKey] ?: @[] requireMutual:NO];
+    }
     if (!database) [DYYYUtils showToast:@"联系人服务尚未就绪，请先进入抖音消息页"];
     if (completion) completion(friends);
 }

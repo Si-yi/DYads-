@@ -102,6 +102,7 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 
 @interface AWEUserModel : NSObject
 @property(copy, nonatomic) NSString *nickname;
+@property(copy, nonatomic) NSString *alias; // 当前账户给好友设置的备注
 @property(copy, nonatomic) NSString *shortID;
 @property(copy, nonatomic) NSString *signature;
 @property(copy, nonatomic) AWEURLModel *avatarMedium;
@@ -2113,6 +2114,12 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @interface AWEIMContactDataManager : NSObject
 + (instancetype)sharedInstance;
 - (id)userManager;
+@end
+
+// 39.5 联系人数据库及本地缓存用户的原生备注字段。
+@interface AWEIMUser : NSObject
+@property(nonatomic, copy) NSString *nickname;
+@property(nonatomic, copy) NSString *alias;
 @end
 
 @interface AWEIMUserManager : NSObject
