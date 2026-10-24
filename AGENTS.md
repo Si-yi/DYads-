@@ -42,6 +42,7 @@
 - **不发送时间段**：`DYYYAutoMessageQuietHoursPanel.(h/m)` 使用玻璃列表管理多段时间，支持逐段启停、添加、编辑和侧滑删除；添加窗口分别输入 0–23 的开始/结束小时，跨午夜按本地小时判断，开始与结束相同不保存。`DYYYAutoMessage` 沿用原偏好键把旧单字符串迁移为启用的时段数组，空数组表示已清空；时间限制只用于自动发送，手动测试入口不增加限制。
 - **自动消息弹窗**：`DYYYAutoMessagePanel.(h/m)` 展示配置开关列表与互关好友搜索多选，配置读写和联系人适配由 `DYYYAutoMessage` 负责。
 - **独立 IM 适配**：`DYYYIMService.(h/m)` 复用抖音创建的消息服务实例，读取联系人、未读分享并校验会话账户，通过原生回执维护每日发送状态；`DYYYAutoMessageHooks.xm` 观测服务生命周期与发送结果。手动测试使用独立入口，不限制每日次数，不写自动发送日账；配置列表先选测试对象，停用配置也可测试。文字格式由原生调用或历史识别，按抖音版本及账户缓存，不能硬编码未知消息类型。私有声明集中在 `AwemeHeaders.h`。
+- **好友分享首播衔接**：批次模型就绪/超时后合并插入，整批原生插入期间禁止自定义重排。插入后使用 `reloadWithCurrentIndex:` 同步 Cell/索引，再对仍处于活动首页的目标调用 `playIfActive`，不能只做 UITableView.reloadData 或零位移滚动；无动画滚动必要时补 `playVideoOnScrollDidEnd`。仅首批主动切到分享，后续保留当前作品与暂停意图；用户点击/拖动、切账户和退后台取消旧激活任务，不重复定时强制播放。真实进度回调才记 `progress_confirmed`，调试包含播放阶段及原生索引。
 - **好友分享推荐**：`DYYYFriendShareService.(h/m)` 在冷启动或从后台返回后扫描所选好友的本地未读分享，先用抖音 AWEIMFeedVideoCachePool（requestScene 为 dm）取得真实 AWEAwemeModel，再通过模型插入接口放在原首页列表之前；确认列表存在该 ID 才记已插入。模型缓存保留未刷分享，原生刷新后仍可恢复；加载失败保留待重试，禁止空转重复插入。已刷记录独立于聊天已读，按账户保存；实际滑走或播放循环后才记已刷，已刷记录不能立即删除正在播放的分享。调试导出包含 friendShareFeed 的加载、超时和插入状态。未编译和真机验证前不得宣称适配已通过。
 - **设置页复用 UI（按交互类型）**
   - 列表/选择：`DYYYKeywordListView.(h/m)`、`DYYYOptionsSelectionView.(h/m)`、`DYYYFilterSettingsView.(h/m)`。

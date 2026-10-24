@@ -460,6 +460,16 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @end
 
 @interface AWEFeedTableViewController : UIViewController
+// 39.5.0 完整导出确认的原生选中与播放入口。
+- (void)reloadWithCurrentIndex:(long long)index;
+- (void)playVideoOnScrollDidEnd;
+- (void)playIfActive;
+- (BOOL)currentVCIsActive;
+- (BOOL)isPlaying;
+- (void)videoPlayer:(id)player didSingleClick:(id)event;
+- (void)videoPlayer:(id)player updatePlayTime:(double)time totalTime:(double)total;
+@property (nonatomic, readonly) long long currentIndex;
+@property (nonatomic, readonly) long long currentPlayIndex;
 - (void)awe_refreshForceRequestWithoutAnimation;
 - (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView;
 - (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView;

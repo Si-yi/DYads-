@@ -11,6 +11,8 @@
 + (void)homeDidScroll:(UIViewController *)feed;
 + (void)homeWillDrag:(UIViewController *)feed;
 + (void)homeWillLoop:(UIViewController *)feed;
++ (void)homePlaybackTouched:(UIViewController *)feed;
++ (void)homePlaybackAdvanced:(UIViewController *)feed time:(NSTimeInterval)time;
 + (void)clearWatched;
 + (NSDictionary *)shareSourceForItemID:(NSString *)itemID controller:(UIViewController *)controller;
 @end

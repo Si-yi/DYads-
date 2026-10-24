@@ -57,6 +57,14 @@
     %orig;
     [DYYYFriendShareService homeDidScroll:self];
 }
+- (void)videoPlayer:(id)player didSingleClick:(id)event {
+    [DYYYFriendShareService homePlaybackTouched:self];
+    %orig(player, event);
+}
+- (void)videoPlayer:(id)player updatePlayTime:(double)time totalTime:(double)total {
+    %orig(player, time, total);
+    [DYYYFriendShareService homePlaybackAdvanced:self time:time];
+}
 - (void)videoControllerWillStartNextLoop:(id)controller {
     %orig;
     [DYYYFriendShareService homeWillLoop:self];
