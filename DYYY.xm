@@ -11400,6 +11400,7 @@ static Class tabBarButtonClass = nil;
 static char kDYYYCompactInputBusyKey;
 static char kDYYYCompactInputChromeKey;
 static char kDYYYCompactInputAppearanceKey;
+static char kDYYYCompactEmoticonAppearanceKey;
 static char kDYYYCompactInputGeometryKey;
 static char kDYYYCompactInputTransformKey;
 static char kDYYYCompactInputLiftKey;
@@ -11412,7 +11413,7 @@ static CGRect dyyyCompactKeyboardScreenFrame;
 // 快捷表情属于键盘附件窗口，不能放进评论输入容器的玻璃里。
 static void DYYYCompactClearEmoticonPanel(UIView *panel) {
     if (!panel || !NSThread.isMainThread) return;
-    BOOL enabled = DYYYGetBool(@"DYYYEnableFloatingCommentInput");
+    BOOL enabled = DYYYGetBool(@"DYYYEnableFloatingCommentInput") && panel.window;
     if (!dyyyCompactEmoticonPanels) dyyyCompactEmoticonPanels = [NSHashTable weakObjectsHashTable];
     [dyyyCompactEmoticonPanels addObject:panel];
     NSMutableArray<UIView *> *pending = [NSMutableArray arrayWithObject:panel];
@@ -11420,25 +11421,48 @@ static void DYYYCompactClearEmoticonPanel(UIView *panel) {
     while (pending.count && visited++ < 250) {
         UIView *view = pending.lastObject;
         [pending removeLastObject];
-        NSDictionary *saved = objc_getAssociatedObject(view, &kDYYYCompactInputAppearanceKey);
+        // 表情内容可能放在原生 effect.contentView 中，隐藏整个效果视图会连内容一起消失。
+        // 使用独立状态，避免输入框的背景恢复流程吞掉这里保存的原生 effect。
+        NSDictionary *saved = objc_getAssociatedObject(view, &kDYYYCompactEmoticonAppearanceKey);
         BOOL blur = [view isKindOfClass:UIVisualEffectView.class];
-        BOOL background = view == panel || view.class == UIView.class ||
-            [view isKindOfClass:UIScrollView.class] || [view isKindOfClass:UICollectionViewCell.class];
-        if (enabled && (background || blur)) {
-            if (!saved) {
-                saved = @{ @"color": view.backgroundColor ?: NSNull.null, @"opaque": @(view.opaque), @"hidden": @(view.hidden) };
-                objc_setAssociatedObject(view, &kDYYYCompactInputAppearanceKey, saved, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        BOOL foreground = [view isKindOfClass:UIImageView.class] || [view isKindOfClass:UILabel.class] ||
+            [view isKindOfClass:UIControl.class] || [view isKindOfClass:UITextView.class];
+        BOOL background = !foreground && (view == panel || view.class == UIView.class || [view isKindOfClass:UIScrollView.class]);
+        UIColor *color = view.backgroundColor;
+        UIColor *resolved = [color resolvedColorWithTraitCollection:view.traitCollection];
+        CGFloat r = 0, g = 0, b = 0, alpha = 0;
+        // 带图片的 patternColor、彩色内容和自绘 Cell 不属于需要清理的中性底板。
+        BOOL neutral = !color || ([resolved getRed:&r green:&g blue:&b alpha:&alpha] &&
+            MAX(r, MAX(g, b)) - MIN(r, MIN(g, b)) < 0.12);
+        BOOL clearFill = background && neutral;
+        if (enabled && (clearFill || blur)) {
+            NSMutableDictionary *state = [saved mutableCopy] ?: [@{
+                @"color": color ?: NSNull.null, @"opaque": @(view.opaque)
+            } mutableCopy];
+            if (blur) {
+                UIVisualEffectView *effect = (UIVisualEffectView *)view;
+                // 原生主题重新配置了材质时保存新值，关闭功能时恢复当前主题的原生效果。
+                if (effect.effect || !state[@"effect"]) state[@"effect"] = effect.effect ?: NSNull.null;
             }
-            if (blur) view.hidden = YES;
-            else { view.backgroundColor = UIColor.clearColor; view.opaque = NO; }
+            if (!saved || ![saved isEqual:state])
+                objc_setAssociatedObject(view, &kDYYYCompactEmoticonAppearanceKey, state, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            if (blur && ((UIVisualEffectView *)view).effect) ((UIVisualEffectView *)view).effect = nil;
+            if (clearFill) {
+                if (color && CGColorGetAlpha(color.CGColor) > 0) view.backgroundColor = UIColor.clearColor;
+                if (view.opaque) view.opaque = NO;
+            }
         } else if (saved) {
-            objc_setAssociatedObject(view, &kDYYYCompactInputAppearanceKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-            view.backgroundColor = saved[@"color"] == NSNull.null ? nil : saved[@"color"];
-            view.opaque = [saved[@"opaque"] boolValue];
-            view.hidden = [saved[@"hidden"] boolValue];
+            objc_setAssociatedObject(view, &kDYYYCompactEmoticonAppearanceKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            // 只恢复仍是我们应用的值，不覆盖原生随后更新的内容背景。
+            if (!color || CGColorGetAlpha(color.CGColor) == 0)
+                view.backgroundColor = saved[@"color"] == NSNull.null ? nil : saved[@"color"];
+            if (!view.opaque) view.opaque = [saved[@"opaque"] boolValue];
+            if (blur && !((UIVisualEffectView *)view).effect && saved[@"effect"])
+                ((UIVisualEffectView *)view).effect = saved[@"effect"] == NSNull.null ? nil : saved[@"effect"];
         }
-        // 效果视图的子树由 UIKit 管理，不修改其内部层级。
-        if (!blur) [pending addObjectsFromArray:view.subviews];
+        // 只访问应用放入 contentView 的内容，保持 UIKit 自己管理的内部效果子树不变。
+        if (blur) [pending addObjectsFromArray:((UIVisualEffectView *)view).contentView.subviews];
+        else if (!foreground) [pending addObjectsFromArray:view.subviews];
     }
 }
 
