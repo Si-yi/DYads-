@@ -31,11 +31,13 @@ static char kDYYYSameStyleUpdateDepthKey;
     for (UILabel *label in originals.keyEnumerator.allObjects) {
         if (label.hidden) label.hidden = [[originals objectForKey:label] boolValue];
     }
-    NSMapTable<CALayer *, NSNumber *> *layers = objc_getAssociatedObject(view, &kDYYYSameStyleDecorationLayersKey);
+    NSMapTable<CALayer *, NSMutableDictionary *> *layers = objc_getAssociatedObject(view, &kDYYYSameStyleDecorationLayersKey);
     objc_setAssociatedObject(view, &kDYYYSameStyleDecorationLayersKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     [CATransaction begin]; [CATransaction setDisableActions:YES];
-    for (CALayer *layer in layers.keyEnumerator.allObjects)
-        if (layer.opacity == 0) layer.opacity = [[layers objectForKey:layer] floatValue];
+    for (CALayer *layer in layers.keyEnumerator.allObjects) {
+        NSDictionary *saved = [layers objectForKey:layer];
+        if (layer.mask == saved[@"mask"]) layer.mask = saved[@"original"] == NSNull.null ? nil : saved[@"original"];
+    }
     [CATransaction commit];
 }
 
@@ -49,7 +51,7 @@ static char kDYYYSameStyleUpdateDepthKey;
     }
     // 导出确认：标题下面的 44pt 圆形容器内含黑色 60% 填充，文字隐藏后它仍会盖住封面。
     // 仅透明化原生标题装饰层的绘制，不改其 UIView 显隐/alpha/命中，不动音乐封面。
-    NSMapTable<CALayer *, NSNumber *> *layers = objc_getAssociatedObject(view, &kDYYYSameStyleDecorationLayersKey);
+    NSMapTable<CALayer *, NSMutableDictionary *> *layers = objc_getAssociatedObject(view, &kDYYYSameStyleDecorationLayersKey);
     NSArray *keys = @[@"playInteractionCircleMaskView", @"playInteractionMaskView", @"playInteractionColorMaskView"];
     [CATransaction begin]; [CATransaction setDisableActions:YES];
     for (CALayer *layer in layers.keyEnumerator.allObjects) {
@@ -57,7 +59,8 @@ static char kDYYYSameStyleUpdateDepthKey;
         for (CALayer *parent = layer; parent; parent = parent.superlayer)
             if (parent == view.layer) { belongs = YES; break; }
         if (belongs) continue;
-        if (layer.opacity == 0) layer.opacity = [[layers objectForKey:layer] floatValue];
+        NSDictionary *saved = [layers objectForKey:layer];
+        if (layer.mask == saved[@"mask"]) layer.mask = saved[@"original"] == NSNull.null ? nil : saved[@"original"];
         [layers removeObjectForKey:layer];
     }
     for (NSString *key in keys) {
@@ -74,8 +77,20 @@ static char kDYYYSameStyleUpdateDepthKey;
             objc_setAssociatedObject(view, &kDYYYSameStyleDecorationLayersKey, layers, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         }
         CALayer *layer = decoration.layer;
-        if (![layers objectForKey:layer] || layer.opacity != 0) [layers setObject:@(layer.opacity) forKey:layer];
-        if (layer.opacity != 0) layer.opacity = 0;
+        NSMutableDictionary *saved = [layers objectForKey:layer];
+        if (!saved) {
+            CALayer *mask = [CALayer layer];
+            mask.name = @"DYYY.MusicCaption.DecorationMask";
+            mask.backgroundColor = UIColor.clearColor.CGColor;
+            saved = [@{@"mask": mask, @"original": layer.mask ?: NSNull.null} mutableCopy];
+            [layers setObject:saved forKey:layer];
+        }
+        CALayer *mask = saved[@"mask"];
+        if (layer.mask != mask) {
+            saved[@"original"] = layer.mask ?: NSNull.null;
+            layer.mask = mask;
+        }
+        if (!CGRectEqualToRect(mask.frame, layer.bounds)) mask.frame = layer.bounds;
     }
     [CATransaction commit];
     NSMapTable<UILabel *, NSNumber *> *originals = objc_getAssociatedObject(view, &kDYYYSameStyleOriginalsKey);
