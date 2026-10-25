@@ -1024,7 +1024,7 @@
 }
 // 侧边栏可由当前 Cell 内的播放器呈现，Feed 本身未必收到 appearance 回调。
 + (void)homePlayerWillLeave:(UIViewController *)player {
-    if (!NSThread.isMainThread || ![self enabled]) return;
+    if (!NSThread.isMainThread || ![self enabled] || [self shared].arranging || [self shared].userDragging) return;
     id cell = [self visibleHomeCell];
     BOOL belongs = NO;
     for (UIViewController *parent = player; parent; parent = parent.parentViewController)

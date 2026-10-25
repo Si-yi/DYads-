@@ -104,10 +104,6 @@
     [DYYYFriendShareService homePlayerWillLeave:self];
     %orig(controller, animated, completion);
 }
-- (void)viewWillDisappear:(BOOL)animated {
-    [DYYYFriendShareService homePlayerWillLeave:self];
-    %orig;
-}
 - (void)viewDidAppear:(BOOL)animated {
     %orig;
     [DYYYFriendShareService homePlayerDidReturn:self];
