@@ -54,7 +54,8 @@ int main(void) {
         MenuItem *favorited = [MenuItem new]; favorited.elementContent = @"已收藏";
         MenuItem *unrelated = [MenuItem new]; unrelated.elementContent = @"查看收藏夹";
         visible = [DYYYCommentMenuItems visibleModels:@[cancelFavorite, favorited, unknown, unrelated] hidingFavorites:YES];
-        NSCAssert([visible isEqualToArray:@[unknown, unrelated]], @"Hide both favorite states, preserving unknown and unrelated actions");
+        NSArray *expectedVisible = @[unknown, unrelated];
+        NSCAssert([visible isEqualToArray:expectedVisible], @"Hide both favorite states, preserving unknown and unrelated actions");
         NSArray *orderedVisible = [DYYYCommentMenuItems orderedModelsInSections:@[visible, @[items[4]]]];
         NSCAssert(orderedVisible.count == 3 && orderedVisible.lastObject == items[4], @"Filtered menus remain compact with report last");
         NSCAssert([DYYYCommentMenuItems visibleModels:source hidingFavorites:NO] == source, @"Turning the setting off restores the next native menu");
