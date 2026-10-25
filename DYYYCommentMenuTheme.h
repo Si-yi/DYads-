@@ -12,4 +12,5 @@
 
 @interface DYYYCommentMenuTheme (Hooks)
 + (void)installHooks;
++ (void)installLayoutHooksForController:(UIViewController *)controller;
 @end

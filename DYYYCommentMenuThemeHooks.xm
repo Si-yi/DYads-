@@ -1,5 +1,5 @@
 /*
- 菜单分区接口参考 DYKiller DKCommentMenuGrid.xm；发送按钮语义类查找参考 DKShareSelectionHooks.xm。
+ 菜单分区接口参考 DYKiller DKCommentMenuGrid.xm / DKCommentMenuClean.xm；发送按钮语义类查找参考 DKShareSelectionHooks.xm。
  https://github.com/HierarchThurs/DYKiller
 
  MIT License
@@ -71,6 +71,14 @@
 - (void)setOverrideUserInterfaceStyle:(UIUserInterfaceStyle)style {
     UIUserInterfaceStyle menuStyle = [DYYYCommentMenuTheme styleForController:self];
     %orig(menuStyle == UIUserInterfaceStyleUnspecified ? style : menuStyle);
+}
+
+- (void)setSheetHeight:(CGFloat)height {
+    %orig([DYYYCommentMenuGrid constrainedHeight:height controller:(UIViewController *)self]);
+}
+- (void)updateSheetHeight:(CGFloat)height withMinimumSheetHeight:(CGFloat)minimum animated:(BOOL)animated completion:(id)completion {
+    CGFloat compact = [DYYYCommentMenuGrid constrainedHeight:height controller:(UIViewController *)self];
+    %orig(compact, MIN(minimum, compact), animated, completion);
 }
 
 - (void)viewDidLayoutSubviews {
@@ -167,10 +175,54 @@
 
 %group DYYYCommentMenuCollectionHooks
 %hook DYYYCommentMenuCollectionController
+- (void)viewDidLoad {
+    %orig;
+    [DYYYCommentMenuTheme installLayoutHooksForController:(UIViewController *)self];
+}
 - (void)viewDidLayoutSubviews {
     %orig;
-    // 列表的遮罩和发送区可能在 Sheet 布局之后才落位；这里只同步一次，不安排轮询。
+    [DYYYCommentMenuTheme installLayoutHooksForController:(UIViewController *)self];
     [DYYYCommentMenuPalette synchronizeContentController:(UIViewController *)self];
+    [DYYYCommentMenuGrid synchronizeController:(UIViewController *)self];
+}
+%end
+%end
+
+%group DYYYCommentMenuModelHooks
+%hook DYYYCommentMenuListModel
+- (void)replaceBySectionViewModels:(NSArray *)sections sync:(BOOL)sync {
+    id first = [DYYYCommentMenuGrid registerSections:sections list:self];
+    %orig;
+    [DYYYCommentMenuGrid didReplaceModelsInSection:first];
+}
+%end
+%hook DYYYCommentMenuNormalSectionModel
+- (void)replaceByModels:(NSArray *)models animated:(BOOL)animated sync:(BOOL)sync {
+    BOOL managed = [DYYYCommentMenuGrid isManagedSectionModel:self];
+    NSArray *rendered = [DYYYCommentMenuGrid modelsForSection:self incoming:models];
+    %orig(rendered, managed ? NO : animated, managed ? YES : sync);
+    [DYYYCommentMenuGrid didReplaceModelsInSection:self];
+}
+%end
+%end
+
+%group DYYYCommentMenuNativeLayoutHooks
+%hook DYYYCommentMenuNativeLayout
+- (NSArray *)layoutAttributesForElementsInRect:(CGRect)rect {
+    NSArray *native = %orig;
+    if (![DYYYCommentMenuGrid isMenuLayout:self]) return native;
+    NSMutableArray *adjusted = [NSMutableArray arrayWithCapacity:native.count];
+    BOOL changed = NO;
+    for (UICollectionViewLayoutAttributes *item in native) {
+        UICollectionViewLayoutAttributes *value = [DYYYCommentMenuGrid adjustAttributes:item layout:self];
+        [adjusted addObject:value];
+        if (value != item) changed = YES;
+    }
+    return changed ? adjusted : native;
+}
+- (UICollectionViewLayoutAttributes *)layoutAttributesForItemAtIndexPath:(NSIndexPath *)path {
+    UICollectionViewLayoutAttributes *native = %orig;
+    return [DYYYCommentMenuGrid adjustAttributes:native layout:self];
 }
 %end
 %end
@@ -183,7 +235,11 @@
 }
 - (void)configCell:(id)cell index:(NSInteger)index model:(id)model {
     %orig;
-    [DYYYCommentMenuGrid configureCell:cell section:self index:index];
+    [DYYYCommentMenuGrid configureCell:cell section:self index:index model:model];
+}
+- (CGSize)sizeForFooterWithCollectionViewSize:(CGSize)size {
+    if ([NSUserDefaults.standardUserDefaults boolForKey:@"DYYYEnableCommentMenuBlur"] && [self numberOfItems] == 0) return CGSizeZero;
+    return %orig;
 }
 %end
 %end
@@ -218,12 +274,23 @@
     return found;
 }
 
++ (void)installLayoutHooksForController:(UIViewController *)controller {
+    static Class installed;
+    UICollectionView *list = [DYYYCommentMenuGrid collectionForController:controller];
+    Class nativeClass = list.collectionViewLayout.class;
+    if (installed || !nativeClass || ![nativeClass isSubclassOfClass:UICollectionViewLayout.class]) return;
+    %init(DYYYCommentMenuNativeLayoutHooks, DYYYCommentMenuNativeLayout = nativeClass);
+    installed = nativeClass;
+    // 只在首次安装时重新计算一次；不替换原生布局，不在布局回调中反复失效。
+    [list.collectionViewLayout invalidateLayout];
+}
+
 + (void)installHooks {
     if (!NSThread.isMainThread) {
         dispatch_async(dispatch_get_main_queue(), ^{ [self installHooks]; });
         return;
     }
-    static BOOL sheetInstalled, cardInstalled, contactInstalled, selectionInstalled, recentInstalled, collectionInstalled, gridInstalled, sendInstalled;
+    static BOOL sheetInstalled, cardInstalled, contactInstalled, selectionInstalled, recentInstalled, collectionInstalled, gridInstalled, sendInstalled, modelsInstalled;
     Class sheetClass = NSClassFromString(@"AWECommentLongPressPanelSwiftImpl.CommentLongPressPanelSheet");
     if (!sheetInstalled && sheetClass && [sheetClass isSubclassOfClass:UIViewController.class]) {
         %init(DYYYCommentMenuThemeHooks, DYYYCommentLongPressPanelSheet = sheetClass);
@@ -234,11 +301,21 @@
         %init(DYYYCommentMenuCardThemeHooks, DYYYCommentMenuCardCell = cellClass);
         cardInstalled = YES;
     }
+    Class listModel = NSClassFromString(@"AWECommentLongPressPanelSwiftImpl.AWECommentLongPressPanelListViewModel");
+    Class normalModel = NSClassFromString(@"AWECommentLongPressPanelSwiftImpl.CommentLongPressPanelNormalSectionViewModel");
+    if (!modelsInstalled && listModel && normalModel &&
+        class_getInstanceMethod(listModel, @selector(replaceBySectionViewModels:sync:)) &&
+        class_getInstanceMethod(normalModel, @selector(modelsArray)) &&
+        class_getInstanceMethod(normalModel, @selector(replaceByModels:animated:sync:))) {
+        %init(DYYYCommentMenuModelHooks, DYYYCommentMenuListModel = listModel, DYYYCommentMenuNormalSectionModel = normalModel);
+        modelsInstalled = YES;
+    }
     Class sectionClass = NSClassFromString(@"AWECommentLongPressPanelSwiftImpl.CommentLongPressPanelNormalSectionController");
     if (!gridInstalled && sectionClass && cellClass &&
         class_getInstanceMethod(sectionClass, @selector(sizeForItemAtIndex:model:collectionViewSize:)) &&
         class_getInstanceMethod(sectionClass, @selector(configCell:index:model:)) &&
         class_getInstanceMethod(sectionClass, @selector(numberOfItems)) &&
+        class_getInstanceMethod(sectionClass, @selector(sizeForFooterWithCollectionViewSize:)) &&
         class_getInstanceMethod(sectionClass, @selector(viewController)) &&
         class_getInstanceVariable(cellClass, "$__lazy_storage_$_mainView")) {
         %init(DYYYCommentMenuGridHooks, DYYYCommentMenuNormalSection = sectionClass);

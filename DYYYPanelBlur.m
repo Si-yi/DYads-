@@ -231,11 +231,12 @@ static char kDYYYPanelGroupSendBorderKey;
         objc_setAssociatedObject(outline, &kDYYYPanelBlurOwnerKey, state, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
     [state.outlinedCells addObject:cell];
-    // 两列保留整排 16pt 外边距，中间两侧各留 4pt；单数末项沿用原生整行点击范围。
+    // 两列保留整排 16pt 外边距，中间两侧各留 4pt；居中末项两侧各留 10pt，与其他按钮保持相同宽度。
     UIView *list = cell.superview;
     BOOL narrow = [list isKindOfClass:UICollectionView.class] && CGRectGetWidth(cell.bounds) < CGRectGetWidth(list.bounds) * 0.75;
-    CGFloat left = narrow && CGRectGetMinX(cell.frame) > 1 ? 4 : 16;
-    CGFloat right = narrow && CGRectGetMaxX(cell.frame) < CGRectGetWidth(list.bounds) - 1 ? 4 : 16;
+    BOOL centered = narrow && fabs(CGRectGetMidX(cell.frame) - CGRectGetMidX(list.bounds)) < 1;
+    CGFloat left = centered ? 10 : (narrow && CGRectGetMinX(cell.frame) > 1 ? 4 : 16);
+    CGFloat right = centered ? 10 : (narrow && CGRectGetMaxX(cell.frame) < CGRectGetWidth(list.bounds) - 1 ? 4 : 16);
     CGRect frame = CGRectMake(CGRectGetMinX(available) + left, center - height * 0.5,
         CGRectGetWidth(available) - left - right, height);
     if (!CGRectEqualToRect(outline.frame, frame)) outline.frame = frame;
@@ -540,7 +541,8 @@ static char kDYYYPanelGroupSendBorderKey;
             @"selectionClipAttached": @(state.selectionClip && state.clippedCollection.layer.mask == state.selectionClip),
             @"selectionClipFrame": state.selectionClip ? NSStringFromCGRect(state.selectionClip.frame) : @"",
             @"selectionClipBlocked": @(state.selectionClipBlocked),
-            @"outlinedActionCount": @(state.outlinedCells.count)
+            @"outlinedActionCount": @(state.outlinedCells.count),
+            @"grid": [DYYYCommentMenuGrid diagnosticsForController:controller]
         }];
     }
     return @{ @"panels": panels,

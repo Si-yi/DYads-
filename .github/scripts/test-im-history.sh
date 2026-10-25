@@ -18,3 +18,6 @@ xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
 xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
     DYYYAutoMessageBatch.m Tests/DYYYAutoMessageBatchTests.m -o "$test_dir/auto-message-batch-tests"
 "$test_dir/auto-message-batch-tests"
+xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
+    DYYYCommentMenuItems.m Tests/DYYYCommentMenuItemsTests.m -o "$test_dir/comment-menu-items-tests"
+"$test_dir/comment-menu-items-tests"

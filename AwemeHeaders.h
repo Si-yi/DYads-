@@ -1117,6 +1117,10 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @end
 
 @interface DUXContentSheet : UIViewController
+@property (nonatomic, assign) CGFloat sheetHeight;
+@property (nonatomic, assign) CGFloat minimumSheetHeight;
+@property (nonatomic, assign) BOOL userDragging;
+- (void)updateSheetHeight:(CGFloat)height withMinimumSheetHeight:(CGFloat)minimum animated:(BOOL)animated completion:(id)completion;
 - (void)showOnViewController:(id)arg1 completion:(id)arg2;
 - (instancetype)initWithRootViewController:(UIViewController *)controller withTopType:(NSInteger)topType withSheetAligment:(NSInteger)alignment;
 - (instancetype)initWithRootViewController:(UIViewController *)controller withTopType:(NSInteger)topType withHeight:(CGFloat)height;
@@ -1140,6 +1144,18 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 - (NSInteger)numberOfItems;
 - (CGSize)sizeForItemAtIndex:(NSInteger)index model:(id)model collectionViewSize:(CGSize)size;
 - (void)configCell:(id)cell index:(NSInteger)index model:(id)model;
+- (CGSize)sizeForFooterWithCollectionViewSize:(CGSize)size;
+@end
+
+// 原生菜单渲染 VM；仅合并普通功能分区，保留原始元素对象与好友分区。
+@interface DYYYCommentMenuListModel : NSObject
+- (void)replaceBySectionViewModels:(NSArray *)sections sync:(BOOL)sync;
+@end
+@interface DYYYCommentMenuNormalSectionModel : NSObject
+- (NSArray *)modelsArray;
+- (void)replaceByModels:(NSArray *)models animated:(BOOL)animated sync:(BOOL)sync;
+@end
+@interface DYYYCommentMenuNativeLayout : UICollectionViewLayout
 @end
 
 // 实际 Swift 类从 ShareAdditionTextView 所在映像按语义名解析，避免绑定哈希。
