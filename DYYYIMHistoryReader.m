@@ -57,24 +57,53 @@
     }];
 }
 
+// 原生首条未读可能是本地 identifier，也可能是数值 serverMessageID，不能只比一种。
++ (NSString *)normalizedBoundary:(id)boundary {
+    NSString *text = [boundary isKindOfClass:NSString.class] ? boundary :
+        ([boundary isKindOfClass:NSNumber.class] ? [boundary stringValue] : nil);
+    return text.length && ![text isEqual:@"0"] ? text : nil;
+}
++ (NSString *)boundaryKind:(NSString *)boundary message:(id)message {
+    if (!boundary.length) return nil;
+    if ([[self value:message key:@"identifier"] isEqual:boundary]) return @"identifier";
+    id server = [self value:message key:@"serverMessageID"];
+    NSString *serverID = [server isKindOfClass:NSNumber.class] ? [server stringValue] :
+        ([server isKindOfClass:NSString.class] ? server : nil);
+    return [serverID isEqual:boundary] ? @"serverMessageID" : nil;
+}
++ (BOOL)history:(NSArray *)history coversBoundary:(NSString *)boundary {
+    if (!boundary.length) return YES;
+    for (id message in history) if ([self boundaryKind:boundary message:message]) return YES;
+    return NO;
+}
 + (NSArray *)historyForConversation:(NSString *)identifier latestMessage:(id)latest observedResult:(id)observed
                        recentQuery:(id (^)(NSTimeInterval, NSUInteger))recentQuery
                      earliestQuery:(id (^)(NSUInteger))earliestQuery diagnostics:(NSMutableDictionary *)diagnostics {
+    return [self historyForConversation:identifier latestMessage:latest firstUnreadID:nil observedResult:observed
+        recentQuery:recentQuery earliestQuery:earliestQuery diagnostics:diagnostics];
+}
++ (NSArray *)historyForConversation:(NSString *)identifier latestMessage:(id)latest firstUnreadID:(NSString *)rawBoundary
+                    observedResult:(id)observed recentQuery:(id (^)(NSTimeInterval, NSUInteger))recentQuery
+                     earliestQuery:(id (^)(NSUInteger))earliestQuery diagnostics:(NSMutableDictionary *)diagnostics {
     NSString *latestID = [self value:latest key:@"identifier"];
+    NSString *boundary = [self normalizedBoundary:rawBoundary];
     NSArray *history = [self validatedHistory:observed conversation:identifier latestID:latestID];
-    if (history) { diagnostics[@"query"] = @"observed_conversation"; return history; }
+    NSArray *best = history;
+    NSString *bestQuery = history ? @"observed_conversation" : nil;
+    if (history && [self history:history coversBoundary:boundary]) { diagnostics[@"query"] = bestQuery; return history; }
     NSDate *date = [self value:latest key:@"createdAt"];
     if (recentQuery && [date isKindOfClass:NSDate.class]) {
-        // 从目标会话末条的时间附近读取近期消息，再严格按会话 ID 分流。
-        // 是否可用由末条覆盖校验决定，不能仅凭原生返回了数组就判定成功。
         @try {
             id raw = recentQuery(date.timeIntervalSince1970 + 1, 2000);
             diagnostics[@"recentReturnClass"] = raw ? NSStringFromClass([raw class]) : @"nil";
             history = [self validatedHistory:raw conversation:identifier latestID:latestID];
-            if (history) { diagnostics[@"query"] = @"recent_by_time"; return history; }
+            if (history) {
+                best = history; bestQuery = @"recent_by_time";
+                if ([self history:history coversBoundary:boundary]) { diagnostics[@"query"] = bestQuery; return history; }
+            }
         } @catch (__unused NSException *exception) { diagnostics[@"recentQueryFailed"] = @YES; }
     }
-    // 兼容仅支持明确会话 ID 查询的版本，按需扩展，不能固定读最早 2000 条后退出。
+    // 不仅要含末条，还要覆盖确切的未读边界；否则继续扩大明确会话 ID 的只读窗口。
     if (earliestQuery) for (NSUInteger limit = 2000; limit <= 32000; limit *= 2) {
         @try {
             id raw = earliestQuery(limit);
@@ -82,22 +111,41 @@
             diagnostics[@"earliestLimit"] = @(limit);
             diagnostics[@"earliestMessageCount"] = @(messages.count);
             history = [self validatedHistory:messages conversation:identifier latestID:latestID];
-            if (history) { diagnostics[@"query"] = @"expanded_by_identifier"; return history; }
+            if (history) {
+                best = history; bestQuery = @"expanded_by_identifier";
+                if ([self history:history coversBoundary:boundary]) { diagnostics[@"query"] = bestQuery; return history; }
+            }
             if (!messages || messages.count < limit) break;
         } @catch (__unused NSException *exception) { diagnostics[@"earliestQueryFailed"] = @YES; break; }
     }
-    diagnostics[@"query"] = @"latest_not_covered";
-    return nil;
+    // 仍可用本地历史核对旧错误凭据；未读截取会单独拒绝缺失的边界，不能退回按数量扫旧消息。
+    diagnostics[@"query"] = bestQuery ?: @"latest_not_covered";
+    return best;
 }
-
 + (NSArray *)unreadIncomingMessages:(NSArray *)history peerID:(long long)peer unreadCount:(NSUInteger)count firstUnreadID:(NSString *)boundary {
-    NSMutableArray *incoming = [NSMutableArray array];
-    for (id message in history) {
-        if (incoming.count >= count) break;
-        BOOL atBoundary = boundary.length && [[self value:message key:@"identifier"] isEqual:boundary];
-        if ([[self value:message key:@"sender"] longLongValue] == peer) [incoming addObject:message];
-        if (atBoundary) break;
+    return [self unreadIncomingMessages:history peerID:peer unreadCount:count firstUnreadID:boundary diagnostics:nil];
+}
++ (NSArray *)unreadIncomingMessages:(NSArray *)history peerID:(long long)peer unreadCount:(NSUInteger)count
+                     firstUnreadID:(NSString *)rawBoundary diagnostics:(NSMutableDictionary *)diagnostics {
+    diagnostics[@"nativeUnreadCount"] = @(count);
+    NSString *boundary = [self normalizedBoundary:rawBoundary];
+    diagnostics[@"unreadBoundaryProvided"] = @(boundary.length > 0);
+    if (!count) { diagnostics[@"unreadSelection"] = @"read_conversation"; return @[]; }
+    if (!boundary.length) { diagnostics[@"unreadSelection"] = @"boundary_missing"; return @[]; }
+    NSUInteger end = NSNotFound;
+    for (NSUInteger i = 0; i < history.count; i++) {
+        NSString *kind = [self boundaryKind:boundary message:history[i]];
+        if (kind) { end = i; diagnostics[@"unreadBoundaryMatchedBy"] = kind; break; }
     }
+    if (end == NSNotFound) { diagnostics[@"unreadSelection"] = @"boundary_not_covered"; return @[]; }
+    NSMutableArray *incoming = [NSMutableArray array];
+    for (NSUInteger i = 0; i <= end && incoming.count < count; i++) {
+        id message = history[i];
+        if ([[self value:message key:@"sender"] longLongValue] == peer) [incoming addObject:message];
+    }
+    diagnostics[@"unreadSelection"] = @"verified_boundary";
+    diagnostics[@"unreadBoundaryOffset"] = @(end);
+    diagnostics[@"unreadSliceCount"] = @(incoming.count);
     return incoming;
 }
 @end

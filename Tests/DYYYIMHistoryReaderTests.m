@@ -6,6 +6,7 @@
 @property (nonatomic, copy) NSString *belongingConversationIdentifier;
 @property (nonatomic, strong) NSDate *createdAt;
 @property (nonatomic, strong) NSNumber *orderInConversation;
+@property (nonatomic, strong) NSNumber *serverMessageID;
 @property (nonatomic) long long sender;
 @end
 @implementation DYYYHistoryTestMessage
@@ -72,6 +73,32 @@
     incoming = [DYYYIMHistoryReader unreadIncomingMessages:@[ unread, own, boundary, read ] peerID:42 unreadCount:13 firstUnreadID:[boundary identifier]];
     [self check:incoming.count == 2 && ![incoming containsObject:own] && ![incoming containsObject:read] reason:@"只读取好友发来的未读，不能越过首条未读边界"];
     [self check:[DYYYIMHistoryReader unreadIncomingMessages:@[ unread ] peerID:42 unreadCount:0 firstUnreadID:@""].count == 0 reason:@"已读会话不能重新推送"];
+    [boundary setServerMessageID:@910000000000000001LL];
+    NSMutableDictionary *window = [NSMutableDictionary dictionary];
+    incoming = [DYYYIMHistoryReader unreadIncomingMessages:@[unread, own, boundary, read] peerID:42
+        unreadCount:59 firstUnreadID:@"910000000000000001" diagnostics:window];
+    [self check:incoming.count == 2 && ![incoming containsObject:read] &&
+        [window[@"unreadBoundaryMatchedBy"] isEqual:@"serverMessageID"]
+        reason:@"原生边界为服务器 ID 时不能当作失配后继续凑 59 条好友旧消息"];
+    for (NSString *missing in @[@"", @"0", @"missing-first-unread"]) {
+        window = [NSMutableDictionary dictionary];
+        incoming = [DYYYIMHistoryReader unreadIncomingMessages:history peerID:42 unreadCount:59
+            firstUnreadID:missing diagnostics:window];
+        [self check:incoming.count == 0 && ![window[@"unreadSelection"] isEqual:@"verified_boundary"]
+            reason:@"边界缺失/找不到时不能按未读数量从整份历史回捞旧分享"];
+    }
+    incoming = [DYYYIMHistoryReader unreadIncomingMessages:@[unread, own, boundary, read] peerID:42
+        unreadCount:59 firstUnreadID:[own identifier]];
+    [self check:incoming.count == 1 && incoming.firstObject == unread reason:@"边界即使对应本账户消息也必须停止，不能越界扫描"];
+    [self check:[DYYYIMHistoryReader unreadIncomingMessages:@[unread, boundary] peerID:42 unreadCount:0
+        firstUnreadID:[boundary identifier]].count == 0 reason:@"已读后残留的边界不能复活历史分享"];
+    diagnostics = [NSMutableDictionary dictionary];
+    history = [DYYYIMHistoryReader historyForConversation:@"chat-A" latestMessage:latest firstUnreadID:[all[1000] identifier]
+        observedResult:recent recentQuery:nil earliestQuery:^id(NSUInteger limit) {
+            return [all subarrayWithRange:NSMakeRange(0, MIN(limit, all.count))];
+        } diagnostics:diagnostics];
+    [self check:history.count == all.count && [diagnostics[@"earliestLimit"] unsignedIntegerValue] == 4000
+        reason:@"近期窗口含末条但未覆盖首条未读时，还需扩展，不能把未读窗口截丢"];
 
     // 同一时间戳的消息仍沿原生会话顺序定位边界。
     [unread setCreatedAt:[boundary createdAt]];

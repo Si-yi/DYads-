@@ -1,4 +1,5 @@
 #import "DYYYFriendShareHistory.h"
+#import "DYYYIMShareParser.h"
 #include <math.h>
 
 @interface DYYYFriendShareHistory ()
@@ -53,9 +54,14 @@
         NSString *itemID = value[@"itemID"];
         if (![itemID isKindOfClass:NSString.class] || !itemID.length || [self.watched containsObject:itemID]) continue;
         NSMutableDictionary *row = [self.rows[itemID] mutableCopy] ?: [@{ @"itemID": itemID } mutableCopy];
+        // 持久化中断后，旧来源缓存可能落后于待刷记录；旧凭据不能覆盖新版有效凭据。
+        if ([DYYYIMShareParser isCurrentReceipt:row] && ![DYYYIMShareParser isCurrentReceipt:value]) continue;
         for (NSString *key in @[ @"friendID", @"name", @"avatar", @"shareMessageID" ])
             if ([value[key] isKindOfClass:NSString.class] && [value[key] length]) row[key] = value[key];
         if ([value[@"shareValidationVersion"] isKindOfClass:NSNumber.class]) row[@"shareValidationVersion"] = value[@"shareValidationVersion"];
+        if ([value[@"shareMessageType"] isKindOfClass:NSNumber.class]) row[@"shareMessageType"] = value[@"shareMessageType"];
+        if ([value[@"shareUnreadValidated"] isKindOfClass:NSNumber.class]) row[@"shareUnreadValidated"] = value[@"shareUnreadValidated"];
+        if ([value[@"shareMessageCreatedAt"] isKindOfClass:NSNumber.class]) row[@"shareMessageCreatedAt"] = value[@"shareMessageCreatedAt"];
         if (!row[@"collectedAt"] && [value[@"collectedAt"] isKindOfClass:NSNumber.class]) row[@"collectedAt"] = value[@"collectedAt"];
         if ([self.rows[itemID] isEqual:row]) continue;
         self.rows[itemID] = row;
@@ -70,7 +76,7 @@
         NSString *itemID = rejected[@"itemID"];
         NSDictionary *stored = [itemID isKindOfClass:NSString.class] ? self.rows[itemID] : nil;
         if (!stored || ![stored[@"friendID"] isEqual:rejected[@"friendID"]] ||
-            [stored[@"shareValidationVersion"] unsignedIntegerValue] >= 1) continue;
+            [DYYYIMShareParser isCurrentReceipt:stored]) continue;
         [self.rows removeObjectForKey:itemID];
         [self.order removeObject:itemID];
         [removed addObject:itemID];

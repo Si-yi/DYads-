@@ -2155,6 +2155,7 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @end
 
 @interface TIMXOMessage : NSObject
+@property (nonatomic, readonly, strong) NSNumber *serverMessageID;
 @property (nonatomic, readonly, strong) NSNumber *orderInConversation;
 @property (nonatomic, readonly, copy) NSString *identifier;
 @property (nonatomic, readonly, copy) NSDictionary *content;

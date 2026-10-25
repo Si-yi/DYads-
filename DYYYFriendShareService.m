@@ -1,5 +1,6 @@
 #import "DYYYFriendShareService.h"
 #import "DYYYIMService.h"
+#import "DYYYIMShareParser.h"
 #import "DYYYFriendShareHistory.h"
 #import "DYYYFriendShareDelivery.h"
 #import "DYYYFriendShareBadgeView.h"
@@ -209,14 +210,29 @@
 + (void)enqueueSavedRowsIncludingActive:(BOOL)includeActive {
     DYYYFriendShareService *s = [self shared];
     NSSet *selected = [NSSet setWithArray:[NSUserDefaults.standardUserDefaults arrayForKey:@"DYYYFriendShareFeedFriends"] ?: @[]];
+    NSUInteger held = 0;
     for (NSDictionary *row in s.history.pendingRows) {
         NSString *itemID = row[@"itemID"];
         if (![selected containsObject:row[@"friendID"] ?: @""]) continue;
+        // 旧版 v1 只检查顶层 ID，其凭据也可能来自回复；核实前只保存，不先推上首页。
+        if (![DYYYIMShareParser isCurrentReceipt:row]) {
+            NSDictionary *existingSource = s.sources[itemID];
+            if ([DYYYIMShareParser isCurrentReceipt:existingSource] && [existingSource[@"friendID"] isEqual:row[@"friendID"]]) {
+                NSMutableDictionary *upgraded = [row mutableCopy];
+                for (NSString *key in @[@"shareValidationVersion", @"shareMessageType", @"shareMessageID", @"shareUnreadValidated"])
+                    upgraded[key] = existingSource[key];
+                [s.history mergeRows:@[upgraded]];
+                row = upgraded;
+            }
+        }
+        if (![DYYYIMShareParser isCurrentReceipt:row]) { held++; continue; }
         NSMutableDictionary *source = [row mutableCopy];
         [source removeObjectForKey:@"itemID"];
         s.sources[itemID] = source;
         if (includeActive || ![s.active containsObject:itemID]) [s.queued addObject:itemID];
     }
+    s.state[@"heldUnverifiedPendingCount"] = @(held);
+    s.state[@"shareValidationVersion"] = @([DYYYIMShareParser validationVersion]);
 }
 + (void)orderActiveShares {
     DYYYFriendShareService *s = [self shared];
@@ -289,12 +305,12 @@
     NSMutableDictionary *byID = [NSMutableDictionary dictionary];
     for (NSString *itemID in s.sources) {
         NSDictionary *source = s.sources[itemID];
-        if (![source isKindOfClass:NSDictionary.class] || [source[@"shareValidationVersion"] unsignedIntegerValue] >= 1) continue;
+        if (![source isKindOfClass:NSDictionary.class] || [DYYYIMShareParser isCurrentReceipt:source]) continue;
         NSMutableDictionary *row = [source mutableCopy]; row[@"itemID"] = itemID;
         byID[itemID] = row;
     }
     for (NSDictionary *row in s.history.pendingRows)
-        if ([row[@"shareValidationVersion"] unsignedIntegerValue] < 1) byID[row[@"itemID"]] = row;
+        if (![DYYYIMShareParser isCurrentReceipt:row]) byID[row[@"itemID"]] = row;
     return byID.allValues;
 }
 + (void)queueRows:(NSArray *)rows rejectingRows:(NSArray *)rejectedRows toast:(BOOL)toast {
@@ -305,7 +321,7 @@
     for (NSDictionary *row in rejectedRows) {
         NSString *itemID = row[@"itemID"];
         NSDictionary *source = s.sources[itemID];
-        if ([source[@"friendID"] isEqual:row[@"friendID"]] && [source[@"shareValidationVersion"] unsignedIntegerValue] < 1) {
+        if ([source[@"friendID"] isEqual:row[@"friendID"]] && ![DYYYIMShareParser isCurrentReceipt:source]) {
             [s.sources removeObjectForKey:itemID]; [invalid addObject:itemID];
         }
     }
@@ -340,13 +356,16 @@
     NSMutableArray *saved = [NSMutableArray array];
     for (NSDictionary *row in rows) {
         NSString *itemID = row[@"itemID"], *friendID = row[@"friendID"];
-        if (![itemID isKindOfClass:NSString.class] || !itemID.length) continue;
-        if ([row[@"shareValidationVersion"] unsignedIntegerValue] >= 1) {
+        if (![itemID isKindOfClass:NSString.class] || !itemID.length || ![DYYYIMShareParser isCurrentReceipt:row]) continue;
+        if ([DYYYIMShareParser isCurrentReceipt:row]) {
             // 其他好友真正分享同一作品仍有效，不能被此前的旧误判屏蔽。
             [s.rejectedLegacyIDs removeObject:itemID];
             if ([s.sources[itemID][@"friendID"] isEqual:friendID]) {
                 NSMutableDictionary *source = [s.sources[itemID] mutableCopy];
                 source[@"shareValidationVersion"] = row[@"shareValidationVersion"];
+                source[@"shareMessageType"] = row[@"shareMessageType"];
+                source[@"shareUnreadValidated"] = row[@"shareUnreadValidated"];
+                if (row[@"shareMessageCreatedAt"]) source[@"shareMessageCreatedAt"] = row[@"shareMessageCreatedAt"];
                 if (row[@"shareMessageID"]) source[@"shareMessageID"] = row[@"shareMessageID"];
                 s.sources[itemID] = source;
             }
@@ -393,7 +412,7 @@
     }
     if (!inHome) return nil;
     id source = s.sources[itemID];
-    return [source isKindOfClass:NSDictionary.class] ? source : nil;
+    return [DYYYIMShareParser isCurrentReceipt:source] ? source : nil;
 }
 
 #pragma mark - 使用抖音自己的视频缓存池获取真实模型

@@ -72,7 +72,7 @@
             if (![self validateConversation:conv manager:manager account:account peer:peer identifier:cid]) { failed++; continue; }
             BOOL revalidate = NO;
             for (NSDictionary *row in legacyRows)
-                if ([row[@"friendID"] isEqual:peer] && [row[@"shareValidationVersion"] unsignedIntegerValue] < 1) { revalidate = YES; break; }
+                if ([row[@"friendID"] isEqual:peer] && ![DYYYIMShareParser isCurrentReceipt:row]) { revalidate = YES; break; }
             if (!conv.unreadCount && !revalidate) continue;
             id latest = conv.lastMessage;
             if (!latest) { failed++; continue; }
@@ -114,12 +114,12 @@
                             return [messages earliestMessagesInConversationWithIdentifier:cid limit:(long long)limit];
                         };
                     }
-                    NSArray *history = [DYYYIMHistoryReader historyForConversation:cid latestMessage:request[@"latest"]
+                    NSArray *history = [DYYYIMHistoryReader historyForConversation:cid latestMessage:request[@"latest"] firstUnreadID:request[@"boundary"]
                         observedResult:observed recentQuery:recentQuery earliestQuery:earliestQuery diagnostics:diagnostics];
                     if (!history) { failed++; continue; }
                     diagnostics[@"messageCount"] = @(history.count);
                     NSArray *incoming = [DYYYIMHistoryReader unreadIncomingMessages:history peerID:peer.longLongValue
-                        unreadCount:[request[@"unread"] unsignedIntegerValue] firstUnreadID:request[@"boundary"]];
+                        unreadCount:[request[@"unread"] unsignedIntegerValue] firstUnreadID:request[@"boundary"] diagnostics:diagnostics];
                     diagnostics[@"incomingCount"] = @(incoming.count);
                     NSMutableArray *kinds = [NSMutableArray array];
                     for (TIMXOMessage *message in incoming) {
@@ -127,12 +127,14 @@
                         if (kinds.count < 16) [kinds addObject:[DYYYIMShareParser diagnosticsForMessage:message peerID:peer accountID:account]];
                         for (NSString *itemID in ids) {
                             if ([seen containsObject:itemID]) continue;
+                            NSDictionary *receipt = [DYYYIMShareParser receiptForUnreadMessage:message peerID:peer itemID:itemID];
+                            if (!receipt) continue;
                             [seen addObject:itemID];
-                            [rows addObject:[DYYYIMShareParser receiptForMessage:message peerID:peer itemID:itemID]];
+                            [rows addObject:receipt];
                         }
                     }
                     diagnostics[@"incomingMessageKinds"] = kinds;
-                    NSDictionary *reconciliation = [DYYYIMShareParser reconcileRows:legacyRows history:history peerID:peer accountID:account];
+                    NSDictionary *reconciliation = [DYYYIMShareParser reconcileRows:legacyRows history:history unreadMessages:incoming peerID:peer accountID:account];
                     [rows addObjectsFromArray:reconciliation[@"verifiedRows"]];
                     [rejectedRows addObjectsFromArray:reconciliation[@"rejectedRows"]];
                     diagnostics[@"verifiedLegacyCount"] = @([reconciliation[@"verifiedRows"] count]);
