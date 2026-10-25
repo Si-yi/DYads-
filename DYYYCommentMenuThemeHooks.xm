@@ -174,7 +174,10 @@
     UIViewController *content = [(DYYYCommentMenuSelectionSection *)self viewController];
     BOOL managed = [NSUserDefaults.standardUserDefaults boolForKey:@"DYYYEnableCommentMenuBlur"] &&
         [DYYYCommentMenuTheme menuControllerForController:content] != nil;
-    if (!managed) { %orig; return; }
+    if (!managed) {
+        %orig;
+        return;
+    }
     // 原生尺寸变化和最终紧凑尺寸在同一次回调内完成，不绘制中间的单列/选人高度。
     [UIView performWithoutAnimation:^{
         %orig(list, fromState, toState);

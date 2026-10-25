@@ -295,6 +295,10 @@ static NSDictionary *kDYYYCommentGridLastClosed;
     CGFloat height = [current[@"target"] doubleValue];
     CGFloat drawn = [self renderedHeightForMenu:sheet];
     if (![DYYYCommentMenuMetrics needsUpdateForTarget:height propertyHeight:sheet.sheetHeight renderedHeight:drawn]) return;
+    if ([current[@"appliedSignature"] isEqual:current[@"targetSignature"]]) {
+        if ([current[@"repairSignature"] isEqual:current[@"targetSignature"]]) return;
+        current[@"repairSignature"] = current[@"targetSignature"];
+    } else [current removeObjectForKey:@"repairSignature"];
     current[@"applying"] = @YES;
     @try {
         [UIView performWithoutAnimation:^{
@@ -375,11 +379,6 @@ static NSDictionary *kDYYYCommentGridLastClosed;
         [self applyHeightToMenu:menu record:record]; return;
     }
     if ([record[@"scheduled"] boolValue]) return;
-    if ([record[@"appliedSignature"] isEqual:signature]) {
-        // 同一状态最多补一次真实外壳重排，避免因旧 minimum/动画写回而永久跳过，也避免布局循环。
-        if ([record[@"repairSignature"] isEqual:signature]) return;
-        record[@"repairSignature"] = signature;
-    }
     record[@"scheduled"] = @YES;
     __weak DYYYCommentLongPressPanelSheet *weakMenu = menu;
     dispatch_async(dispatch_get_main_queue(), ^{
