@@ -41,9 +41,7 @@ static char kDYYYMenuActionOverlayKey;
 static char kDYYYMenuNativeActionIconKey;
 static char kDYYYMenuSelectionBusyKey;
 static char kDYYYMenuSelectionScheduledKey;
-static char kDYYYMenuSelectionOverlayKey;
-static char kDYYYMenuSelectionRowsKey;
-static char kDYYYMenuSelectionOverlayMarkerKey;
+static char kDYYYMenuSelectionLabelKey;
 
 @implementation DYYYCommentMenuPalette
 
@@ -95,7 +93,7 @@ static char kDYYYMenuSelectionOverlayMarkerKey;
     return object_getIvar(cell, ivar);
 }
 
-+ (UIColor *)readableTextColor:(UIColor *)color {
++ (UIColor *)readableTextColor:(UIColor *)color disabled:(BOOL)disabled {
     if (!color) return nil;
     UIColor *resolved = [color resolvedColorWithTraitCollection:
         [UITraitCollection traitCollectionWithUserInterfaceStyle:UIUserInterfaceStyleDark]];
@@ -103,12 +101,17 @@ static char kDYYYMenuSelectionOverlayMarkerKey;
     if (![resolved getRed:&r green:&g blue:&b alpha:&a] || a <= 0.01) return nil;
     // 抖音的正文是略带蓝色的深灰，不能只匹配纯黑；火花、警告等彩色文字保留。
     if (MAX(r, MAX(g, b)) - MIN(r, MIN(g, b)) >= 0.12) return nil;
+    if (disabled) return [UIColor colorWithWhite:0.78 alpha:1];
     if (MIN(r, MIN(g, b)) >= 0.78 && a >= 0.9) return nil;
     // 主文字与辅助文字都使用不透明颜色，避免旧的 60% 黑色在黑底上消失。
     return [UIColor colorWithWhite:a < 0.85 ? 0.78 : 0.96 alpha:1];
 }
 
 + (void)applyLabel:(UILabel *)label controller:(UIViewController *)controller {
+    BOOL disabled = [self selectionMaskForActionLabel:label controller:controller] != nil;
+    if (!disabled && objc_getAssociatedObject(label, &kDYYYMenuSelectionLabelKey))
+        [self restoreObject:label];
+    if (disabled) objc_setAssociatedObject(label, &kDYYYMenuSelectionLabelKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     // 富文本只改对应的颜色段，不再调用 textColor setter 覆盖彩色火花或原始样式。
     NSAttributedString *originalText = label.attributedText;
     if (originalText.length) {
@@ -116,7 +119,7 @@ static char kDYYYMenuSelectionOverlayMarkerKey;
         __block BOOL changed = NO;
         [originalText enumerateAttribute:NSForegroundColorAttributeName inRange:NSMakeRange(0, originalText.length) options:0 usingBlock:^(id color, NSRange range, BOOL *stop) {
             UIColor *source = [color isKindOfClass:UIColor.class] ? color : label.textColor;
-            UIColor *target = [self readableTextColor:source];
+            UIColor *target = [self readableTextColor:source disabled:disabled];
             if (target) {
                 [text addAttribute:NSForegroundColorAttributeName value:target range:range];
                 changed = YES;
@@ -125,7 +128,7 @@ static char kDYYYMenuSelectionOverlayMarkerKey;
         if (changed) [self write:text key:@"attributedText" object:label controller:controller];
         return;
     }
-    UIColor *target = [self readableTextColor:label.textColor];
+    UIColor *target = [self readableTextColor:label.textColor disabled:disabled];
     if (target) [self write:target key:@"textColor" object:label controller:controller];
 }
 
@@ -228,7 +231,8 @@ static char kDYYYMenuSelectionOverlayMarkerKey;
         CGRect labelFrame = [actionLabel convertRect:actionLabel.bounds toView:cell];
         frame = CGRectMake(CGRectGetMinX(labelFrame) - 32, CGRectGetMidY(labelFrame) - 10, 20, 20);
     }
-    UIImage *symbol = [self whiteActionSymbolNamed:symbolName];
+    UIImage *symbol = [self selectionMaskForActionLabel:actionLabel controller:controller] ?
+        [self disabledActionSymbolNamed:symbolName] : [self whiteActionSymbolNamed:symbolName];
     if (CGRectIsEmpty(frame) || !CGRectContainsRect(cell.bounds, frame) || !symbol) {
         [self removeActionOverlayFromObject:cell];
         return NO;
@@ -315,107 +319,40 @@ static char kDYYYMenuSelectionOverlayMarkerKey;
     return NO;
 }
 
-+ (BOOL)isManagedSelectionOverlay:(UIView *)view {
-    return [objc_getAssociatedObject(view, &kDYYYMenuSelectionOverlayMarkerKey) boolValue];
-}
-
-+ (void)removeSelectionOverlayFromObject:(id)object {
-    UIView *overlay = objc_getAssociatedObject(object, &kDYYYMenuSelectionOverlayKey);
-    [overlay removeFromSuperview];
-    objc_setAssociatedObject(object, &kDYYYMenuSelectionOverlayKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-}
-
-+ (void)synchronizeSelectionMask:(UIView *)mask controller:(UIViewController *)controller {
-    // 原生遮罩仍负责禁用动作；只在它的内容层镜像可辨认的灰白字，不改变命中、alpha 或显隐。
-    UIView *overlay = objc_getAssociatedObject(mask, &kDYYYMenuSelectionOverlayKey);
-    if (!overlay) {
-        overlay = [[UIView alloc] initWithFrame:mask.bounds];
-        overlay.userInteractionEnabled = NO;
-        overlay.accessibilityIdentifier = @"DYYY.CommentMenu.SelectionReadability";
-        overlay.accessibilityElementsHidden = YES;
-        overlay.isAccessibilityElement = NO;
-        overlay.clipsToBounds = YES;
-        objc_setAssociatedObject(overlay, &kDYYYMenuSelectionOverlayMarkerKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        objc_setAssociatedObject(overlay, &kDYYYMenuSelectionRowsKey, [NSMapTable weakToStrongObjectsMapTable], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        objc_setAssociatedObject(mask, &kDYYYMenuSelectionOverlayKey, overlay, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        [[self objectsForController:controller] addObject:mask];
-        [mask addSubview:overlay];
-    }
-    if (!CGRectEqualToRect(overlay.frame, mask.bounds)) overlay.frame = mask.bounds;
-    NSMapTable *rows = objc_getAssociatedObject(overlay, &kDYYYMenuSelectionRowsKey);
-    NSMutableSet<UIView *> *visibleParts = [NSMutableSet set];
++ (UIView *)selectionMaskForActionLabel:(UILabel *)label controller:(UIViewController *)controller {
+    if (![self actionSymbolForTitle:label.text ?: label.attributedText.string]) return nil;
     Class cardClass = NSClassFromString(@"CommentLongPressPanelNormalBaseCell");
-    UIColor *disabledText = [UIColor colorWithWhite:0.78 alpha:1];
-    for (UIView *sibling in mask.superview.subviews) {
-        if (![sibling isKindOfClass:UICollectionView.class]) continue;
-        // 只镜像原生禁用遮罩覆盖的可见功能行，不处理发送区或好友 Cell。
-        for (UICollectionViewCell *cell in ((UICollectionView *)sibling).visibleCells) {
-            if (!cardClass || ![cell isKindOfClass:cardClass] || cell.hidden || cell.alpha <= 0.01) continue;
-            UILabel *source = [self actionLabelInCell:cell];
-            if (!source || source.hidden || source.alpha <= 0.01) continue;
-            CGRect titleFrame = [source convertRect:source.bounds toView:overlay];
-            if (!CGRectIntersectsRect(overlay.bounds, titleFrame)) continue;
-            NSString *title = source.text ?: source.attributedText.string;
-            NSString *symbolName = [self actionSymbolForTitle:title];
-            NSDictionary *parts = [rows objectForKey:source];
-            if (!parts) {
-                UILabel *label = [UILabel new];
-                UIImageView *icon = [UIImageView new];
-                label.isAccessibilityElement = NO;
-                icon.isAccessibilityElement = NO;
-                icon.userInteractionEnabled = NO;
-                icon.contentMode = UIViewContentModeScaleAspectFit;
-                parts = @{ @"label": label, @"icon": icon };
-                [rows setObject:parts forKey:source];
-                [overlay addSubview:label];
-                [overlay addSubview:icon];
-            }
-            UILabel *label = parts[@"label"];
-            UIImageView *icon = parts[@"icon"];
-            if (!CGRectEqualToRect(label.frame, titleFrame)) label.frame = titleFrame;
-            if (![label.text isEqualToString:title]) label.text = title;
-            label.font = source.font;
-            label.textAlignment = source.textAlignment;
-            label.numberOfLines = source.numberOfLines;
-            label.lineBreakMode = source.lineBreakMode;
-            label.textColor = disabledText;
-            UIImageView *native = [self actionIconInCell:cell];
-            CGRect iconFrame = native ? [native convertRect:native.bounds toView:overlay] :
-                CGRectMake(CGRectGetMinX(titleFrame) - 32, CGRectGetMidY(titleFrame) - 10, 20, 20);
-            if (!CGRectEqualToRect(icon.frame, iconFrame)) icon.frame = iconFrame;
-            UIImage *symbol = [self disabledActionSymbolNamed:symbolName];
-            if (icon.image != symbol) icon.image = symbol;
-            [visibleParts addObject:label];
-            [visibleParts addObject:icon];
+    UIView *cell = label.superview;
+    for (NSUInteger depth = 0; cell && depth < 8; depth++, cell = cell.superview) {
+        if (!cardClass || ![cell isKindOfClass:cardClass]) continue;
+        UIView *list = cell.superview;
+        if (![list isKindOfClass:UICollectionView.class]) return nil;
+        for (UIView *sibling in list.superview.subviews) {
+            if (!sibling.userInteractionEnabled || ![self isSelectionMask:sibling controller:controller]) continue;
+            CGPoint center = [label convertPoint:CGPointMake(CGRectGetMidX(label.bounds), CGRectGetMidY(label.bounds)) toView:sibling];
+            if (CGRectContainsPoint(sibling.bounds, center)) return sibling;
         }
+        return nil;
     }
-    // 复用、滚动及取消选择时清理旧镜像；不安排额外布局或轮询。
-    for (UIView *part in overlay.subviews.copy)
-        if (![visibleParts containsObject:part]) [part removeFromSuperview];
-    for (UILabel *source in rows.keyEnumerator.allObjects) {
-        NSDictionary *parts = [rows objectForKey:source];
-        if (![visibleParts containsObject:parts[@"label"]]) [rows removeObjectForKey:source];
-    }
-    if (!visibleParts.count) [self removeSelectionOverlayFromObject:mask];
+    return nil;
 }
 
 + (BOOL)applySelectionMask:(UIView *)view controller:(UIViewController *)controller {
-    if (![self isSelectionMask:view controller:controller]) {
-        [self removeSelectionOverlayFromObject:view];
-        return NO;
-    }
-    UIColor *resolved = [view.backgroundColor resolvedColorWithTraitCollection:
+    if (![self isSelectionMask:view controller:controller]) return NO;
+    // 已清掉的颜色从可恢复记录中取原值，避免下一轮同步把它误认为未知透明视图。
+    UIColor *source = view.backgroundColor;
+    NSDictionary *change = objc_getAssociatedObject(view, &kDYYYMenuPaletteChangesKey)[@"backgroundColor"];
+    if (change && [self equal:source other:change[@"applied"]] && [change[@"original"] isKindOfClass:UIColor.class])
+        source = change[@"original"];
+    UIColor *resolved = [source resolvedColorWithTraitCollection:
         [UITraitCollection traitCollectionWithUserInterfaceStyle:UIUserInterfaceStyleDark]];
     CGFloat r = 0, g = 0, b = 0, alpha = 0;
     if (![resolved getRed:&r green:&g blue:&b alpha:&alpha] || alpha <= 0.01 || alpha > 0.9 ||
-        MAX(r, MAX(g, b)) - MIN(r, MIN(g, b)) >= 0.12) {
-        [self removeSelectionOverlayFromObject:view];
-        return NO;
-    }
-    // 保留原生遮罩的不透明度与触摸拦截，只改成同主题深色，不清空或移除遮罩。
-    if (MAX(r, MAX(g, b)) >= 0.8)
-        [self write:[UIColor colorWithWhite:0.10 alpha:alpha] key:@"backgroundColor" object:view controller:controller];
-    [self synchronizeSelectionMask:view controller:controller];
+        MAX(r, MAX(g, b)) - MIN(r, MIN(g, b)) >= 0.12) return NO;
+    // 仅去掉整行填充；透明 UIView 仍拦截原生触摸。保留 view.alpha、hidden 和交互状态。
+    // 禁用反馈由功能行本身的灰白文字/图标表达，不再加一层深色横条或复制文字镜像。
+    [self write:UIColor.clearColor key:@"backgroundColor" object:view controller:controller];
+    [self write:@NO key:@"opaque" object:view controller:controller];
     return YES;
 }
 
@@ -491,7 +428,7 @@ static char kDYYYMenuSelectionOverlayMarkerKey;
         NSUInteger backgrounds = 0, labels = 0, cards = 0;
         for (NSUInteger index = 0; index < queue.count && index < 400; index++) {
             UIView *view = queue[index];
-            if ([DYYYPanelBlur isManagedEffectView:view] || [self isManagedSelectionOverlay:view]) continue;
+            if ([DYYYPanelBlur isManagedEffectView:view]) continue;
             if (cardClass && [view isKindOfClass:cardClass] && [self applyCard:view controller:controller]) cards++;
             if ([view isKindOfClass:UIImageView.class]) continue;
             if (view.overrideUserInterfaceStyle == UIUserInterfaceStyleLight)
@@ -531,7 +468,7 @@ static char kDYYYMenuSelectionOverlayMarkerKey;
 }
 
 + (void)restoreObject:(id)object {
-    [self removeSelectionOverlayFromObject:object];
+    objc_setAssociatedObject(object, &kDYYYMenuSelectionLabelKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     [self removeActionOverlayFromObject:object];
     NSDictionary *changes = objc_getAssociatedObject(object, &kDYYYMenuPaletteChangesKey);
     objc_setAssociatedObject(object, &kDYYYMenuPaletteChangesKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);

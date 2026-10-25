@@ -34,6 +34,7 @@ SOFTWARE.
 static char kDYYYPanelBlurStateKey;
 static char kDYYYPanelBlurChangesKey;
 static char kDYYYPanelBlurOwnerKey;
+static char kDYYYPanelActionOutlineKey;
 
 @interface DYYYPanelBlurEffectView : UIVisualEffectView
 @end
@@ -46,9 +47,13 @@ static char kDYYYPanelBlurOwnerKey;
 @property (nonatomic, strong) UIVisualEffectView *blur;
 @property (nonatomic, strong) UIView *tint;
 @property (nonatomic, strong) NSHashTable *objects;
+@property (nonatomic, strong) NSHashTable *outlinedCells;
 @property (nonatomic, assign) BOOL busy;
 @property (nonatomic, assign) BOOL dark;
 @property (nonatomic, assign) CGFloat transparency;
+@property (nonatomic, weak) UICollectionView *clippedCollection;
+@property (nonatomic, strong) CALayer *selectionClip;
+@property (nonatomic, assign) BOOL selectionClipBlocked;
 @end
 @implementation DYYYPanelBlurState
 @end
@@ -122,6 +127,118 @@ static char kDYYYPanelBlurOwnerKey;
         MAX(r, MAX(g, b)) - MIN(r, MIN(g, b)) < 0.12;
 }
 
++ (void)restoreSelectionClip:(DYYYPanelBlurState *)state {
+    CALayer *layer = state.clippedCollection.layer;
+    if (state.selectionClip && layer.mask == state.selectionClip) layer.mask = nil;
+    state.clippedCollection = nil;
+    state.selectionClip = nil;
+}
+
++ (void)synchronizeSelectionClip:(DYYYPanelBlurState *)state {
+    UICollectionView *list = nil;
+    UIView *composer = nil;
+    if ([self isComment:state.controller]) {
+        // 只找实际菜单内层列表与其直接兄弟发送区，不能裁评论列表或普通分享页。
+        NSMutableArray<UIViewController *> *queue = [NSMutableArray arrayWithObject:state.controller];
+        Class composerClass = NSClassFromString(@"AWEIMShareImpl.ShareAdditionTextView");
+        for (NSUInteger index = 0; index < queue.count && index < 24; index++) {
+            UIViewController *child = queue[index];
+            if ([NSStringFromClass(child.class) isEqualToString:@"AWECommentLongPressPanelSwiftImpl.CommentLongPressPanelCollectionViewController"]) {
+                UIView *host = child.viewIfLoaded;
+                if (!host.window || ![host isDescendantOfView:state.controller.viewIfLoaded]) break;
+                for (UIView *view in host.subviews) {
+                    if (view.hidden || view.alpha <= 0.01) continue;
+                    if ([view isKindOfClass:UICollectionView.class]) list = (id)view;
+                    if (composerClass && [view isKindOfClass:composerClass] &&
+                        CGRectGetWidth(view.bounds) >= CGRectGetWidth(host.bounds) * 0.9 &&
+                        CGRectGetHeight(view.bounds) >= 16) composer = view;
+                }
+                break;
+            }
+            [queue addObjectsFromArray:child.childViewControllers];
+        }
+    }
+    state.selectionClipBlocked = NO;
+    if (!list || !composer || [list.superview.subviews indexOfObject:composer] <= [list.superview.subviews indexOfObject:list]) {
+        [self restoreSelectionClip:state];
+        return;
+    }
+    CGRect bounds = list.bounds;
+    CGRect composerRect = [composer convertRect:composer.bounds toView:list];
+    CGFloat height = CGRectGetMinY(composerRect) - CGRectGetMinY(bounds);
+    if (height < 0 || height >= CGRectGetHeight(bounds) ||
+        CGRectGetWidth(composerRect) < CGRectGetWidth(bounds) * 0.9) {
+        [self restoreSelectionClip:state];
+        return;
+    }
+    if (state.clippedCollection != list) [self restoreSelectionClip:state];
+    // 现有原生 mask 由原生继续管理，不能覆盖；录制中的此列表没有原生 mask。
+    if (list.layer.mask && list.layer.mask != state.selectionClip) {
+        [self restoreSelectionClip:state];
+        state.selectionClipBlocked = YES;
+        return;
+    }
+    if (!state.selectionClip) {
+        state.selectionClip = [CALayer layer];
+        state.selectionClip.name = @"DYYY.CommentMenu.ComposerOcclusion";
+        state.selectionClip.backgroundColor = UIColor.blackColor.CGColor;
+    }
+    state.clippedCollection = list;
+    CGRect visible = CGRectMake(CGRectGetMinX(bounds), CGRectGetMinY(bounds), CGRectGetWidth(bounds), height);
+    if (!CGRectEqualToRect(state.selectionClip.frame, visible)) state.selectionClip.frame = visible;
+    if (list.layer.mask != state.selectionClip) list.layer.mask = state.selectionClip;
+    // 仅裁原本被发送区盖住的旧菜单绘制，原生 Frame、滚动、命中和发送内容均保持原样。
+}
+
++ (void)removeActionOutline:(UIView *)cell {
+    CALayer *outline = objc_getAssociatedObject(cell, &kDYYYPanelActionOutlineKey);
+    if (!outline) return;
+    DYYYPanelBlurState *owner = objc_getAssociatedObject(outline, &kDYYYPanelBlurOwnerKey);
+    [owner.outlinedCells removeObject:cell];
+    objc_setAssociatedObject(outline, &kDYYYPanelBlurOwnerKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    [outline removeFromSuperlayer];
+    objc_setAssociatedObject(cell, &kDYYYPanelActionOutlineKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
++ (void)synchronizeActionOutline:(UIView *)cell state:(DYYYPanelBlurState *)state {
+    CGRect available = cell.bounds;
+    if (state.selectionClip && state.clippedCollection.layer.mask == state.selectionClip &&
+        [cell isDescendantOfView:state.clippedCollection]) {
+        CGRect visible = [state.clippedCollection convertRect:state.selectionClip.frame toView:cell];
+        available = CGRectIntersection(available, visible);
+    }
+    CGFloat center = CGRectGetMidY(cell.bounds);
+    // 选人后原生只露出部分复制行，边框须完整留在其可见区域，不能被发送区截断。
+    CGFloat height = MIN(CGRectGetHeight(cell.bounds) - 8,
+        2 * MIN(center - CGRectGetMinY(available) - 2, CGRectGetMaxY(available) - center - 2));
+    if (CGRectIsNull(available) || CGRectGetWidth(available) < 64 || height < 24) {
+        [self removeActionOutline:cell];
+        return;
+    }
+    CALayer *outline = objc_getAssociatedObject(cell, &kDYYYPanelActionOutlineKey);
+    if (!outline) {
+        outline = [CALayer layer];
+        outline.name = @"DYYY.CommentMenu.ActionKey";
+        outline.cornerCurve = kCACornerCurveContinuous;
+        objc_setAssociatedObject(cell, &kDYYYPanelActionOutlineKey, outline, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [cell.layer insertSublayer:outline atIndex:0];
+    }
+    DYYYPanelBlurState *owner = objc_getAssociatedObject(outline, &kDYYYPanelBlurOwnerKey);
+    if (owner != state) {
+        [owner.outlinedCells removeObject:cell];
+        objc_setAssociatedObject(outline, &kDYYYPanelBlurOwnerKey, state, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    [state.outlinedCells addObject:cell];
+    CGRect frame = CGRectMake(CGRectGetMinX(available) + 16, center - height * 0.5,
+        CGRectGetWidth(available) - 32, height);
+    if (!CGRectEqualToRect(outline.frame, frame)) outline.frame = frame;
+    outline.cornerRadius = MIN(10, height * 0.3);
+    outline.backgroundColor = [UIColor colorWithWhite:state.dark ? 0.22 : 1 alpha:0.40 * state.transparency].CGColor;
+    outline.borderColor = [UIColor colorWithWhite:state.dark ? 1 : 0 alpha:(state.dark ? 0.20 : 0.12) * state.transparency].CGColor;
+    outline.borderWidth = 1 / MAX(cell.window.screen.scale, 1);
+    // 只增加底色和边框绘制层，文字、图标、无障碍与原生点击区域保持原样。
+}
+
 + (void)clearView:(UIView *)root state:(DYYYPanelBlurState *)state {
     if (!root || state.busy) return;
     state.busy = YES;
@@ -133,15 +250,17 @@ static char kDYYYPanelBlurOwnerKey;
         CGFloat panelWidth = CGRectGetWidth(state.host.bounds);
         for (NSUInteger index = 0; index < queue.count && index < 600; index++) {
             UIView *view = queue[index];
-            if (view == state.blur || [DYYYCommentMenuPalette isManagedSelectionOverlay:view] || [view isKindOfClass:UIImageView.class]) continue;
+            if (view == state.blur || [view isKindOfClass:UIImageView.class]) continue;
             if ([view isKindOfClass:UILabel.class]) {
                 if (state.dark) [DYYYCommentMenuPalette applyLabel:(UILabel *)view controller:state.controller];
                 continue;
             }
             if (card && [view isKindOfClass:card]) {
                 CALayer *shape = [DYYYCommentMenuPalette cardLayerInCell:view];
-                // 保留卡片分组轮廓，但让背后的整块毛玻璃透出来。
-                if (shape) [self write:@(state.transparency * 0.25) key:@"opacity" object:shape state:state];
+                BOOL outlined = [self isComment:state.controller];
+                // 评论功能项改为独立圆角键；原生分组底板先隐藏绘制，关闭时恢复。
+                if (shape) [self write:@(outlined ? 0 : state.transparency * 0.25) key:@"opacity" object:shape state:state];
+                if (outlined) [self synchronizeActionOutline:view state:state];
             }
             // 只清面板的大块中性底色，保留彩色发送按钮、徽标和图片。
             if (![view isKindOfClass:UIControl.class] && view.alpha >= 0.95 && CGRectGetWidth(view.bounds) >= panelWidth * 0.5 &&
@@ -247,6 +366,7 @@ static char kDYYYPanelBlurOwnerKey;
         state.controller = controller;
         state.host = host;
         state.objects = [NSHashTable weakObjectsHashTable];
+        state.outlinedCells = [NSHashTable weakObjectsHashTable];
         state.blur = [[DYYYPanelBlurEffectView alloc] initWithEffect:nil];
         state.blur.userInteractionEnabled = NO;
         state.blur.isAccessibilityElement = NO;
@@ -281,6 +401,10 @@ static char kDYYYPanelBlurOwnerKey;
     } @finally {
         state.busy = NO;
     }
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    [self synchronizeSelectionClip:state];
+    [CATransaction commit];
     [self clearView:controller.viewIfLoaded state:state];
 }
 
@@ -318,6 +442,7 @@ static char kDYYYPanelBlurOwnerKey;
     NSMutableArray<UIView *> *queue = [NSMutableArray arrayWithObject:root];
     for (NSUInteger index = 0; index < queue.count && index < 100; index++) {
         UIView *view = queue[index];
+        [self removeActionOutline:view];
         [self restoreObject:view];
         [self restoreObject:[DYYYCommentMenuPalette cardLayerInCell:view]];
         [queue addObjectsFromArray:view.subviews];
@@ -332,6 +457,8 @@ static char kDYYYPanelBlurOwnerKey;
     if (state.busy) return;
     state.busy = YES;
     [state.blur removeFromSuperview];
+    [self restoreSelectionClip:state];
+    for (UIView *cell in state.outlinedCells.allObjects) [self removeActionOutline:cell];
     for (id object in state.objects.allObjects) [self restoreObject:object];
     if (![self isComment:controller]) [DYYYCommentMenuPalette restoreController:controller];
     objc_setAssociatedObject(controller, &kDYYYPanelBlurStateKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -360,7 +487,11 @@ static char kDYYYPanelBlurOwnerKey;
             @"hostBounds": state.host ? NSStringFromCGRect(state.host.bounds) : @"",
             @"attached": @(state.blur && state.blur.superview == state.host),
             @"backgroundAlpha": @(state.transparency),
-            @"managedObjects": @(state.objects.count)
+            @"managedObjects": @(state.objects.count),
+            @"selectionClipAttached": @(state.selectionClip && state.clippedCollection.layer.mask == state.selectionClip),
+            @"selectionClipFrame": state.selectionClip ? NSStringFromCGRect(state.selectionClip.frame) : @"",
+            @"selectionClipBlocked": @(state.selectionClipBlocked),
+            @"outlinedActionCount": @(state.outlinedCells.count)
         }];
     }
     return @{ @"panels": panels,
