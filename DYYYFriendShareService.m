@@ -211,7 +211,8 @@
     DYYYFriendShareService *s = [self shared];
     NSSet *selected = [NSSet setWithArray:[NSUserDefaults.standardUserDefaults arrayForKey:@"DYYYFriendShareFeedFriends"] ?: @[]];
     NSUInteger held = 0;
-    for (NSDictionary *row in s.history.pendingRows) {
+    for (NSDictionary *storedRow in s.history.pendingRows) {
+        NSDictionary *row = storedRow;
         NSString *itemID = row[@"itemID"];
         if (![selected containsObject:row[@"friendID"] ?: @""]) continue;
         // 旧版 v1 只检查顶层 ID，其凭据也可能来自回复；核实前只保存，不先推上首页。
