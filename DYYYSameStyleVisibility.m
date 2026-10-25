@@ -1,8 +1,10 @@
 #import "DYYYSameStyleVisibility.h"
 #import "AwemeHeaders.h"
 #import <objc/runtime.h>
+#import <QuartzCore/QuartzCore.h>
 
 static char kDYYYSameStyleOriginalsKey;
+static char kDYYYSameStyleDecorationLayersKey;
 static char kDYYYSameStyleUpdateDepthKey;
 
 @implementation DYYYSameStyleVisibility
@@ -29,6 +31,12 @@ static char kDYYYSameStyleUpdateDepthKey;
     for (UILabel *label in originals.keyEnumerator.allObjects) {
         if (label.hidden) label.hidden = [[originals objectForKey:label] boolValue];
     }
+    NSMapTable<CALayer *, NSNumber *> *layers = objc_getAssociatedObject(view, &kDYYYSameStyleDecorationLayersKey);
+    objc_setAssociatedObject(view, &kDYYYSameStyleDecorationLayersKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    [CATransaction begin]; [CATransaction setDisableActions:YES];
+    for (CALayer *layer in layers.keyEnumerator.allObjects)
+        if (layer.opacity == 0) layer.opacity = [[layers objectForKey:layer] floatValue];
+    [CATransaction commit];
 }
 
 + (void)applyToView:(UIView *)view {
@@ -39,6 +47,37 @@ static char kDYYYSameStyleUpdateDepthKey;
         [self restoreView:view];
         return;
     }
+    // 导出确认：标题下面的 44pt 圆形容器内含黑色 60% 填充，文字隐藏后它仍会盖住封面。
+    // 仅透明化原生标题装饰层的绘制，不改其 UIView 显隐/alpha/命中，不动音乐封面。
+    NSMapTable<CALayer *, NSNumber *> *layers = objc_getAssociatedObject(view, &kDYYYSameStyleDecorationLayersKey);
+    NSArray *keys = @[@"playInteractionCircleMaskView", @"playInteractionMaskView", @"playInteractionColorMaskView"];
+    [CATransaction begin]; [CATransaction setDisableActions:YES];
+    for (CALayer *layer in layers.keyEnumerator.allObjects) {
+        BOOL belongs = NO;
+        for (CALayer *parent = layer; parent; parent = parent.superlayer)
+            if (parent == view.layer) { belongs = YES; break; }
+        if (belongs) continue;
+        if (layer.opacity == 0) layer.opacity = [[layers objectForKey:layer] floatValue];
+        [layers removeObjectForKey:layer];
+    }
+    for (NSString *key in keys) {
+        if (![view respondsToSelector:NSSelectorFromString(key)]) continue;
+        UIView *decoration = nil;
+        @try { decoration = [view valueForKey:key]; } @catch (__unused NSException *exception) { continue; }
+        if (![decoration isKindOfClass:UIView.class] || decoration == view || ![decoration isDescendantOfView:view]) continue;
+        BOOL insideCover = NO;
+        for (UIView *parent = decoration; parent && parent != view; parent = parent.superview)
+            if ([parent isKindOfClass:NSClassFromString(@"AWEMusicCoverButton")]) { insideCover = YES; break; }
+        if (insideCover) continue;
+        if (!layers) {
+            layers = [NSMapTable weakToStrongObjectsMapTable];
+            objc_setAssociatedObject(view, &kDYYYSameStyleDecorationLayersKey, layers, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+        CALayer *layer = decoration.layer;
+        if (![layers objectForKey:layer] || layer.opacity != 0) [layers setObject:@(layer.opacity) forKey:layer];
+        if (layer.opacity != 0) layer.opacity = 0;
+    }
+    [CATransaction commit];
     NSMapTable<UILabel *, NSNumber *> *originals = objc_getAssociatedObject(view, &kDYYYSameStyleOriginalsKey);
     // 组件中的标题不再按文案匹配：拍同款、玩同款、听音乐等均只隐藏文字。
     // 保留按钮/缩略图/点击遮罩及无障碍动作。当前已确认文字均为直接子 UILabel。

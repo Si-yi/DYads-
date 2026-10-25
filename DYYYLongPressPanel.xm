@@ -7,6 +7,7 @@
 #import "DYYYManager.h"
 #import "DYYYToast.h"
 #import "DYYYUtils.h"
+#import "DYYYCommentMenuItems.h"
 
 %hook AWELongPressPanelViewGroupModel
 %property(nonatomic, assign) BOOL isDYYYCustomGroup;
@@ -1523,7 +1524,8 @@
         return;
     }
 
-    NSArray *inputArray = (NSArray *)arg1;
+    NSArray *inputArray = [DYYYCommentMenuItems visibleModels:arg1
+        hidingFavorites:[NSUserDefaults.standardUserDefaults boolForKey:@"DYYYHideCommentLongPressFavorite"]];
     NSMutableArray *filteredArray = nil;
 
     for (id item in inputArray) {
@@ -1570,7 +1572,7 @@
     if (filteredArray) {
         %orig([filteredArray copy]);
     } else {
-        %orig(arg1);
+        %orig(inputArray);
     }
 }
 

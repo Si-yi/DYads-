@@ -386,6 +386,9 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @end
 
 @interface AWEPlayInteractionSingleSongMusicStyleView : UIView
+@property (nonatomic, readonly, strong) UIView *playInteractionCircleMaskView;
+@property (nonatomic, readonly, strong) UIImageView *playInteractionMaskView;
+@property (nonatomic, readonly, strong) UIView *playInteractionColorMaskView;
 - (void)setAwemeModel:(id)model;
 - (void)updatePlayInteractionTitle:(id)title;
 - (void)updatePlayInteractionDecorationHidden:(BOOL)hidden;

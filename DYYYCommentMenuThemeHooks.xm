@@ -28,6 +28,7 @@
 #import "DYYYCommentMenuPalette.h"
 #import "DYYYPanelBlur.h"
 #import "DYYYCommentMenuGrid.h"
+#import "DYYYCommentMenuItems.h"
 #import "DYYYShareComposer.h"
 #import <stdlib.h>
 #import <string.h>
@@ -213,7 +214,9 @@
 %hook DYYYCommentMenuNormalSectionModel
 - (void)replaceByModels:(NSArray *)models animated:(BOOL)animated sync:(BOOL)sync {
     BOOL managed = [DYYYCommentMenuGrid isManagedSectionModel:self];
-    NSArray *rendered = [DYYYCommentMenuGrid modelsForSection:self incoming:models];
+    NSArray *visible = [DYYYCommentMenuItems visibleModels:models
+        hidingFavorites:[NSUserDefaults.standardUserDefaults boolForKey:@"DYYYHideCommentLongPressFavorite"]];
+    NSArray *rendered = [DYYYCommentMenuGrid modelsForSection:self incoming:visible];
     %orig(rendered, managed ? NO : animated, managed ? YES : sync);
     [DYYYCommentMenuGrid didReplaceModelsInSection:self];
 }
@@ -261,7 +264,9 @@
     [DYYYCommentMenuGrid configureCell:cell section:self index:index model:model];
 }
 - (CGSize)sizeForFooterWithCollectionViewSize:(CGSize)size {
-    if ([NSUserDefaults.standardUserDefaults boolForKey:@"DYYYEnableCommentMenuBlur"] && [self numberOfItems] == 0) return CGSizeZero;
+    BOOL hideEmpty = [NSUserDefaults.standardUserDefaults boolForKey:@"DYYYEnableCommentMenuBlur"] ||
+        [NSUserDefaults.standardUserDefaults boolForKey:@"DYYYHideCommentLongPressFavorite"];
+    if (hideEmpty && [self numberOfItems] == 0) return CGSizeZero;
     return %orig;
 }
 %end
