@@ -148,4 +148,34 @@
     diagnostics[@"unreadSliceCount"] = @(incoming.count);
     return incoming;
 }
+// 只接受专用原生未读查询的结果；此入口不能用于普通历史查询。
++ (NSArray *)nativeUnreadIncomingMessages:(id)result conversation:(NSString *)identifier
+                                  peerID:(long long)peer unreadCount:(NSUInteger)count
+                             diagnostics:(NSMutableDictionary *)diagnostics {
+    if (!count) return @[];
+    NSArray *messages = [self messageArray:result];
+    if (!messages || !identifier.length || peer <= 0) {
+        diagnostics[@"nativeUnreadStatus"] = @"invalid_result";
+        return nil;
+    }
+    NSMutableArray *incoming = [NSMutableArray array];
+    NSMutableSet *seen = [NSMutableSet set];
+    for (id message in messages) {
+        NSString *messageID = [self value:message key:@"identifier"];
+        if (![[self value:message key:@"belongingConversationIdentifier"] isEqual:identifier] ||
+            [[self value:message key:@"sender"] longLongValue] != peer ||
+            ![messageID isKindOfClass:NSString.class] || !messageID.length) {
+            diagnostics[@"nativeUnreadStatus"] = @"identity_mismatch";
+            return nil;
+        }
+        if ([seen containsObject:messageID]) continue;
+        [seen addObject:messageID]; [incoming addObject:message];
+    }
+    // 数量只能用作交叉校验，不能据此从完整历史凑出未读。
+    if (incoming.count > count) { diagnostics[@"nativeUnreadStatus"] = @"count_mismatch"; return nil; }
+    diagnostics[@"nativeUnreadStatus"] = @"validated";
+    diagnostics[@"unreadSelection"] = @"native_unread_query";
+    diagnostics[@"unreadSliceCount"] = @(incoming.count);
+    return incoming;
+}
 @end

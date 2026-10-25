@@ -15,6 +15,8 @@
 + (void)playerPlaybackAdvanced:(UIViewController *)controller time:(NSTimeInterval)time;
 + (void)playerWillLoop:(UIViewController *)controller;
 + (void)homeWillDrag:(UIViewController *)feed scrollView:(UIScrollView *)scrollView;
++ (void)homePlayerWillLeave:(UIViewController *)player;
++ (void)homePlayerDidReturn:(UIViewController *)player;
 + (void)homeDidLeave:(UIViewController *)feed;
 + (void)homeWillLoop:(UIViewController *)feed;
 + (void)homePlaybackTouched:(UIViewController *)feed;

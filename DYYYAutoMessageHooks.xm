@@ -99,6 +99,21 @@
 }
 %end
 
+%hook AWEPlayVideoViewController
+- (void)presentViewController:(UIViewController *)controller animated:(BOOL)animated completion:(void (^)(void))completion {
+    [DYYYFriendShareService homePlayerWillLeave:self];
+    %orig(controller, animated, completion);
+}
+- (void)viewWillDisappear:(BOOL)animated {
+    [DYYYFriendShareService homePlayerWillLeave:self];
+    %orig;
+}
+- (void)viewDidAppear:(BOOL)animated {
+    %orig;
+    [DYYYFriendShareService homePlayerDidReturn:self];
+}
+%end
+
 %hook AWEDPlayerViewController_Merge
 - (void)player:(id)player updatePlayTime:(double)time canPlayTime:(double)buffered totalTime:(double)total {
     [DYYYFriendShareService playerPlaybackAdvanced:self time:time];

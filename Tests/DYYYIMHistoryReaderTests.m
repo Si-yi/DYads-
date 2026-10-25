@@ -106,6 +106,25 @@
         recentQuery:nil earliestQuery:nil diagnostics:[NSMutableDictionary dictionary]];
     [self check:history.firstObject == unread reason:@"同时间戳必须使用会话序号排序"];
     [self check:[DYYYIMHistoryReader messageArray:@"invalid"] == nil reason:@"未知返回值不能冒充消息列表"];
+    // 39.5 真机 unreadCount=2、firstUnreadMessageID=nil：专用 unread 查询提供独立依据。
+    window = [NSMutableDictionary dictionary];
+    incoming = [DYYYIMHistoryReader nativeUnreadIncomingMessages:@{@"messages": @[unread, boundary]}
+        conversation:@"chat-A" peerID:42 unreadCount:2 diagnostics:window];
+    [self check:incoming.count == 2 && [window[@"unreadSelection"] isEqual:@"native_unread_query"]
+        reason:@"原生未读结果不需要 firstUnreadMessageID，也不要求包含会话末条"];
+    incoming = [DYYYIMHistoryReader nativeUnreadIncomingMessages:@[unread, unread, boundary]
+        conversation:@"chat-A" peerID:42 unreadCount:2 diagnostics:window];
+    [self check:incoming.count == 2 reason:@"同一未读回执只交付一次"];
+    incoming = [DYYYIMHistoryReader nativeUnreadIncomingMessages:@[] conversation:@"chat-A" peerID:42 unreadCount:2 diagnostics:window];
+    [self check:incoming != nil && incoming.count == 0 reason:@"原生查询确认空列表与读取失败必须区分"];
+    for (id invalid in @[@[unread, own], @[foreign], @[unread, boundary, read], @"invalid", NSNull.null]) {
+        incoming = [DYYYIMHistoryReader nativeUnreadIncomingMessages:invalid conversation:@"chat-A" peerID:42 unreadCount:2 diagnostics:window];
+        [self check:incoming == nil reason:@"错误发送者、错误会话、历史超量和无效结果不能成为未读凭据"];
+    }
+    [self check:[DYYYIMHistoryReader nativeUnreadIncomingMessages:nil conversation:@"chat-A" peerID:42 unreadCount:2 diagnostics:window] == nil
+        reason:@"原生返回 nil 必须保留失败状态，不能冒充没有新分享"];
+    incoming = [DYYYIMHistoryReader nativeUnreadIncomingMessages:@[unread] conversation:@"chat-A" peerID:42 unreadCount:0 diagnostics:window];
+    [self check:incoming.count == 0 reason:@"残留原生结果不能复活已读会话"];
     NSLog(@"DYYYIMHistoryReader regression tests passed");
 }
 @end

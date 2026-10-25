@@ -3,6 +3,7 @@
 #import "DYYYIMShareParser.h"
 #import "DYYYFriendShareHistory.h"
 #import "DYYYFriendShareDelivery.h"
+#import "DYYYFriendShareReturnState.h"
 #import "DYYYFriendShareBadgeView.h"
 #import "DYYYUtils.h"
 #import "AwemeHeaders.h"
@@ -40,6 +41,7 @@
 @property (nonatomic, copy) NSString *selectionAfterReload;
 @property (nonatomic) BOOL startAfterReload;
 @property (nonatomic) BOOL resumeAfterPageReturn;
+@property (nonatomic, strong) DYYYFriendShareReturnState *pageReturn;
 @property (nonatomic) NSUInteger cellRepairTicket;
 @property (nonatomic, strong) NSMutableSet *retriedModels;
 @property (nonatomic, strong) NSMutableSet<NSString *> *rejectedLegacyIDs;
@@ -61,6 +63,7 @@
         service.retriedModels = [NSMutableSet set];
         service.rejectedLegacyIDs = [NSMutableSet set];
         service.state = [NSMutableDictionary dictionary];
+        service.pageReturn = [DYYYFriendShareReturnState new];
         service.openingPending = YES;
         service.backgrounded = YES;
     });
@@ -81,6 +84,9 @@
     state[@"waitingToInsert"] = @(s.waitingToInsert);
     state[@"feedNeedsReload"] = @(s.feedNeedsReload);
     state[@"homeVisible"] = @([self homeVisible]);
+    state[@"pageReturnPending"] = @(s.pageReturn.pending);
+    state[@"pageReturnWasPlaying"] = @(s.pageReturn.wasPlaying);
+    state[@"pageReturnItemID"] = s.pageReturn.itemID ?: @"";
     NSString *current = [self itemID:s.home.currentAweme];
     NSString *visible = [self visibleHomeItemID];
     state[@"currentItemID"] = current ?: @"";
@@ -145,6 +151,7 @@
         s.account = account;
         s.generation++; s.scanInProgress = NO; s.pendingPlaybackID = nil; s.playbackTicket++; s.selectedOpeningShare = NO; s.waitingToInsert = NO;
         s.feedNeedsReload = NO; s.selectionAfterReload = nil; s.resumeAfterPageReturn = NO;
+        [s.pageReturn reset];
         [s.queued removeAllObjects]; [s.active removeAllObjects]; [s.models removeAllObjects];
         [s.inFlight removeAllObjects]; [s.failed removeAllObjects]; [s.retriedModels removeAllObjects];
         [s.rejectedLegacyIDs removeAllObjects]; s.legacyCleanupPending = NO;
@@ -169,6 +176,7 @@
 + (void)applicationEnteredBackground {
     DYYYFriendShareService *s = [self shared];
     [s.history resetPlayback]; s.userDragging = NO; s.dragTicket++;
+    [s.pageReturn reset]; s.resumeAfterPageReturn = NO;
     s.backgrounded = YES; s.generation++; s.pendingPlaybackID = nil; s.playbackTicket++; s.selectedOpeningShare = NO; s.waitingToInsert = NO; s.scanScheduled = NO; s.scanInProgress = NO; s.displayedID = nil;
     [s.inFlight removeAllObjects];
 }
@@ -193,10 +201,12 @@
     for (UIViewController *parent = home.parentViewController; parent; parent = parent.parentViewController)
         if (rootClass && [parent isKindOfClass:rootClass]) { underHomeRoot = YES; break; }
     if (!underHomeRoot) return;
+    if ([self shared].home != home) [[self shared].pageReturn reset];
     [self shared].home = home;
     if ([self automatic]) [self restoreSavedShares];
     if ([self shared].openingPending && [self automatic]) [self cleanOpeningCache];
     [self tryOpeningScan]; [self insertQueued]; [self applyPreparedFeed]; [self homeDidScroll:feed];
+    [self restorePlaybackAfterPageReturn];
 }
 + (void)restoreSavedShares {
     if (![self enabled] || NSClassFromString(@"FriendShareFeedService") || ![self syncAccount]) return;
@@ -842,6 +852,7 @@
 + (void)homePlaybackTouched:(UIViewController *)feed {
     DYYYFriendShareService *s = [self shared];
     if (s.home != feed || ![self enabled]) return;
+    [s.pageReturn reset]; s.resumeAfterPageReturn = NO;
     s.playbackTicket++; s.pendingPlaybackID = nil; s.selectedOpeningShare = YES;
     s.state[@"playbackStage"] = @"user_controlled";
 }
@@ -1002,10 +1013,60 @@
 }
 + (void)homeDidLeave:(UIViewController *)feed {
     DYYYFriendShareService *s = [self shared];
-    if (s.home != feed) return;
-    s.resumeAfterPageReturn = [s.home respondsToSelector:@selector(isPlaying)] && [s.home isPlaying];
+    if (s.home != feed || ![self enabled] || UIApplication.sharedApplication.applicationState != UIApplicationStateActive) return;
+    [s.pageReturn beginLeavingItem:[self visibleHomeItemID] ?: s.displayedID
+        playing:[s.home respondsToSelector:@selector(isPlaying)] && [s.home isPlaying]];
+    s.resumeAfterPageReturn = s.pageReturn.wasPlaying;
+    s.state[@"pageLeaveItemID"] = s.pageReturn.itemID ?: @"";
+    s.state[@"pageLeaveWasPlaying"] = @(s.pageReturn.wasPlaying);
     [s.history resetPlayback]; s.userDragging = NO; s.dragTicket++;
     s.playbackTicket++; s.pendingPlaybackID = nil;
+}
+// 侧边栏可由当前 Cell 内的播放器呈现，Feed 本身未必收到 appearance 回调。
++ (void)homePlayerWillLeave:(UIViewController *)player {
+    if (!NSThread.isMainThread || ![self enabled]) return;
+    id cell = [self visibleHomeCell];
+    BOOL belongs = NO;
+    for (UIViewController *parent = player; parent; parent = parent.parentViewController)
+        if (parent == cell) { belongs = YES; break; }
+    if (belongs && [self homeVisible]) [self homeDidLeave:[self shared].home];
+}
++ (void)homePlayerDidReturn:(UIViewController *)player {
+    if (!NSThread.isMainThread || ![self enabled] || (![self shared].pageReturn.pending && ![self shared].feedNeedsReload)) return;
+    __weak UIViewController *weakPlayer = player;
+    NSUInteger generation = [self shared].generation;
+    // 出 appearance 回调栈后，原生已撤掉 presentedViewController，才检查实际首页。
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (generation != [self shared].generation) return;
+        id cell = [self visibleHomeCell];
+        for (UIViewController *parent = weakPlayer; parent; parent = parent.parentViewController) {
+            if (parent != cell) continue;
+            [self bindHomeFeed:[self shared].home]; break;
+        }
+    });
+}
++ (void)restorePlaybackAfterPageReturn {
+    DYYYFriendShareService *s = [self shared];
+    if (![self enabled] || !s.pageReturn.pending || ![self homeVisible] || s.userDragging || s.feedNeedsReload || s.pendingPlaybackID.length) return;
+    id table = [self value:s.home key:@"tableView"];
+    if (![table isKindOfClass:UITableView.class] || [table isTracking] || [table isDragging] || [table isDecelerating]) return;
+    if ([s.home respondsToSelector:@selector(currentVCIsActive)] && ![s.home currentVCIsActive]) return;
+    NSString *itemID = [self visibleHomeItemID];
+    BOOL playing = [s.home respondsToSelector:@selector(isPlaying)] && [s.home isPlaying];
+    BOOL resume = [s.pageReturn consumeReturnToItem:itemID visible:YES playing:playing];
+    if (s.pageReturn.pending) return;
+    s.resumeAfterPageReturn = NO;
+    s.state[@"pageReturnDecision"] = resume ? @"resume_same_item" : @"preserve_native_state";
+    if (!resume || ![s.home respondsToSelector:@selector(playIfActive)]) return;
+    NSUInteger generation = s.generation, ticket = ++s.playbackTicket;
+    s.pendingPlaybackID = itemID;
+    s.state[@"playbackStage"] = @"native_play_requested";
+    @try { [s.home playIfActive]; }
+    @catch (__unused NSException *exception) { s.pendingPlaybackID = nil; s.state[@"pageReturnDecision"] = @"play_exception"; return; }
+    // 一次原生播放请求与一次验证，不重载/重选 Cell，不改变浏览位置。
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 2), dispatch_get_main_queue(), ^{
+        [self verifySelectedShare:itemID generation:generation ticket:ticket];
+    });
 }
 + (void)clearWatched {
     if (![self syncAccount]) return;

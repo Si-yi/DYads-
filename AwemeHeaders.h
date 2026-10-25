@@ -2221,6 +2221,7 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @end
 
 @interface TIMXOMessageManager : NSObject
+- (void)asyncGetUnreadMessagesFromSender:(long long)sender inConversation:(id)identifier limit:(unsigned long long)limit completion:(id)completion;
 - (id)earliestMessagesInConversationWithIdentifier:(id)identifier limit:(long long)limit;
 - (id)initWithRootObject:(id)root;
 - (id)messagesBeforeTime:(double)time inTypes:(id)types limit:(unsigned long long)limit;

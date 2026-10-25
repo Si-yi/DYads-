@@ -76,8 +76,8 @@
             if (!conv.unreadCount && !revalidate) continue;
             id latest = conv.lastMessage;
             if (!latest) { failed++; continue; }
-            [requests addObject:@{ @"peer": peer, @"cid": cid, @"conversation": conv, @"latest": latest,
-                @"unread": @(conv.unreadCount), @"boundary": conv.firstUnreadMessageID ?: @"" }];
+            [requests addObject:[@{ @"peer": peer, @"cid": cid, @"conversation": conv, @"latest": latest,
+                @"unread": @(conv.unreadCount), @"boundary": conv.firstUnreadMessageID ?: @"" } mutableCopy]];
         } @catch (__unused NSException *exception) { failed++; }
     }
     state[@"stage"] = @"reading_recent";
@@ -85,7 +85,33 @@
     for (NSDictionary *request in requests) if ([request[@"unread"] unsignedIntegerValue]) unreadConversations++;
     state[@"unreadConversationCount"] = @(unreadConversations);
     state[@"queriedConversationCount"] = @(requests.count);
-    dispatch_async([self historyQueue], ^{
+    // 39.5 会话常有 unreadCount 却没有 firstUnreadMessageID；使用 SDK 的只读未读查询。
+    // 不阻塞主线程/SDK 回调队列；每个请求只结算一次，超时后仍尝试有凭据的边界路径。
+    dispatch_group_t unreadGroup = dispatch_group_create();
+    for (NSMutableDictionary *request in requests) {
+        if (![request[@"unread"] unsignedIntegerValue]) continue;
+        if (![messages respondsToSelector:@selector(asyncGetUnreadMessagesFromSender:inConversation:limit:completion:)]) {
+            request[@"nativeUnreadQueryStatus"] = @"unavailable"; continue;
+        }
+        dispatch_group_enter(unreadGroup);
+        __block BOOL finished = NO; // 只在主队列访问，包括来自 SDK 的回调。
+        void (^finish)(id, NSString *) = ^(id result, NSString *status) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (finished) return;
+                finished = YES;
+                if (result) request[@"nativeUnreadResult"] = result;
+                request[@"nativeUnreadQueryStatus"] = status;
+                dispatch_group_leave(unreadGroup);
+            });
+        };
+        @try {
+            // 只读取回调的消息结果，不依赖附加回调参数或修改聊天已读状态。
+            [messages asyncGetUnreadMessagesFromSender:[request[@"peer"] longLongValue] inConversation:request[@"cid"]
+                limit:MIN([request[@"unread"] unsignedIntegerValue], 2000) completion:^(id result) { finish(result, @"returned"); }];
+        } @catch (__unused NSException *exception) { finish(nil, @"exception"); }
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 8 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{ finish(nil, @"timeout"); });
+    }
+    dispatch_group_notify(unreadGroup, [self historyQueue], ^{
         NSMutableArray *rows = [NSMutableArray array], *rejectedRows = [NSMutableArray array];
         NSMutableSet *seen = [NSMutableSet set];
         NSMutableArray *queries = [NSMutableArray array];
@@ -116,10 +142,22 @@
                     }
                     NSArray *history = [DYYYIMHistoryReader historyForConversation:cid latestMessage:request[@"latest"] firstUnreadID:request[@"boundary"]
                         observedResult:observed recentQuery:recentQuery earliestQuery:earliestQuery diagnostics:diagnostics];
-                    if (!history) { failed++; continue; }
                     diagnostics[@"messageCount"] = @(history.count);
-                    NSArray *incoming = [DYYYIMHistoryReader unreadIncomingMessages:history peerID:peer.longLongValue
-                        unreadCount:[request[@"unread"] unsignedIntegerValue] firstUnreadID:request[@"boundary"] diagnostics:diagnostics];
+                    NSUInteger unreadCount = [request[@"unread"] unsignedIntegerValue];
+                    diagnostics[@"nativeUnreadCount"] = @(unreadCount);
+                    diagnostics[@"nativeUnreadQueryStatus"] = request[@"nativeUnreadQueryStatus"] ?: @"not_needed";
+                    NSArray *incoming = nil;
+                    if (unreadCount && request[@"nativeUnreadResult"])
+                        incoming = [DYYYIMHistoryReader nativeUnreadIncomingMessages:request[@"nativeUnreadResult"]
+                            conversation:cid peerID:peer.longLongValue unreadCount:unreadCount diagnostics:diagnostics];
+                    if (!incoming) {
+                        incoming = [DYYYIMHistoryReader unreadIncomingMessages:history peerID:peer.longLongValue
+                            unreadCount:unreadCount firstUnreadID:request[@"boundary"] diagnostics:diagnostics];
+                        if (unreadCount && ![diagnostics[@"unreadSelection"] isEqual:@"verified_boundary"]) failed++;
+                    }
+                    // 专用未读查询不要求结果包含末条（末条可能是自己发出或系统消息）。
+                    // 历史不可读时仍交付已验证的未读，但不拿残缺历史撤销旧来源。
+                    if (!history && !unreadCount) failed++;
                     diagnostics[@"incomingCount"] = @(incoming.count);
                     NSMutableArray *kinds = [NSMutableArray array];
                     for (TIMXOMessage *message in incoming) {
