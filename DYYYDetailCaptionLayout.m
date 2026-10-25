@@ -134,18 +134,31 @@ static char kDYYYDetailCaptionStateKey;
         }
         if (captionBottom <= 0) return;
         CGFloat progressBottom = 0;
+        CGFloat progressLimit = CGRectGetMaxY([controller.view convertRect:controller.view.bounds toView:detail.view]);
         NSMutableArray<UIView *> *progressViews = [NSMutableArray array];
         Class progressClass = NSClassFromString(@"AWEStoryProgressContainerView");
+        Class slideClass = NSClassFromString(@"AWEStoryProgressSlideView");
+        BOOL hasProgress = NO;
         for (UIView *view in stack.superview.subviews) {
             if (!progressClass || ![view isKindOfClass:progressClass] || ![self visibleView:view] || CGRectIsEmpty(view.bounds)) continue;
-            [progressViews addObject:view];
-            progressBottom = MAX(progressBottom, CGRectGetMaxY([view convertRect:view.bounds toView:detail.view]));
+            hasProgress = YES;
+            for (UIView *slide in view.subviews) {
+                if (!slideClass || ![slide isKindOfClass:slideClass] || ![self visibleView:slide]) continue;
+                for (UIView *line in slide.subviews) {
+                    if (![line isKindOfClass:UICollectionView.class] || ![self visibleView:line] ||
+                        CGRectIsEmpty(line.bounds) || CGRectGetHeight(line.bounds) > 8) continue;
+                    if (![progressViews containsObject:slide]) [progressViews addObject:slide];
+                    progressBottom = MAX(progressBottom, CGRectGetMaxY([line convertRect:line.bounds toView:detail.view]));
+                }
+            }
         }
-        if (!isfinite(captionBottom) || !isfinite(CGRectGetMinY(inputRect)) || !isfinite(progressBottom)) return;
+        if (hasProgress && !progressViews.count) return; // 未识别的分页布局保留原位。
+        if (!isfinite(captionBottom) || !isfinite(CGRectGetMinY(inputRect)) || !isfinite(progressBottom) || !isfinite(progressLimit)) return;
         CGFloat shift = [DYYYDetailCaptionMetrics downwardShiftForCaptionBottom:captionBottom inputTop:CGRectGetMinY(inputRect)
-            progressBottom:progressBottom enabled:YES];
+            progressBottom:progressBottom progressLimit:progressLimit enabled:YES];
         state.diagnostics = @{@"active": @(shift > 0.1), @"shift": @(shift), @"captionBottom": @(captionBottom),
-            @"inputTop": @(CGRectGetMinY(inputRect)), @"progressBottom": @(progressBottom), @"progressCount": @(progressViews.count)};
+            @"inputTop": @(CGRectGetMinY(inputRect)), @"progressBottom": @(progressBottom),
+            @"progressLimit": @(progressLimit), @"progressCount": @(progressViews.count)};
         if (shift <= 0.1) return;
         [self moveView:stack down:shift inDetail:detail state:state];
         for (UIView *progress in progressViews) [self moveView:progress down:shift inDetail:detail state:state];
