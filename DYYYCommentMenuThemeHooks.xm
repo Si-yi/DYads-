@@ -209,13 +209,22 @@
 %group DYYYCommentMenuNativeLayoutHooks
 %hook DYYYCommentMenuNativeLayout
 - (NSArray *)layoutAttributesForElementsInRect:(CGRect)rect {
-    NSArray *native = %orig;
-    if (![DYYYCommentMenuGrid isMenuLayout:self]) return native;
+    BOOL managed = [DYYYCommentMenuGrid isMenuLayout:self];
+    CGRect query = rect;
+    if (managed) {
+        // 命中查询可能只有 1pt 宽；先取整行，再按居中后的真实 frame 过滤，不能漏掉移来的末项。
+        UICollectionViewLayout *layout = (id)self;
+        query.origin.x = CGRectGetMinX(layout.collectionView.bounds);
+        query.size.width = CGRectGetWidth(layout.collectionView.bounds);
+    }
+    NSArray *native = %orig(query);
+    if (!managed) return native;
     NSMutableArray *adjusted = [NSMutableArray arrayWithCapacity:native.count];
     BOOL changed = NO;
     for (UICollectionViewLayoutAttributes *item in native) {
         UICollectionViewLayoutAttributes *value = [DYYYCommentMenuGrid adjustAttributes:item layout:self];
-        [adjusted addObject:value];
+        if (CGRectIntersectsRect(value.frame, rect)) [adjusted addObject:value];
+        else changed = YES;
         if (value != item) changed = YES;
     }
     return changed ? adjusted : native;
