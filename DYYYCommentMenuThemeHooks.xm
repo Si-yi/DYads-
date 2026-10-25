@@ -28,6 +28,7 @@
 #import "DYYYCommentMenuPalette.h"
 #import "DYYYPanelBlur.h"
 #import "DYYYCommentMenuGrid.h"
+#import "DYYYShareComposer.h"
 #import <stdlib.h>
 #import <string.h>
 #import <objc/runtime.h>
@@ -266,6 +267,27 @@
 %end
 %end
 
+%group DYYYCommentMenuShareTextHooks
+%hook DYYYCommentMenuShareTextView
+- (void)setTextColor:(UIColor *)color {
+    UIColor *readable = [DYYYShareComposer adjustTextColor:color input:(UITextView *)self];
+    %orig(readable);
+}
+- (void)setTypingAttributes:(NSDictionary *)attributes {
+    NSDictionary *readable = [DYYYShareComposer adjustTypingAttributes:attributes input:(UITextView *)self];
+    %orig(readable);
+}
+- (void)layoutSubviews {
+    %orig;
+    [DYYYShareComposer synchronizeInput:(UITextView *)self];
+}
+- (void)didMoveToWindow {
+    %orig;
+    [DYYYShareComposer synchronizeInput:(UITextView *)self];
+}
+%end
+%end
+
 @implementation DYYYCommentMenuTheme (Hooks)
 + (Class)commentMenuSendButtonClass {
     Class composer = NSClassFromString(@"AWEIMShareImpl.ShareAdditionTextView");
@@ -299,7 +321,7 @@
         dispatch_async(dispatch_get_main_queue(), ^{ [self installHooks]; });
         return;
     }
-    static BOOL sheetInstalled, cardInstalled, contactInstalled, selectionInstalled, recentInstalled, collectionInstalled, gridInstalled, sendInstalled, modelsInstalled;
+    static BOOL sheetInstalled, cardInstalled, contactInstalled, selectionInstalled, recentInstalled, collectionInstalled, gridInstalled, sendInstalled, modelsInstalled, shareTextInstalled;
     Class sheetClass = NSClassFromString(@"AWECommentLongPressPanelSwiftImpl.CommentLongPressPanelSheet");
     if (!sheetInstalled && sheetClass && [sheetClass isSubclassOfClass:UIViewController.class]) {
         %init(DYYYCommentMenuThemeHooks, DYYYCommentLongPressPanelSheet = sheetClass);
@@ -329,6 +351,11 @@
         class_getInstanceVariable(cellClass, "$__lazy_storage_$_mainView")) {
         %init(DYYYCommentMenuGridHooks, DYYYCommentMenuNormalSection = sectionClass);
         gridInstalled = YES;
+    }
+    Class shareText = NSClassFromString(@"AWEIMShareImpl.ShareTextView");
+    if (!shareTextInstalled && shareText && [shareText isSubclassOfClass:UITextView.class]) {
+        %init(DYYYCommentMenuShareTextHooks, DYYYCommentMenuShareTextView = shareText);
+        shareTextInstalled = YES;
     }
     Class sendClass = [self commentMenuSendButtonClass];
     if (!sendInstalled && sendClass) {

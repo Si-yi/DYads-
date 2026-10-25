@@ -28,6 +28,7 @@ SOFTWARE.
 #import "DYYYUtils.h"
 #import "DYYYCommentMenuPalette.h"
 #import "DYYYCommentMenuGrid.h"
+#import "DYYYShareComposer.h"
 #import <QuartzCore/QuartzCore.h>
 #import <objc/runtime.h>
 #import <math.h>
@@ -293,6 +294,7 @@ static char kDYYYPanelGroupSendBorderKey;
         for (NSUInteger index = 0; index < queue.count && index < 600; index++) {
             UIView *view = queue[index];
             if (view == state.blur || [view isKindOfClass:UIImageView.class]) continue;
+            if ([view isKindOfClass:UITextView.class]) [DYYYShareComposer synchronizeInput:(UITextView *)view];
             if ([view isKindOfClass:UIButton.class]) [self synchronizeGroupSendButton:(UIButton *)view state:state];
             if ([view isKindOfClass:UILabel.class]) {
                 if (state.dark) [DYYYCommentMenuPalette applyLabel:(UILabel *)view controller:state.controller];
@@ -488,6 +490,7 @@ static char kDYYYPanelGroupSendBorderKey;
     NSMutableArray<UIView *> *queue = [NSMutableArray arrayWithObject:root];
     for (NSUInteger index = 0; index < queue.count && index < 100; index++) {
         UIView *view = queue[index];
+        if ([view isKindOfClass:UITextView.class]) [DYYYShareComposer restoreInput:(UITextView *)view];
         [self removeActionOutline:view];
         [DYYYCommentMenuGrid restoreContentInCell:view];
         [self restoreObject:view];
@@ -500,6 +503,7 @@ static char kDYYYPanelGroupSendBorderKey;
 + (void)restoreController:(UIViewController *)controller {
     if (!NSThread.isMainThread) return;
     DYYYPanelBlurState *state = objc_getAssociatedObject(controller, &kDYYYPanelBlurStateKey);
+    [DYYYShareComposer restoreController:controller];
     if (!state) { [[self controllers] removeObject:controller]; return; }
     if (state.busy) return;
     state.busy = YES;
@@ -542,7 +546,8 @@ static char kDYYYPanelGroupSendBorderKey;
             @"selectionClipFrame": state.selectionClip ? NSStringFromCGRect(state.selectionClip.frame) : @"",
             @"selectionClipBlocked": @(state.selectionClipBlocked),
             @"outlinedActionCount": @(state.outlinedCells.count),
-            @"grid": [DYYYCommentMenuGrid diagnosticsForController:controller]
+            @"grid": [DYYYCommentMenuGrid diagnosticsForController:controller],
+            @"shareComposer": [DYYYShareComposer diagnosticsForController:controller]
         }];
     }
     return @{ @"panels": panels,

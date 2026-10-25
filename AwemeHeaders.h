@@ -1158,6 +1158,10 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @interface DYYYCommentMenuNativeLayout : UICollectionViewLayout
 @end
 
+// 评论分享留言的原生 UITextView 子类；只在 ShareAdditionTextView 内局部处理外观。
+@interface DYYYCommentMenuShareTextView : UITextView
+@end
+
 // 实际 Swift 类从 ShareAdditionTextView 所在映像按语义名解析，避免绑定哈希。
 @interface DYYYCommentMenuSendButton : UIButton
 @end
