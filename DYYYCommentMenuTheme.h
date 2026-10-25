@@ -7,4 +7,9 @@
 + (void)synchronizeController:(UIViewController *)controller;
 + (void)restoreController:(UIViewController *)controller;
 + (UIViewController *)controllerForView:(UIView *)view;
++ (UIViewController *)menuControllerForController:(UIViewController *)controller;
+@end
+
+@interface DYYYCommentMenuTheme (Hooks)
++ (void)installHooks;
 @end

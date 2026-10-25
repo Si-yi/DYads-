@@ -1,5 +1,6 @@
 #import "AwemeHeaders.h"
 #import "DYYYPanelBlur.h"
+#import "DYYYCommentMenuTheme.h"
 #import <objc/runtime.h>
 
 %group DYYYLegacySharePanelBlurHooks
@@ -84,6 +85,7 @@
         return;
     }
     static BOOL containerInstalled, contentInstalled, contentThemeInstalled, functionInstalled, legacyInstalled;
+    [DYYYCommentMenuTheme installHooks];
     Class legacy = NSClassFromString(@"AWESharePanelController");
     if (!legacyInstalled && legacy && [legacy isSubclassOfClass:UIViewController.class]) {
         %init(DYYYLegacySharePanelBlurHooks, DYYYLegacySharePanelController = legacy);

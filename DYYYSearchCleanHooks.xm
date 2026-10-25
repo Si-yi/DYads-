@@ -196,7 +196,8 @@ static void DYYYSearchImageAdded(const struct mach_header *header, intptr_t slid
     const char *slash = strrchr(image.dli_fname, '/');
     const char *name = slash ? slash + 1 : image.dli_fname;
     if (strncmp(name, "AWESearch", 9) && strncmp(name, "Lynx", 4) && strncmp(name, "BDX", 3) &&
-        strncmp(name, "AWEShare", 8) && strncmp(name, "AWEIMShare", 10) && strncmp(name, "AWESocial", 9)) return;
+        strncmp(name, "AWEShare", 8) && strncmp(name, "AWEIMShare", 10) && strncmp(name, "AWESocial", 9) &&
+        strncmp(name, "AWEComment", 10)) return;
     dispatch_async(dispatch_get_main_queue(), ^{ [DYYYSearchClean installHooks]; });
 }
 %ctor {

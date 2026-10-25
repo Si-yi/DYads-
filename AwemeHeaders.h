@@ -1130,6 +1130,10 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @interface DYYYCommentLongPressPanelSheet : DUXContentSheet
 @end
 
+// 评论长按菜单内层列表在多选状态变更后独立布局。
+@interface DYYYCommentMenuCollectionController : UIViewController
+@end
+
 // 评论菜单功能行的白色卡片由原生 contentShapeLayer 绘制。
 @interface DYYYCommentMenuCardCell : UICollectionViewCell
 @end
@@ -1140,6 +1144,13 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @end
 
 @interface DYYYCommentMenuRecentShareCell : UICollectionViewCell
+@end
+
+// 运行时绑定 AWEIMShareImpl.ShareCommentHorizontalSectionController，参考 DYKiller 已适配的选人回调。
+@interface DYYYCommentMenuSelectionSection : NSObject
+@property (nonatomic, readonly, strong) UIViewController *viewController;
+- (UIView *)createAdditionTextAndAppendToViewHierarchyWithShareContactList:(id)list;
+- (void)shareContactList:(id)list stateDidChangeFromState:(NSUInteger)fromState toState:(NSUInteger)toState;
 @end
 
 // 运行时绑定 AWESearchFeedArticleViewController；仅处理首页文章卡片背景。

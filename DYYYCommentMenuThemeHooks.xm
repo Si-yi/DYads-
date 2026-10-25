@@ -2,6 +2,7 @@
 #import "DYYYCommentMenuTheme.h"
 #import "DYYYCommentMenuPalette.h"
 #import "DYYYPanelBlur.h"
+#import <objc/runtime.h>
 
 %group DYYYCommentMenuThemeHooks
 %hook DYYYCommentLongPressPanelSheet
@@ -77,6 +78,10 @@
 // 只在评论长按菜单内接管；同一 Cell 用于普通分享页时恢复原值。
 %group DYYYCommentMenuContactThemeHooks
 %hook DYYYCommentMenuContactCell
+- (void)setSelected:(BOOL)selected {
+    %orig(selected);
+    [DYYYCommentMenuPalette synchronizeCell:(UIView *)self];
+}
 - (void)layoutSubviews {
     %orig;
     [DYYYCommentMenuPalette synchronizeCell:(UIView *)self];
@@ -111,21 +116,71 @@
 %end
 %end
 
-%ctor {
+%group DYYYCommentMenuSelectionHooks
+%hook DYYYCommentMenuSelectionSection
+- (UIView *)createAdditionTextAndAppendToViewHierarchyWithShareContactList:(id)list {
+    UIView *overlay = %orig;
+    [DYYYCommentMenuPalette synchronizeSelectionSection:self overlay:overlay];
+    return overlay;
+}
+- (void)shareContactList:(id)list stateDidChangeFromState:(NSUInteger)fromState toState:(NSUInteger)toState {
+    %orig;
+    [DYYYCommentMenuPalette synchronizeSelectionSection:self overlay:nil];
+}
+%end
+%end
+
+%group DYYYCommentMenuCollectionHooks
+%hook DYYYCommentMenuCollectionController
+- (void)viewDidLayoutSubviews {
+    %orig;
+    // 列表的遮罩和发送区可能在 Sheet 布局之后才落位；这里只同步一次，不安排轮询。
+    [DYYYCommentMenuPalette synchronizeContentController:(UIViewController *)self];
+}
+%end
+%end
+
+@implementation DYYYCommentMenuTheme (Hooks)
++ (void)installHooks {
+    if (!NSThread.isMainThread) {
+        dispatch_async(dispatch_get_main_queue(), ^{ [self installHooks]; });
+        return;
+    }
+    static BOOL sheetInstalled, cardInstalled, contactInstalled, selectionInstalled, recentInstalled, collectionInstalled;
     Class sheetClass = NSClassFromString(@"AWECommentLongPressPanelSwiftImpl.CommentLongPressPanelSheet");
-    if (sheetClass && [sheetClass isSubclassOfClass:UIViewController.class]) {
+    if (!sheetInstalled && sheetClass && [sheetClass isSubclassOfClass:UIViewController.class]) {
         %init(DYYYCommentMenuThemeHooks, DYYYCommentLongPressPanelSheet = sheetClass);
+        sheetInstalled = YES;
     }
     Class cellClass = NSClassFromString(@"CommentLongPressPanelNormalBaseCell");
-    if (cellClass && [cellClass isSubclassOfClass:UICollectionViewCell.class]) {
+    if (!cardInstalled && cellClass && [cellClass isSubclassOfClass:UICollectionViewCell.class]) {
         %init(DYYYCommentMenuCardThemeHooks, DYYYCommentMenuCardCell = cellClass);
+        cardInstalled = YES;
     }
     Class contactClass = NSClassFromString(@"AWEIMShareImpl.ShareContactListTargetCell");
-    if (contactClass && [contactClass isSubclassOfClass:UICollectionViewCell.class]) {
+    if (!contactInstalled && contactClass && [contactClass isSubclassOfClass:UICollectionViewCell.class]) {
         %init(DYYYCommentMenuContactThemeHooks, DYYYCommentMenuContactCell = contactClass);
+        contactInstalled = YES;
+    }
+    Class selectionClass = NSClassFromString(@"AWEIMShareImpl.ShareCommentHorizontalSectionController");
+    if (!selectionInstalled && selectionClass && class_getInstanceMethod(selectionClass, @selector(createAdditionTextAndAppendToViewHierarchyWithShareContactList:)) &&
+        class_getInstanceMethod(selectionClass, @selector(shareContactList:stateDidChangeFromState:toState:))) {
+        %init(DYYYCommentMenuSelectionHooks, DYYYCommentMenuSelectionSection = selectionClass);
+        selectionInstalled = YES;
     }
     Class recentClass = NSClassFromString(@"AWEIMShareImpl.ShareContactListRecentShareCell");
-    if (recentClass && [recentClass isSubclassOfClass:UICollectionViewCell.class]) {
+    if (!recentInstalled && recentClass && [recentClass isSubclassOfClass:UICollectionViewCell.class]) {
         %init(DYYYCommentMenuRecentShareThemeHooks, DYYYCommentMenuRecentShareCell = recentClass);
+        recentInstalled = YES;
     }
+    Class collectionClass = NSClassFromString(@"AWECommentLongPressPanelSwiftImpl.CommentLongPressPanelCollectionViewController");
+    if (!collectionInstalled && collectionClass && [collectionClass isSubclassOfClass:UIViewController.class]) {
+        %init(DYYYCommentMenuCollectionHooks, DYYYCommentMenuCollectionController = collectionClass);
+        collectionInstalled = YES;
+    }
+}
+@end
+
+%ctor {
+    dispatch_async(dispatch_get_main_queue(), ^{ [DYYYCommentMenuTheme installHooks]; });
 }

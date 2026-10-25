@@ -30,6 +30,7 @@
 #import <QuartzCore/QuartzCore.h>
 #import <objc/runtime.h>
 #import <string.h>
+#import <math.h>
 
 static char kDYYYMenuPaletteChangesKey;
 static char kDYYYMenuPaletteObjectsKey;
@@ -38,6 +39,8 @@ static char kDYYYMenuPaletteShapeKey;
 static char kDYYYMenuPaletteReportKey;
 static char kDYYYMenuActionOverlayKey;
 static char kDYYYMenuNativeActionIconKey;
+static char kDYYYMenuSelectionBusyKey;
+static char kDYYYMenuSelectionScheduledKey;
 
 @implementation DYYYCommentMenuPalette
 
@@ -232,6 +235,72 @@ static char kDYYYMenuNativeActionIconKey;
     [DYYYPanelBlur synchronizeView:cell];
 }
 
+// 选人回调及遮罩创建时机参考 DYKiller DKShareSelectionHooks.xm，沿用本文件 MIT 声明。
++ (void)refreshSelectionController:(UIViewController *)controller {
+    if (!controller.viewIfLoaded.window || objc_getAssociatedObject(controller, &kDYYYMenuSelectionBusyKey)) return;
+    objc_setAssociatedObject(controller, &kDYYYMenuSelectionBusyKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    @try { [DYYYCommentMenuTheme prepareController:controller]; }
+    @finally { objc_setAssociatedObject(controller, &kDYYYMenuSelectionBusyKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
+}
+
++ (void)synchronizeSelectionSection:(id)section overlay:(UIView *)overlay {
+    if (!NSThread.isMainThread) return;
+    UIViewController *content = [section respondsToSelector:@selector(viewController)] ?
+        [(DYYYCommentMenuSelectionSection *)section viewController] : nil;
+    UIViewController *controller = [DYYYCommentMenuTheme menuControllerForController:content] ?:
+        (overlay ? [DYYYCommentMenuTheme controllerForView:overlay] : nil);
+    if (!controller || objc_getAssociatedObject(controller, &kDYYYMenuSelectionBusyKey)) return;
+    [self refreshSelectionController:controller];
+    if (objc_getAssociatedObject(controller, &kDYYYMenuSelectionScheduledKey)) return;
+    objc_setAssociatedObject(controller, &kDYYYMenuSelectionScheduledKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    __weak UIViewController *weakController = controller;
+    // 同轮原生回调可能稍后才写昵称颜色/添加遮罩，只合并一次补同步，不轮询。
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIViewController *menu = weakController;
+        if (!menu) return;
+        objc_setAssociatedObject(menu, &kDYYYMenuSelectionScheduledKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [self refreshSelectionController:menu];
+    });
+}
+
++ (void)synchronizeContentController:(UIViewController *)controller {
+    if (!NSThread.isMainThread) return;
+    UIViewController *menu = [DYYYCommentMenuTheme menuControllerForController:controller];
+    if (menu) [self refreshSelectionController:menu];
+}
+
++ (BOOL)isSelectionMask:(UIView *)view controller:(UIViewController *)controller {
+    if (view.hidden || view.alpha <= 0.01 || [view isKindOfClass:UIControl.class] ||
+        [view isKindOfClass:UIScrollView.class] || [view isKindOfClass:UIVisualEffectView.class] ||
+        [view isKindOfClass:UIImageView.class] || [view isKindOfClass:UILabel.class]) return NO;
+    UIView *host = view.superview;
+    if (!host || CGRectGetWidth(view.bounds) < CGRectGetWidth(host.bounds) * 0.9 ||
+        CGRectGetHeight(view.bounds) < 16 || fabs(CGRectGetMinX(view.frame) - CGRectGetMinX(host.bounds)) > 1) return NO;
+    UIViewController *owner = [host.nextResponder isKindOfClass:UIViewController.class] ? (id)host.nextResponder : nil;
+    if (![NSStringFromClass(owner.class) isEqualToString:@"AWECommentLongPressPanelSwiftImpl.CommentLongPressPanelCollectionViewController"] ||
+        [DYYYCommentMenuTheme menuControllerForController:owner] != controller || host != owner.viewIfLoaded) return NO;
+    Class composer = NSClassFromString(@"AWEIMShareImpl.ShareAdditionTextView");
+    for (UIView *sibling in host.subviews) {
+        if (!composer || ![sibling isKindOfClass:composer] || sibling.hidden || sibling.alpha <= 0.01) continue;
+        // 真机遮罩位于好友行下方、发送输入区上方，不能把普通白底或按钮当作遮罩。
+        if (CGRectGetWidth(sibling.bounds) >= CGRectGetWidth(host.bounds) * 0.9 &&
+            fabs(CGRectGetMaxY(view.frame) - CGRectGetMinY(sibling.frame)) <= 1.5) return YES;
+    }
+    return NO;
+}
+
++ (BOOL)applySelectionMask:(UIView *)view controller:(UIViewController *)controller {
+    if (![self isSelectionMask:view controller:controller]) return NO;
+    UIColor *resolved = [view.backgroundColor resolvedColorWithTraitCollection:
+        [UITraitCollection traitCollectionWithUserInterfaceStyle:UIUserInterfaceStyleDark]];
+    CGFloat r = 0, g = 0, b = 0, alpha = 0;
+    if (![resolved getRed:&r green:&g blue:&b alpha:&alpha] || alpha <= 0.01 || alpha > 0.9 ||
+        MAX(r, MAX(g, b)) < 0.8 || MAX(r, MAX(g, b)) - MIN(r, MIN(g, b)) >= 0.12) return NO;
+    // 保留原生遮罩的不透明度与触摸拦截，只改成同主题深色，不清空或移除遮罩。
+    [self write:[UIColor colorWithWhite:0.10 alpha:alpha] key:@"backgroundColor" object:view controller:controller];
+    return YES;
+}
+
 + (BOOL)applyCard:(UIView *)cell controller:(UIViewController *)controller {
     BOOL handled = NO;
     // 卡片白底直接画在 CAShapeLayer 上，修改 UIView 的主题不会改变它。
@@ -309,6 +378,7 @@ static char kDYYYMenuNativeActionIconKey;
             if ([view isKindOfClass:UIImageView.class]) continue;
             if (view.overrideUserInterfaceStyle == UIUserInterfaceStyleLight)
                 [self write:@(UIUserInterfaceStyleDark) key:@"overrideUserInterfaceStyle" object:view controller:controller];
+            if ([self applySelectionMask:view controller:controller]) backgrounds++;
             if ([self isNeutral:view.backgroundColor minimum:0.8 opaque:YES]) {
                 [self write:panel key:@"backgroundColor" object:view controller:controller]; backgrounds++;
             }

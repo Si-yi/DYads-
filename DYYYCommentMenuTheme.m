@@ -75,11 +75,18 @@ static char kDYYYCommentMenuOriginalViewStyleKey;
     }
 }
 
++ (UIViewController *)menuControllerForController:(UIViewController *)controller {
+    for (NSUInteger depth = 0; controller && depth < 16; depth++, controller = controller.parentViewController)
+        if ([NSStringFromClass(controller.class) isEqualToString:@"AWECommentLongPressPanelSwiftImpl.CommentLongPressPanelSheet"])
+            return controller;
+    return nil;
+}
+
 + (UIViewController *)controllerForView:(UIView *)view {
     for (UIResponder *responder = view.nextResponder; responder; responder = responder.nextResponder) {
-        if ([responder isKindOfClass:UIViewController.class] &&
-            [NSStringFromClass(responder.class) isEqualToString:@"AWECommentLongPressPanelSwiftImpl.CommentLongPressPanelSheet"])
-            return (UIViewController *)responder;
+        if (![responder isKindOfClass:UIViewController.class]) continue;
+        UIViewController *menu = [self menuControllerForController:(UIViewController *)responder];
+        if (menu && menu.viewIfLoaded && [view isDescendantOfView:menu.viewIfLoaded]) return menu;
     }
     return nil;
 }
