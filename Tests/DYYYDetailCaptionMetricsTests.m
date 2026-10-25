@@ -4,6 +4,17 @@
 
 int main(void) {
     @autoreleasepool {
+        // 1.8.3 动图导出：行底 880.6667，时间 UILabel 因 -11pt 偏移实际底边 867.1667。
+        double liveBottom = [DYYYDetailCaptionMetrics captionBottomForRowBottom:880.6666667 plainTextBottom:867.1666667];
+        double liveShift = [DYYYDetailCaptionMetrics downwardShiftForCaptionBottom:liveBottom inputTop:897
+            progressBottom:0 progressLimit:881 enabled:YES];
+        NSCAssert(fabs(liveShift - 13.8333333) < 0.001 && fabs(897 - liveBottom - liveShift - 16) < 0.001,
+            @"Live photo spacing uses the visible timestamp rather than the empty row reservation");
+        NSCAssert([DYYYDetailCaptionMetrics captionBottomForRowBottom:880 plainTextBottom:NAN] == 880,
+            @"Unknown or composite rows retain their native bounds");
+        NSCAssert([DYYYDetailCaptionMetrics captionBottomForRowBottom:880 plainTextBottom:0] == 880 &&
+            [DYYYDetailCaptionMetrics captionBottomForRowBottom:880 plainTextBottom:600] == 880,
+            @"Missing and unexpected text geometry cannot move a row arbitrarily");
         // 39.5 导出：图片文案视觉底边 868.6667，胶囊顶部 897，分页条底边 871、原生 HUD 底边 881。
         double plain = [DYYYDetailCaptionMetrics downwardShiftForCaptionBottom:868.6666667 inputTop:897 progressBottom:0 progressLimit:0 enabled:YES];
         NSCAssert(fabs(plain - 12.3333333) < 0.001, @"Single photos close the extra gap to 16pt without moving the input");

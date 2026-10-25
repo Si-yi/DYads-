@@ -2,6 +2,12 @@
 #import <math.h>
 
 @implementation DYYYDetailCaptionMetrics
++ (double)captionBottomForRowBottom:(double)rowBottom plainTextBottom:(double)textBottom {
+    // 时间/IP 的 UILabel 可在原生行内上移；行尾空白不能当成文字。
+    if (isfinite(textBottom) && textBottom > 0 && isfinite(rowBottom) && fabs(textBottom - rowBottom) <= 64)
+        return textBottom;
+    return rowBottom;
+}
 + (double)downwardShiftForCaptionBottom:(double)captionBottom inputTop:(double)inputTop
                        progressBottom:(double)progressBottom progressLimit:(double)progressLimit enabled:(BOOL)enabled {
     if (!enabled || !isfinite(captionBottom) || !isfinite(inputTop) || !isfinite(progressBottom) || !isfinite(progressLimit) || captionBottom <= 0) return 0;

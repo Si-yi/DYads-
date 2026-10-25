@@ -56,6 +56,24 @@ static char kDYYYDetailCaptionStateKey;
         if (parent.hidden || parent.alpha <= 0.01) return NO;
     return YES;
 }
++ (BOOL)isEmptyProgressPlaceholder:(UIView *)view {
+    // 动图保留一个无子视图、无绘制层的 3pt 分页空壳，不是实际分页线。
+    CALayer *layer = view.layer;
+    CGColorRef background = layer.backgroundColor;
+    return !view.subviews.count && !layer.sublayers.count && !layer.contents && !layer.mask &&
+        (!background || CGColorGetAlpha(background) <= 0.01) && layer.borderWidth == 0 && layer.shadowOpacity == 0;
+}
++ (CGFloat)captionBottomForRow:(UIView *)row inDetail:(UIViewController *)detail {
+    CGFloat rowBottom = CGRectGetMaxY([row convertRect:row.bounds toView:detail.view]);
+    CGFloat textBottom = 0;
+    BOOL plainText = YES;
+    for (UIView *child in row.subviews) {
+        if (child.hidden || child.alpha <= 0.01 || CGRectIsEmpty(child.bounds)) continue;
+        if (![child isKindOfClass:UILabel.class]) { plainText = NO; break; }
+        textBottom = MAX(textBottom, CGRectGetMaxY([child convertRect:child.bounds toView:detail.view]));
+    }
+    return [DYYYDetailCaptionMetrics captionBottomForRowBottom:rowBottom plainTextBottom:plainText && textBottom > 0 ? textBottom : NAN];
+}
 + (UIView *)collapsedInputInDetail:(UIViewController *)detail {
     Class backgroundClass = NSClassFromString(@"AWECommentInputBackgroundView");
     for (UIView *root in detail.viewIfLoaded.subviews) {
@@ -130,7 +148,7 @@ static char kDYYYDetailCaptionStateKey;
         CGFloat captionBottom = 0;
         for (UIView *row in stack.subviews) {
             if (row.hidden || row.alpha <= 0.01 || CGRectIsEmpty(row.bounds)) continue;
-            captionBottom = MAX(captionBottom, CGRectGetMaxY([row convertRect:row.bounds toView:detail.view]));
+            captionBottom = MAX(captionBottom, [self captionBottomForRow:row inDetail:detail]);
         }
         if (captionBottom <= 0) return;
         CGFloat progressBottom = 0;
@@ -139,8 +157,10 @@ static char kDYYYDetailCaptionStateKey;
         Class progressClass = NSClassFromString(@"AWEStoryProgressContainerView");
         Class slideClass = NSClassFromString(@"AWEStoryProgressSlideView");
         BOOL hasProgress = NO;
+        NSUInteger emptyProgressCount = 0;
         for (UIView *view in stack.superview.subviews) {
             if (!progressClass || ![view isKindOfClass:progressClass] || ![self visibleView:view] || CGRectIsEmpty(view.bounds)) continue;
+            if ([self isEmptyProgressPlaceholder:view]) { emptyProgressCount++; continue; }
             hasProgress = YES;
             for (UIView *slide in view.subviews) {
                 if (!slideClass || ![slide isKindOfClass:slideClass] || ![self visibleView:slide]) continue;
@@ -152,13 +172,16 @@ static char kDYYYDetailCaptionStateKey;
                 }
             }
         }
-        if (hasProgress && !progressViews.count) return; // 未识别的分页布局保留原位。
+        if (hasProgress && !progressViews.count) {
+            state.diagnostics = @{@"active": @NO, @"reason": @"unrecognized_progress"};
+            return; // 未识别的实际分页布局保留原位。
+        }
         if (!isfinite(captionBottom) || !isfinite(CGRectGetMinY(inputRect)) || !isfinite(progressBottom) || !isfinite(progressLimit)) return;
         CGFloat shift = [DYYYDetailCaptionMetrics downwardShiftForCaptionBottom:captionBottom inputTop:CGRectGetMinY(inputRect)
             progressBottom:progressBottom progressLimit:progressLimit enabled:YES];
         state.diagnostics = @{@"active": @(shift > 0.1), @"shift": @(shift), @"captionBottom": @(captionBottom),
             @"inputTop": @(CGRectGetMinY(inputRect)), @"progressBottom": @(progressBottom),
-            @"progressLimit": @(progressLimit), @"progressCount": @(progressViews.count)};
+            @"progressLimit": @(progressLimit), @"progressCount": @(progressViews.count), @"emptyProgressCount": @(emptyProgressCount)};
         if (shift <= 0.1) return;
         [self moveView:stack down:shift inDetail:detail state:state];
         for (UIView *progress in progressViews) [self moveView:progress down:shift inDetail:detail state:state];
