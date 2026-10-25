@@ -169,7 +169,7 @@ static char kDYYYMenuSelectionLabelKey;
     dispatch_once(&once, ^{
         NSMutableDictionary *images = [NSMutableDictionary dictionary];
         UIImageSymbolConfiguration *config = [UIImageSymbolConfiguration configurationWithPointSize:20 weight:UIImageSymbolWeightMedium];
-        for (NSString *key in @[ @"doc.on.doc", @"star", @"star.fill", @"magnifyingglass" ]) {
+        for (NSString *key in @[ @"doc.on.doc", @"star", @"star.fill", @"magnifyingglass", @"square.and.arrow.down", @"video" ]) {
             UIImage *image = [UIImage systemImageNamed:key withConfiguration:config];
             if (image) images[key] = [image imageWithTintColor:UIColor.whiteColor renderingMode:UIImageRenderingModeAlwaysOriginal];
         }
@@ -184,7 +184,7 @@ static char kDYYYMenuSelectionLabelKey;
     dispatch_once(&once, ^{
         NSMutableDictionary *images = [NSMutableDictionary dictionary];
         UIColor *color = [UIColor colorWithWhite:0.78 alpha:1];
-        for (NSString *key in @[ @"doc.on.doc", @"star", @"star.fill", @"magnifyingglass" ]) {
+        for (NSString *key in @[ @"doc.on.doc", @"star", @"star.fill", @"magnifyingglass", @"square.and.arrow.down", @"video" ]) {
             UIImage *image = [[self whiteActionSymbolNamed:key] imageWithTintColor:color renderingMode:UIImageRenderingModeAlwaysOriginal];
             if (image) images[key] = image;
         }
@@ -199,6 +199,8 @@ static char kDYYYMenuSelectionLabelKey;
     if ([title isEqualToString:@"收藏"]) return @"star";
     if ([title isEqualToString:@"取消收藏"] || [title isEqualToString:@"已收藏"]) return @"star.fill";
     if ([title isEqualToString:@"搜索"]) return @"magnifyingglass";
+    if ([title isEqualToString:@"保存到相册"]) return @"square.and.arrow.down";
+    if ([title isEqualToString:@"发作品回复"]) return @"video";
     return nil;
 }
 
@@ -379,12 +381,8 @@ static char kDYYYMenuSelectionLabelKey;
         }
     }
     // 只接管功能行的专用图标；好友头像和识图缩略图保持原图。
-    UIImageView *icon = [self actionIconInCell:cell];
-    if (![self applyReadableActionIconInCell:cell controller:controller] && [icon isKindOfClass:UIImageView.class] && icon.image) {
-        if (icon.image.renderingMode != UIImageRenderingModeAlwaysTemplate)
-            [self write:[icon.image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] key:@"image" object:icon controller:controller];
-        [self write:UIColor.whiteColor key:@"tintColor" object:icon controller:controller];
-    }
+    // 只接管已确认语义的动作图标；转发头像、举报红色图标及未知图标保留原生绘制。
+    [self applyReadableActionIconInCell:cell controller:controller];
     return handled;
 }
 

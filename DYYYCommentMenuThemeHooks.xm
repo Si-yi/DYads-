@@ -1,7 +1,35 @@
+/*
+ 菜单分区接口参考 DYKiller DKCommentMenuGrid.xm；发送按钮语义类查找参考 DKShareSelectionHooks.xm。
+ https://github.com/HierarchThurs/DYKiller
+
+ MIT License
+ Copyright (c) 2026 Hierarch
+
+ Permission is hereby granted, free of charge, to any person obtaining a copy
+ of this software and associated documentation files (the "Software"), to deal
+ in the Software without restriction, including without limitation the rights
+ to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ copies of the Software, and to permit persons to whom the Software is
+ furnished to do so, subject to the following conditions:
+
+ The above copyright notice and this permission notice shall be included in all
+ copies or substantial portions of the Software.
+
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ SOFTWARE.
+*/
 #import "AwemeHeaders.h"
 #import "DYYYCommentMenuTheme.h"
 #import "DYYYCommentMenuPalette.h"
 #import "DYYYPanelBlur.h"
+#import "DYYYCommentMenuGrid.h"
+#import <stdlib.h>
+#import <string.h>
 #import <objc/runtime.h>
 
 %group DYYYCommentMenuThemeHooks
@@ -64,9 +92,16 @@
 %hook DYYYCommentMenuCardCell
 - (void)layoutSubviews {
     %orig;
+    [DYYYCommentMenuGrid layoutCell:(UIView *)self];
+    [DYYYCommentMenuPalette synchronizeCell:(UIView *)self];
+}
+- (void)didMoveToWindow {
+    %orig;
+    [DYYYCommentMenuGrid layoutCell:(UIView *)self];
     [DYYYCommentMenuPalette synchronizeCell:(UIView *)self];
 }
 - (void)prepareForReuse {
+    [DYYYCommentMenuGrid restoreCell:(UIView *)self];
     [DYYYPanelBlur restoreView:(UIView *)self];
     [DYYYCommentMenuPalette restoreView:(UIView *)self];
     %orig;
@@ -140,13 +175,55 @@
 %end
 %end
 
+%group DYYYCommentMenuGridHooks
+%hook DYYYCommentMenuNormalSection
+- (CGSize)sizeForItemAtIndex:(NSInteger)index model:(id)model collectionViewSize:(CGSize)size {
+    CGSize nativeSize = %orig;
+    return [DYYYCommentMenuGrid sizeForSection:self index:index original:nativeSize collectionSize:size];
+}
+- (void)configCell:(id)cell index:(NSInteger)index model:(id)model {
+    %orig;
+    [DYYYCommentMenuGrid configureCell:cell section:self index:index];
+}
+%end
+%end
+
+%group DYYYCommentMenuSendButtonHooks
+%hook DYYYCommentMenuSendButton
+- (void)layoutSubviews {
+    %orig;
+    [DYYYPanelBlur synchronizeView:(UIView *)self];
+}
+- (void)didMoveToWindow {
+    %orig;
+    [DYYYPanelBlur synchronizeView:(UIView *)self];
+}
+%end
+%end
+
 @implementation DYYYCommentMenuTheme (Hooks)
++ (Class)commentMenuSendButtonClass {
+    Class composer = NSClassFromString(@"AWEIMShareImpl.ShareAdditionTextView");
+    const char *image = composer ? class_getImageName(composer) : NULL;
+    if (!image) return Nil;
+    unsigned int count = 0;
+    const char **names = objc_copyClassNamesForImage(image, &count);
+    Class found = Nil;
+    for (unsigned int index = 0; index < count; index++) {
+        if (!strstr(names[index], "AWEIMShareImpl") || !strstr(names[index], "ShareAdditionTextButton")) continue;
+        Class candidate = objc_getClass(names[index]);
+        if ([candidate isSubclassOfClass:UIButton.class]) { found = candidate; break; }
+    }
+    free(names);
+    return found;
+}
+
 + (void)installHooks {
     if (!NSThread.isMainThread) {
         dispatch_async(dispatch_get_main_queue(), ^{ [self installHooks]; });
         return;
     }
-    static BOOL sheetInstalled, cardInstalled, contactInstalled, selectionInstalled, recentInstalled, collectionInstalled;
+    static BOOL sheetInstalled, cardInstalled, contactInstalled, selectionInstalled, recentInstalled, collectionInstalled, gridInstalled, sendInstalled;
     Class sheetClass = NSClassFromString(@"AWECommentLongPressPanelSwiftImpl.CommentLongPressPanelSheet");
     if (!sheetInstalled && sheetClass && [sheetClass isSubclassOfClass:UIViewController.class]) {
         %init(DYYYCommentMenuThemeHooks, DYYYCommentLongPressPanelSheet = sheetClass);
@@ -156,6 +233,21 @@
     if (!cardInstalled && cellClass && [cellClass isSubclassOfClass:UICollectionViewCell.class]) {
         %init(DYYYCommentMenuCardThemeHooks, DYYYCommentMenuCardCell = cellClass);
         cardInstalled = YES;
+    }
+    Class sectionClass = NSClassFromString(@"AWECommentLongPressPanelSwiftImpl.CommentLongPressPanelNormalSectionController");
+    if (!gridInstalled && sectionClass && cellClass &&
+        class_getInstanceMethod(sectionClass, @selector(sizeForItemAtIndex:model:collectionViewSize:)) &&
+        class_getInstanceMethod(sectionClass, @selector(configCell:index:model:)) &&
+        class_getInstanceMethod(sectionClass, @selector(numberOfItems)) &&
+        class_getInstanceMethod(sectionClass, @selector(viewController)) &&
+        class_getInstanceVariable(cellClass, "$__lazy_storage_$_mainView")) {
+        %init(DYYYCommentMenuGridHooks, DYYYCommentMenuNormalSection = sectionClass);
+        gridInstalled = YES;
+    }
+    Class sendClass = [self commentMenuSendButtonClass];
+    if (!sendInstalled && sendClass) {
+        %init(DYYYCommentMenuSendButtonHooks, DYYYCommentMenuSendButton = sendClass);
+        sendInstalled = YES;
     }
     Class contactClass = NSClassFromString(@"AWEIMShareImpl.ShareContactListTargetCell");
     if (!contactInstalled && contactClass && [contactClass isSubclassOfClass:UICollectionViewCell.class]) {

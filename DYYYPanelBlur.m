@@ -27,6 +27,7 @@ SOFTWARE.
 #import "DYYYPanelBlur.h"
 #import "DYYYUtils.h"
 #import "DYYYCommentMenuPalette.h"
+#import "DYYYCommentMenuGrid.h"
 #import <QuartzCore/QuartzCore.h>
 #import <objc/runtime.h>
 #import <math.h>
@@ -35,6 +36,7 @@ static char kDYYYPanelBlurStateKey;
 static char kDYYYPanelBlurChangesKey;
 static char kDYYYPanelBlurOwnerKey;
 static char kDYYYPanelActionOutlineKey;
+static char kDYYYPanelGroupSendBorderKey;
 
 @interface DYYYPanelBlurEffectView : UIVisualEffectView
 @end
@@ -229,14 +231,53 @@ static char kDYYYPanelActionOutlineKey;
         objc_setAssociatedObject(outline, &kDYYYPanelBlurOwnerKey, state, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
     [state.outlinedCells addObject:cell];
-    CGRect frame = CGRectMake(CGRectGetMinX(available) + 16, center - height * 0.5,
-        CGRectGetWidth(available) - 32, height);
+    // 两列保留整排 16pt 外边距，中间两侧各留 4pt；单数末项沿用原生整行点击范围。
+    UIView *list = cell.superview;
+    BOOL narrow = [list isKindOfClass:UICollectionView.class] && CGRectGetWidth(cell.bounds) < CGRectGetWidth(list.bounds) * 0.75;
+    CGFloat left = narrow && CGRectGetMinX(cell.frame) > 1 ? 4 : 16;
+    CGFloat right = narrow && CGRectGetMaxX(cell.frame) < CGRectGetWidth(list.bounds) - 1 ? 4 : 16;
+    CGRect frame = CGRectMake(CGRectGetMinX(available) + left, center - height * 0.5,
+        CGRectGetWidth(available) - left - right, height);
     if (!CGRectEqualToRect(outline.frame, frame)) outline.frame = frame;
     outline.cornerRadius = MIN(10, height * 0.3);
     outline.backgroundColor = [UIColor colorWithWhite:state.dark ? 0.22 : 1 alpha:0.40 * state.transparency].CGColor;
     outline.borderColor = [UIColor colorWithWhite:state.dark ? 1 : 0 alpha:(state.dark ? 0.20 : 0.12) * state.transparency].CGColor;
     outline.borderWidth = 1 / MAX(cell.window.screen.scale, 1);
     // 只增加底色和边框绘制层，文字、图标、无障碍与原生点击区域保持原样。
+}
+
++ (void)synchronizeGroupSendButton:(UIButton *)button state:(DYYYPanelBlurState *)state {
+    BOOL group = [self isComment:state.controller] && [button.currentTitle isEqualToString:@"建群并发送"];
+    BOOL inComposer = NO;
+    for (UIView *parent = button.superview; group && parent && parent != state.controller.viewIfLoaded; parent = parent.superview) {
+        if ([NSStringFromClass(parent.class) isEqualToString:@"AWEIMShareImpl.ShareAdditionTextView"]) { inComposer = YES; break; }
+    }
+    CALayer *border = objc_getAssociatedObject(button, &kDYYYPanelGroupSendBorderKey);
+    if (!group || !inComposer) {
+        if (border) [self restoreObject:button];
+        return;
+    }
+    [self write:[UIColor colorWithRed:0.08 green:0.48 blue:0.24 alpha:1] key:@"backgroundColor" object:button state:state];
+    UILabel *label = button.titleLabel;
+    if (label.attributedText.length) {
+        NSMutableAttributedString *text = [label.attributedText mutableCopy];
+        [text addAttribute:NSForegroundColorAttributeName value:UIColor.whiteColor range:NSMakeRange(0, text.length)];
+        [self write:text key:@"attributedText" object:label state:state];
+    } else {
+        [self write:UIColor.whiteColor key:@"textColor" object:label state:state];
+    }
+    if (!border) {
+        border = [CALayer layer];
+        border.name = @"DYYY.CommentMenu.GroupSendBorder";
+        objc_setAssociatedObject(button, &kDYYYPanelGroupSendBorderKey, border, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [button.layer addSublayer:border];
+    }
+    CGRect frame = CGRectInset(button.bounds, 0.5, 0.5);
+    if (!CGRectEqualToRect(border.frame, frame)) border.frame = frame;
+    border.cornerRadius = MAX(button.layer.cornerRadius - 0.5, 7);
+    border.borderColor = [UIColor colorWithWhite:1 alpha:0.45].CGColor;
+    border.borderWidth = 1 / MAX(button.window.screen.scale, 1);
+    // 仅改建群按钮外观，targets、enabled、选择人数与“分别发送”均由原生管理。
 }
 
 + (void)clearView:(UIView *)root state:(DYYYPanelBlurState *)state {
@@ -251,6 +292,7 @@ static char kDYYYPanelActionOutlineKey;
         for (NSUInteger index = 0; index < queue.count && index < 600; index++) {
             UIView *view = queue[index];
             if (view == state.blur || [view isKindOfClass:UIImageView.class]) continue;
+            if ([view isKindOfClass:UIButton.class]) [self synchronizeGroupSendButton:(UIButton *)view state:state];
             if ([view isKindOfClass:UILabel.class]) {
                 if (state.dark) [DYYYCommentMenuPalette applyLabel:(UILabel *)view controller:state.controller];
                 continue;
@@ -424,6 +466,9 @@ static char kDYYYPanelActionOutlineKey;
 }
 
 + (void)restoreObject:(id)object {
+    CALayer *border = objc_getAssociatedObject(object, &kDYYYPanelGroupSendBorderKey);
+    [border removeFromSuperlayer];
+    objc_setAssociatedObject(object, &kDYYYPanelGroupSendBorderKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     NSDictionary *changes = objc_getAssociatedObject(object, &kDYYYPanelBlurChangesKey);
     objc_setAssociatedObject(object, &kDYYYPanelBlurChangesKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     objc_setAssociatedObject(object, &kDYYYPanelBlurOwnerKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -443,6 +488,7 @@ static char kDYYYPanelActionOutlineKey;
     for (NSUInteger index = 0; index < queue.count && index < 100; index++) {
         UIView *view = queue[index];
         [self removeActionOutline:view];
+        [DYYYCommentMenuGrid restoreContentInCell:view];
         [self restoreObject:view];
         [self restoreObject:[DYYYCommentMenuPalette cardLayerInCell:view]];
         [queue addObjectsFromArray:view.subviews];
@@ -458,7 +504,10 @@ static char kDYYYPanelActionOutlineKey;
     state.busy = YES;
     [state.blur removeFromSuperview];
     [self restoreSelectionClip:state];
-    for (UIView *cell in state.outlinedCells.allObjects) [self removeActionOutline:cell];
+    for (UIView *cell in state.outlinedCells.allObjects) {
+        [self removeActionOutline:cell];
+        [DYYYCommentMenuGrid restoreCell:cell];
+    }
     for (id object in state.objects.allObjects) [self restoreObject:object];
     if (![self isComment:controller]) [DYYYCommentMenuPalette restoreController:controller];
     objc_setAssociatedObject(controller, &kDYYYPanelBlurStateKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);

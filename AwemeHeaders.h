@@ -1134,6 +1134,18 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @interface DYYYCommentMenuCollectionController : UIViewController
 @end
 
+// 原生评论菜单普通功能分区：两列排列仍由原生布局和事件分发管理。
+@interface DYYYCommentMenuNormalSection : NSObject
+@property (nonatomic, readonly, strong) UIViewController *viewController;
+- (NSInteger)numberOfItems;
+- (CGSize)sizeForItemAtIndex:(NSInteger)index model:(id)model collectionViewSize:(CGSize)size;
+- (void)configCell:(id)cell index:(NSInteger)index model:(id)model;
+@end
+
+// 实际 Swift 类从 ShareAdditionTextView 所在映像按语义名解析，避免绑定哈希。
+@interface DYYYCommentMenuSendButton : UIButton
+@end
+
 // 评论菜单功能行的白色卡片由原生 contentShapeLayer 绘制。
 @interface DYYYCommentMenuCardCell : UICollectionViewCell
 @end
