@@ -63,6 +63,35 @@ int main(void) {
         NSCAssert([DYYYCommentMenuMetrics contentInsetForShellTop:10 contentTop:26] == 16, @"Measure in the same shell coordinate space");
         NSCAssert(isnan([DYYYCommentMenuMetrics contentInsetForShellTop:0 contentTop:-5]), @"Unattached/transitional hosts must not become a cached inset");
         NSCAssert(isnan([DYYYCommentMenuMetrics contentInsetForShellTop:0 contentTop:NAN]), @"Unknown origins cannot drive sheet sizing");
+        // 全部功能隐藏的真机导出：好友行 147pt、原高度 184pt、输入区 bounds=0、预览下沿=58。
+        double emptyContent = [DYYYCommentMenuMetrics contentHeightForActionBottom:147 safeAreaBottom:34 rawContent:167.2];
+        double recoveredComposer = [DYYYCommentMenuMetrics composerHeightForBounds:0 contentBottom:58 safeAreaBottom:34 active:YES];
+        double expandedLimit = [DYYYCommentMenuMetrics heightLimitForOriginal:184 nativeMinimum:574 screenLimit:860 composerActive:YES];
+        double emptySelected = [DYYYCommentMenuMetrics compactHeightForContent:emptyContent inset:16
+            firstRowBottom:147 composerHeight:recoveredComposer maximum:expandedLimit];
+        NSCAssert(recoveredComposer == 160 && emptySelected == 323 && emptySelected > 184,
+            @"Zero-height composer with real send buttons must expand above the short unselected sheet");
+        double restoredComposer = [DYYYCommentMenuMetrics composerHeightForBounds:126 contentBottom:120 safeAreaBottom:34 active:YES];
+        NSCAssert(restoredComposer == recoveredComposer, @"Recovering native layout cannot grow the target again");
+        NSCAssert([DYYYCommentMenuMetrics constrainedSheetHeight:184 target:323 composerActive:YES] == 323,
+            @"Late native friends-only requests cannot collapse an active composer again");
+        NSCAssert([DYYYCommentMenuMetrics constrainedSheetHeight:184 target:184 composerActive:NO] == 184,
+            @"Cancel removes the selected-state floor immediately");
+        double emptyNormal = [DYYYCommentMenuMetrics compactHeightForContent:emptyContent inset:16 firstRowBottom:147 composerHeight:0 maximum:184];
+        NSCAssert(emptyNormal == 184, @"Cancel restores the short friends-only menu");
+        double stalePlaceholder = [DYYYCommentMenuMetrics contentHeightForActionBottom:147 safeAreaBottom:34 rawContent:327.2];
+        NSCAssert(stalePlaceholder == emptyContent, @"Cancel cannot retain a removed 160pt composer reservation");
+        NSCAssert([DYYYCommentMenuMetrics composerHeightForBounds:126 contentBottom:120 safeAreaBottom:34 active:NO] == 0,
+            @"Lingering input shells without visible send buttons must not keep selection active");
+        NSCAssert([DYYYCommentMenuMetrics compactHeightForContent:0 inset:16 firstRowBottom:0 composerHeight:160 maximum:574] == 176,
+            @"A composer does not require a functional row to contribute height");
+        NSCAssert([DYYYCommentMenuMetrics composerHeightForBounds:182 contentBottom:176 safeAreaBottom:34 active:YES] == 216,
+            @"Larger native input content must not be clipped by the recovery minimum");
+        for (NSUInteger cycle = 0; cycle < 20; cycle++) {
+            double selectedHeight = [DYYYCommentMenuMetrics compactHeightForContent:emptyContent inset:16
+                firstRowBottom:147 composerHeight:restoredComposer maximum:expandedLimit];
+            NSCAssert(selectedHeight == emptySelected, @"Repeated select/cancel cannot accumulate friends-only panel height");
+        }
         NSLog(@"DYYYCommentMenuMetrics regression tests passed");
     }
     return 0;

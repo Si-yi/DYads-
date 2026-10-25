@@ -249,7 +249,8 @@ static NSDictionary *kDYYYCommentGridLastClosed;
 }
 
 + (BOOL)isComposerVisible:(UIView *)composer {
-    if (!composer.window || composer.hidden || composer.alpha <= 0.01 || composer.bounds.size.height < 16) return NO;
+    if (!composer.window || composer.hidden || composer.alpha <= 0.01) return NO;
+    // 外壳可能因菜单过矮被压成 0；实际发送按钮才是选人态依据，不能反过来依赖外壳高度。
     NSMutableArray *queue = [NSMutableArray arrayWithObject:composer];
     for (NSUInteger index = 0; index < queue.count && index < 64; index++) {
         UIView *view = queue[index];
@@ -351,40 +352,50 @@ static NSDictionary *kDYYYCommentGridLastClosed;
     record[@"inset"] = @(inset);
     record[@"insetSource"] = @"navigation_content_origin";
     record[@"nativeHeightDifference"] = @(menu.sheetHeight - list.bounds.size.height);
-    CGFloat rawContent = content, composerHeight = 0, firstRowBottom = 0, actionBottom = 0;
+    CGFloat rawContent = content, composerHeight = 0, firstRowBottom = 0, actionBottom = 0, prefixBottom = 0;
     NSArray *attributes = [list.collectionViewLayout layoutAttributesForElementsInRect:CGRectMake(0, 0, list.bounds.size.width, rawContent)];
     for (UICollectionViewLayoutAttributes *item in attributes) {
-        if (item.representedElementCategory != UICollectionElementCategoryCell || item.size.height < 36 ||
-            item.size.width < 100 || item.size.width >= list.bounds.size.width * 0.75) continue;
+        if (item.representedElementCategory != UICollectionElementCategoryCell || item.hidden || item.size.height < 36 || item.size.width < 100) continue;
         CGFloat bottom = CGRectGetMaxY(item.frame);
+        if (item.size.width >= list.bounds.size.width * 0.75) { prefixBottom = MAX(prefixBottom, bottom); continue; }
         actionBottom = MAX(actionBottom, bottom);
         if (!firstRowBottom || bottom < firstRowBottom) firstRowBottom = bottom;
     }
-    content = [DYYYCommentMenuMetrics contentHeightForActionBottom:actionBottom
+    // 没有功能项时保留实际好友行，不能把残留的发送区占位当成内容。
+    content = [DYYYCommentMenuMetrics contentHeightForActionBottom:actionBottom > 0 ? actionBottom : prefixBottom
         safeAreaBottom:list.window.safeAreaInsets.bottom rawContent:rawContent];
     Class composerClass = NSClassFromString(@"AWEIMShareImpl.ShareAdditionTextView");
     for (UIView *view in list.superview.subviews) {
         if (!composerClass || ![view isKindOfClass:composerClass] || ![self isComposerVisible:view]) continue;
-        // 不再使用 list.bounds.height - composer.y：键盘会移动输入区，这个差值不是发送区高度。
-        composerHeight = CGRectGetHeight(view.bounds) + list.window.safeAreaInsets.bottom;
-        for (UIView *plate in list.superview.subviews) {
-            if (plate == view || ![NSStringFromClass(plate.class) isEqualToString:@"UIView"] || plate.hidden || plate.alpha <= 0.01 || plate.subviews.count) continue;
-            CGFloat height = CGRectGetHeight(plate.bounds);
-            if (fabs(CGRectGetMinY(plate.frame) - CGRectGetMinY(view.frame)) < 2 &&
-                CGRectGetWidth(plate.bounds) >= CGRectGetWidth(list.bounds) * 0.9 &&
-                height >= CGRectGetHeight(view.bounds) && height <= CGRectGetHeight(view.bounds) + 64)
-                composerHeight = MAX(composerHeight, height);
+        // 取发送区自己的控件范围，不读取它在屏幕/列表中的 y，也不使用可变底板高度。
+        UIView *body = [view isKindOfClass:UIVisualEffectView.class] ? ((UIVisualEffectView *)view).contentView : view;
+        CGFloat controlBottom = 0;
+        Class inputClass = NSClassFromString(@"AWEIMShareImpl.ShareTextView");
+        for (UIView *child in body.subviews) {
+            if (child.hidden || child.alpha <= 0.01) continue;
+            BOOL control = [child isKindOfClass:UIStackView.class] || (inputClass && [child isKindOfClass:inputClass]) ||
+                ([child isKindOfClass:UIImageView.class] && CGRectGetWidth(child.bounds) < CGRectGetWidth(view.bounds) * 0.5);
+            if (control) controlBottom = MAX(controlBottom, CGRectGetMaxY(child.frame));
         }
+        record[@"rawComposerHeight"] = @(CGRectGetHeight(view.bounds));
+        record[@"composerControlBottom"] = @(controlBottom);
+        composerHeight = [DYYYCommentMenuMetrics composerHeightForBounds:CGRectGetHeight(view.bounds)
+            contentBottom:controlBottom safeAreaBottom:list.window.safeAreaInsets.bottom active:YES];
         break;
     }
+    CGFloat composerPrefix = firstRowBottom > 0 ? firstRowBottom : prefixBottom;
+    CGFloat maximum = [DYYYCommentMenuMetrics heightLimitForOriginal:[record[@"original"] doubleValue]
+        nativeMinimum:[record[@"minimum"] doubleValue] screenLimit:list.window.bounds.size.height * 0.9 composerActive:composerHeight > 0];
     CGFloat target = [DYYYCommentMenuMetrics compactHeightForContent:content inset:[record[@"inset"] doubleValue]
-        firstRowBottom:firstRowBottom composerHeight:composerHeight
-        maximum:MIN([record[@"original"] doubleValue], list.window.bounds.size.height * 0.9)];
+        firstRowBottom:composerPrefix composerHeight:composerHeight maximum:maximum];
     record[@"selectionActive"] = @(composerHeight > 0);
     record[@"composerHeight"] = @(composerHeight);
     record[@"contentHeight"] = @(content);
     record[@"rawContentHeight"] = @(rawContent);
     record[@"actionBottom"] = @(actionBottom);
+    record[@"prefixBottom"] = @(prefixBottom);
+    record[@"composerPrefix"] = @(composerPrefix);
+    record[@"heightLimit"] = @(maximum);
     record[@"target"] = @(target);
     CGFloat rendered = [self renderedHeightForMenu:menu];
     record[@"renderedHeight"] = @(rendered);
@@ -414,9 +425,11 @@ static NSDictionary *kDYYYCommentGridLastClosed;
     if (!isfinite(height) || height <= 0 || !record[@"applied"] || sheet.userDragging || sheet.isBeingDismissed ||
         ![NSUserDefaults.standardUserDefaults boolForKey:@"DYYYEnableCommentMenuBlur"]) return height;
     record[@"lastNativeHeightRequest"] = @(height);
-    if (height > [record[@"original"] doubleValue]) record[@"original"] = @(height);
+    if (![record[@"applying"] boolValue] && ![record[@"selectionActive"] boolValue] && height > [record[@"original"] doubleValue])
+        record[@"original"] = @(height);
     // 原生刷新仍可能写入旧单列高度，在同一个入口使用目标值，避免布局后反复改高/改低。
-    return [DYYYCommentMenuMetrics constrainedNativeHeight:height target:[record[@"target"] doubleValue] managed:YES];
+    return [DYYYCommentMenuMetrics constrainedSheetHeight:height target:[record[@"target"] doubleValue]
+        composerActive:[record[@"selectionActive"] boolValue]];
 }
 
 + (CGFloat)constrainedMinimumHeight:(CGFloat)height controller:(UIViewController *)controller {
