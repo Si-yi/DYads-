@@ -2,6 +2,7 @@
 #import "DYYYIMService.h"
 #import "DYYYFriendShareHistory.h"
 #import "DYYYFriendShareDelivery.h"
+#import "DYYYFriendShareBadgeView.h"
 #import "DYYYUtils.h"
 #import "AwemeHeaders.h"
 #include <string.h>
@@ -40,6 +41,8 @@
 @property (nonatomic) BOOL resumeAfterPageReturn;
 @property (nonatomic) NSUInteger cellRepairTicket;
 @property (nonatomic, strong) NSMutableSet *retriedModels;
+@property (nonatomic, strong) NSMutableSet<NSString *> *rejectedLegacyIDs;
+@property (nonatomic) BOOL legacyCleanupPending;
 @end
 
 @implementation DYYYFriendShareService
@@ -55,6 +58,7 @@
         service.inFlight = [NSMutableSet set];
         service.failed = [NSMutableSet set];
         service.retriedModels = [NSMutableSet set];
+        service.rejectedLegacyIDs = [NSMutableSet set];
         service.state = [NSMutableDictionary dictionary];
         service.openingPending = YES;
         service.backgrounded = YES;
@@ -142,6 +146,7 @@
         s.feedNeedsReload = NO; s.selectionAfterReload = nil; s.resumeAfterPageReturn = NO;
         [s.queued removeAllObjects]; [s.active removeAllObjects]; [s.models removeAllObjects];
         [s.inFlight removeAllObjects]; [s.failed removeAllObjects]; [s.retriedModels removeAllObjects];
+        [s.rejectedLegacyIDs removeAllObjects]; s.legacyCleanupPending = NO;
         NSString *sourceKey = [self key:@"DYYYFriendShareSources"];
         NSDictionary *storedSources = sourceKey ? [NSUserDefaults.standardUserDefaults dictionaryForKey:sourceKey] : nil;
         s.sources = storedSources ? [storedSources mutableCopy] : [NSMutableDictionary dictionary];
@@ -238,13 +243,14 @@
         NSArray *users = [NSUserDefaults.standardUserDefaults arrayForKey:@"DYYYFriendShareFeedFriends"] ?: @[];
         if (!users.count) { s.openingPending = NO; return; }
         s.scanInProgress = YES;
-        [DYYYIMService unreadSharesForUsers:users completion:^(NSArray *rows, NSString *warning) {
+        [DYYYIMService unreadSharesForUsers:users revalidatingRows:[self legacyRowsForRevalidation]
+                                      completion:^(NSArray *rows, NSArray *rejectedRows, NSString *warning) {
             if (generation != s.generation) return;
             s.scanInProgress = NO;
             if (![users isEqualToArray:[NSUserDefaults.standardUserDefaults arrayForKey:@"DYYYFriendShareFeedFriends"] ?: @[]]) return;
             if (![self enabled] || ![self automatic]) return;
             s.state[@"lastScanWarning"] = warning ?: @"";
-            if (rows.count) [self queueRows:rows toast:NO];
+            if (rows.count || rejectedRows.count) [self queueRows:rows rejectingRows:rejectedRows toast:NO];
             if ([warning hasPrefix:@"本地消息服务尚未就绪"]) [self tryOpeningScan];
             else s.openingPending = NO;
         }];
@@ -266,20 +272,64 @@
     s.scanInProgress = YES;
     NSUInteger generation = s.generation;
     if (showToast) [DYYYUtils showToast:@"正在读取好友近期分享"];
-    [DYYYIMService unreadSharesForUsers:users completion:^(NSArray *rows, NSString *warning) {
+    [DYYYIMService unreadSharesForUsers:users revalidatingRows:[self legacyRowsForRevalidation]
+                                      completion:^(NSArray *rows, NSArray *rejectedRows, NSString *warning) {
         if (generation != s.generation) return;
         s.scanInProgress = NO;
         s.openingPending = NO;
         if (![users isEqualToArray:[NSUserDefaults.standardUserDefaults arrayForKey:@"DYYYFriendShareFeedFriends"] ?: @[]]) return;
         if (![self enabled]) return;
         s.state[@"lastScanWarning"] = warning ?: @"";
-        if (rows.count || !warning) [self queueRows:rows toast:showToast && !warning];
+        if (rows.count || rejectedRows.count || !warning) [self queueRows:rows rejectingRows:rejectedRows toast:showToast && !warning];
         if (showToast && warning) [DYYYUtils showToast:warning];
     }];
 }
-+ (void)queueRows:(NSArray *)rows toast:(BOOL)toast {
++ (NSArray *)legacyRowsForRevalidation {
+    DYYYFriendShareService *s = [self shared];
+    NSMutableDictionary *byID = [NSMutableDictionary dictionary];
+    for (NSString *itemID in s.sources) {
+        NSDictionary *source = s.sources[itemID];
+        if (![source isKindOfClass:NSDictionary.class] || [source[@"shareValidationVersion"] unsignedIntegerValue] >= 1) continue;
+        NSMutableDictionary *row = [source mutableCopy]; row[@"itemID"] = itemID;
+        byID[itemID] = row;
+    }
+    for (NSDictionary *row in s.history.pendingRows)
+        if ([row[@"shareValidationVersion"] unsignedIntegerValue] < 1) byID[row[@"itemID"]] = row;
+    return byID.allValues;
+}
++ (void)queueRows:(NSArray *)rows rejectingRows:(NSArray *)rejectedRows toast:(BOOL)toast {
     if (![self syncAccount]) return;
     DYYYFriendShareService *s = [self shared];
+    NSSet *removedPending = [s.history discardUnverifiedRows:rejectedRows];
+    NSMutableSet *invalid = [removedPending mutableCopy];
+    for (NSDictionary *row in rejectedRows) {
+        NSString *itemID = row[@"itemID"];
+        NSDictionary *source = s.sources[itemID];
+        if ([source[@"friendID"] isEqual:row[@"friendID"]] && [source[@"shareValidationVersion"] unsignedIntegerValue] < 1) {
+            [s.sources removeObjectForKey:itemID]; [invalid addObject:itemID];
+        }
+    }
+    // 同作品若仍由其他好友的有效来源/待刷记录持有，不能随旧错误来源一起撤下。
+    for (NSDictionary *pending in s.history.pendingRows) [invalid removeObject:pending[@"itemID"]];
+    [invalid minusSet:[NSSet setWithArray:s.sources.allKeys]];
+    if (invalid.count) {
+        [s.rejectedLegacyIDs unionSet:invalid]; s.legacyCleanupPending = YES;
+        for (NSString *itemID in invalid) {
+            [s.queued removeObject:itemID]; [s.active removeObject:itemID]; [s.models removeObjectForKey:itemID];
+        }
+        if ([invalid containsObject:s.pendingPlaybackID ?: @""]) { s.pendingPlaybackID = nil; s.playbackTicket++; }
+        s.state[@"rejectedLegacyCount"] = @([s.state[@"rejectedLegacyCount"] unsignedIntegerValue] + invalid.count);
+        // 当前作品不强制跳走；立即撤下错误来源标签，列表清理留到非拖动时执行。
+        NSMutableArray *controllers = [NSMutableArray array];
+        if ([self visibleHomeCell]) [controllers addObject:[self visibleHomeCell]];
+        NSUInteger visited = 0;
+        while (controllers.count && visited++ < 40) {
+            UIViewController *controller = controllers.lastObject; [controllers removeLastObject];
+            if ([controller isKindOfClass:NSClassFromString(@"AWEPlayInteractionViewController")])
+                [DYYYFriendShareBadgeView updateForController:controller];
+            [controllers addObjectsFromArray:controller.childViewControllers];
+        }
+    }
     NSSet *watched = [self storedIDs:@"DYYYFriendShareWatchedItemIDs"];
     NSString *friendsKey = [@"DYYYMutualFriendsCache." stringByAppendingString:s.account];
     NSArray *friends = [NSUserDefaults.standardUserDefaults arrayForKey:friendsKey] ?: @[];
@@ -290,7 +340,18 @@
     NSMutableArray *saved = [NSMutableArray array];
     for (NSDictionary *row in rows) {
         NSString *itemID = row[@"itemID"], *friendID = row[@"friendID"];
-        if (![itemID isKindOfClass:NSString.class] || !itemID.length || [watched containsObject:itemID]) continue;
+        if (![itemID isKindOfClass:NSString.class] || !itemID.length) continue;
+        if ([row[@"shareValidationVersion"] unsignedIntegerValue] >= 1) {
+            // 其他好友真正分享同一作品仍有效，不能被此前的旧误判屏蔽。
+            [s.rejectedLegacyIDs removeObject:itemID];
+            if ([s.sources[itemID][@"friendID"] isEqual:friendID]) {
+                NSMutableDictionary *source = [s.sources[itemID] mutableCopy];
+                source[@"shareValidationVersion"] = row[@"shareValidationVersion"];
+                if (row[@"shareMessageID"]) source[@"shareMessageID"] = row[@"shareMessageID"];
+                s.sources[itemID] = source;
+            }
+        }
+        if ([watched containsObject:itemID]) continue;
         NSMutableDictionary *pending = [row mutableCopy];
         if ([friendID isKindOfClass:NSString.class] && friendID.length) {
             NSDictionary *friend = friendsByID[friendID];
@@ -316,7 +377,8 @@
     }
     NSString *sourceKey = [self key:@"DYYYFriendShareSources"];
     if (sourceKey) [NSUserDefaults.standardUserDefaults setObject:s.sources forKey:sourceKey];
-    s.state[@"scanVideoCount"] = @(rows.count);
+    s.state[@"scanVideoCount"] = @([NSSet setWithArray:[rows valueForKey:@"itemID"]].count);
+    [self pruneRejectedLegacyFeed];
     [self insertQueued];
     if (toast) [DYYYUtils showToast:s.queued.count ? @"已找到未刷分享，正在准备首页列表，可继续使用其他页面" : @"没有新的未刷分享视频"];
 }
@@ -459,7 +521,8 @@
     if (![self enabled] || NSClassFromString(@"FriendShareFeedService") || ![self syncAccount] ||
         UIApplication.sharedApplication.applicationState != UIApplicationStateActive || s.arranging || !s.queued.count) return;
     NSMutableArray *ready = [NSMutableArray array], *missing = [NSMutableArray array];
-    NSSet *watched = s.history.watchedItemIDs;
+    NSMutableSet *watched = [s.history.watchedItemIDs mutableCopy];
+    [watched unionSet:s.rejectedLegacyIDs];
     for (NSString *itemID in [s.queued copy]) {
         if ([watched containsObject:itemID]) { [s.queued removeObject:itemID]; continue; }
         if ([s.failed containsObject:itemID]) continue;
@@ -560,9 +623,10 @@
 + (NSArray *)arrangeData:(NSArray *)data controller:(id)controller {
     DYYYFriendShareService *s = [self shared];
     if (!NSThread.isMainThread || s.arranging || ![self enabled] || ![data isKindOfClass:NSArray.class] || controller != s.home.dataController || ![self syncAccount]) return data;
-    NSSet *watched = s.history.watchedItemIDs;
+    NSMutableSet *watched = [s.history.watchedItemIDs mutableCopy];
+    [watched unionSet:s.rejectedLegacyIDs];
     NSString *current = [self visibleHomeItemID] ?: s.displayedID;
-    NSString *preservedCurrent = s.selectedOpeningShare ? current : nil;
+    NSString *preservedCurrent = (s.selectedOpeningShare || [s.rejectedLegacyIDs containsObject:current ?: @""]) ? current : nil;
     // 原生 load more/刷新也必须保持浏览位置；不能在每次写入时把 active 全部搬回首行。
     for (NSString *itemID in [s.active copy]) {
         if ([watched containsObject:itemID] && ![itemID isEqual:preservedCurrent]) {
@@ -577,6 +641,34 @@
     BOOL same = result.count == data.count;
     if (same) for (NSUInteger i = 0; i < result.count; i++) if (result[i] != data[i]) { same = NO; break; }
     return same ? data : result;
+}
+// 仅撤下已证实误入队的未来条目，不消费当前作品，不改变用户暂停意图。
++ (void)pruneRejectedLegacyFeed {
+    DYYYFriendShareService *s = [self shared];
+    if (!s.legacyCleanupPending || s.arranging || s.userDragging || ![self enabled]) return;
+    id table = s.home.isViewLoaded ? [self value:s.home key:@"tableView"] : nil;
+    if ([table isKindOfClass:UIScrollView.class] && ([table isTracking] || [table isDragging] || [table isDecelerating])) return;
+    id controller = s.home.dataController;
+    NSArray *data = [controller respondsToSelector:@selector(dataSource)] ? [controller dataSource] : nil;
+    if (![data isKindOfClass:NSArray.class]) return;
+    NSString *current = [self visibleHomeItemID] ?: s.displayedID ?: [self itemID:s.home.currentAweme];
+    NSArray *kept = [DYYYFriendShareDelivery feedWithOriginal:data sharedModels:@{} orderedIDs:@[]
+        watchedIDs:s.rejectedLegacyIDs currentItemID:current];
+    s.legacyCleanupPending = [s.rejectedLegacyIDs containsObject:current ?: @""];
+    if (kept.count == data.count) return;
+    BOOL wasPlaying = [self homeVisible] ? ([s.home respondsToSelector:@selector(isPlaying)] && [s.home isPlaying]) : s.resumeAfterPageReturn;
+    BOOL submitted = NO;
+    s.arranging = YES;
+    @try { submitted = [DYYYFriendShareDelivery replaceFeed:kept controller:controller]; }
+    @finally { s.arranging = NO; }
+    if (!submitted) { s.legacyCleanupPending = YES; return; }
+    s.feedNeedsReload = YES;
+    BOOL containsCurrent = current.length && [kept indexOfObjectPassingTest:^BOOL(id model, NSUInteger index, BOOL *stop) {
+        return [[self itemID:model] isEqual:current];
+    }] != NSNotFound;
+    s.selectionAfterReload = containsCurrent ? current : [self itemID:kept.firstObject];
+    s.startAfterReload = wasPlaying;
+    [self applyPreparedFeed];
 }
 + (void)cleanOpeningCache {
     if (![self enabled] || ![self syncAccount]) return;
@@ -820,6 +912,7 @@
     }
     if (s.userDragging) [self didConsumeItemID:[s.history finishDraggingToItemID:current]];
     s.userDragging = NO; s.displayedID = current;
+    [self pruneRejectedLegacyFeed];
     if (s.queued.count && !s.inFlight.count) [self insertQueued];
     [self applyPreparedFeed];
 }

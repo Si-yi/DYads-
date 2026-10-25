@@ -1,6 +1,7 @@
 #import "DYYYIMService.h"
 #import "AwemeHeaders.h"
 #import "DYYYIMHistoryReader.h"
+#import "DYYYIMShareParser.h"
 
 @interface DYYYIMService ()
 @property (nonatomic, strong) NSMapTable *services;
@@ -19,30 +20,6 @@
 
 #pragma mark - 本地未读分享
 
-+ (void)collectSharedIDs:(id)object into:(NSMutableOrderedSet *)ids depth:(NSUInteger)depth budget:(NSUInteger *)budget {
-    if (!object || depth > 7 || *budget == 0) return;
-    (*budget)--;
-    if ([object isKindOfClass:NSDictionary.class]) {
-        for (id rawKey in object) {
-            if (![rawKey isKindOfClass:NSString.class]) continue;
-            NSString *key = [[rawKey lowercaseString] stringByReplacingOccurrencesOfString:@"_" withString:@""];
-            id value = object[rawKey];
-            if ([key isEqual:@"itemid"] || [key isEqual:@"awemeid"]) {
-                NSString *itemID = [value isKindOfClass:NSString.class] ? value : ([value isKindOfClass:NSNumber.class] ? [value stringValue] : nil);
-                if (itemID.length >= 8 && itemID.length <= 22 && [itemID rangeOfCharacterFromSet:NSCharacterSet.decimalDigitCharacterSet.invertedSet].location == NSNotFound) [ids addObject:itemID];
-            } else [self collectSharedIDs:value into:ids depth:depth + 1 budget:budget];
-        }
-    } else if ([object isKindOfClass:NSArray.class]) {
-        for (id value in object) [self collectSharedIDs:value into:ids depth:depth + 1 budget:budget];
-    } else if ([object isKindOfClass:NSString.class] && [object length] < 65536) {
-        NSString *text = [object stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-        if ([text hasPrefix:@"{"] || [text hasPrefix:@"["]) {
-            id value = [NSJSONSerialization JSONObjectWithData:[text dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
-            [self collectSharedIDs:value into:ids depth:depth + 1 budget:budget];
-        }
-    }
-}
-
 // 文字类型识别与分享扫描共用结果解包，支持原生按会话分组的返回值。
 + (NSArray *)messageArray:(id)value {
     return [DYYYIMHistoryReader messageArray:value];
@@ -55,15 +32,16 @@
     return queue;
 }
 
-+ (void)unreadSharesForUsers:(NSArray<NSString *> *)userIDs completion:(void (^)(NSArray<NSDictionary *> *, NSString *))completion {
++ (void)unreadSharesForUsers:(NSArray<NSString *> *)userIDs revalidatingRows:(NSArray<NSDictionary *> *)legacyRows
+                 completion:(void (^)(NSArray<NSDictionary *> *, NSArray<NSDictionary *> *, NSString *))completion {
     if (!NSThread.isMainThread) {
-        dispatch_async(dispatch_get_main_queue(), ^{ [self unreadSharesForUsers:userIDs completion:completion]; });
+        dispatch_async(dispatch_get_main_queue(), ^{ [self unreadSharesForUsers:userIDs revalidatingRows:legacyRows completion:completion]; });
         return;
     }
     if (!completion) return;
     NSMutableDictionary *state = [@{ @"selectedUserCount": @(userIDs.count), @"stage": @"initializing" } mutableCopy];
     [self shared].scanState = state;
-    if (!userIDs.count) { completion(@[], nil); return; }
+    if (!userIDs.count) { completion(@[], @[], nil); return; }
     NSString *account = [self accountID];
     id sender = [[self shared].services objectForKey:@"sender"];
     TIMXOConversationManager *manager = [self serviceForRole:@"conversations" root:[self value:sender key:@"sdkRoot"]];
@@ -71,13 +49,13 @@
     TIMXOMessageManager *messages = [self serviceForRole:@"messages" root:root];
     if (!account.length || !manager || !messages || !root || [self value:messages key:@"r"] != root) {
         state[@"stage"] = @"services_not_ready";
-        completion(@[], @"本地消息服务尚未就绪，请先打开消息页再返回扫描");
+        completion(@[], @[], @"本地消息服务尚未就绪，请先打开消息页再返回扫描");
         return;
     }
     Class convClass = NSClassFromString(@"TIMXOConversation");
     if (![convClass respondsToSelector:@selector(instanceWithRootObject:identifier:)]) {
         state[@"stage"] = @"conversation_api_unavailable";
-        completion(@[], @"当前版本的会话读取入口不可用");
+        completion(@[], @[], @"当前版本的会话读取入口不可用");
         return;
     }
     NSString *historyKind = [[[self shared].historyArguments objectForKey:messages] copy];
@@ -92,7 +70,10 @@
             if (!cid.length || ![manager conversationExitsInDB:cid]) continue;
             TIMXOConversation *conv = [(id)convClass instanceWithRootObject:root identifier:cid];
             if (![self validateConversation:conv manager:manager account:account peer:peer identifier:cid]) { failed++; continue; }
-            if (!conv.unreadCount) continue;
+            BOOL revalidate = NO;
+            for (NSDictionary *row in legacyRows)
+                if ([row[@"friendID"] isEqual:peer] && [row[@"shareValidationVersion"] unsignedIntegerValue] < 1) { revalidate = YES; break; }
+            if (!conv.unreadCount && !revalidate) continue;
             id latest = conv.lastMessage;
             if (!latest) { failed++; continue; }
             [requests addObject:@{ @"peer": peer, @"cid": cid, @"conversation": conv, @"latest": latest,
@@ -100,9 +81,12 @@
         } @catch (__unused NSException *exception) { failed++; }
     }
     state[@"stage"] = @"reading_recent";
-    state[@"unreadConversationCount"] = @(requests.count);
+    NSUInteger unreadConversations = 0;
+    for (NSDictionary *request in requests) if ([request[@"unread"] unsignedIntegerValue]) unreadConversations++;
+    state[@"unreadConversationCount"] = @(unreadConversations);
+    state[@"queriedConversationCount"] = @(requests.count);
     dispatch_async([self historyQueue], ^{
-        NSMutableArray *rows = [NSMutableArray array];
+        NSMutableArray *rows = [NSMutableArray array], *rejectedRows = [NSMutableArray array];
         NSMutableSet *seen = [NSMutableSet set];
         NSMutableArray *queries = [NSMutableArray array];
         for (NSDictionary *request in requests) {
@@ -137,16 +121,22 @@
                     NSArray *incoming = [DYYYIMHistoryReader unreadIncomingMessages:history peerID:peer.longLongValue
                         unreadCount:[request[@"unread"] unsignedIntegerValue] firstUnreadID:request[@"boundary"]];
                     diagnostics[@"incomingCount"] = @(incoming.count);
+                    NSMutableArray *kinds = [NSMutableArray array];
                     for (TIMXOMessage *message in incoming) {
-                        NSMutableOrderedSet *ids = [NSMutableOrderedSet orderedSet];
-                        NSUInteger budget = 500;
-                        [self collectSharedIDs:message.content into:ids depth:0 budget:&budget];
+                        NSArray *ids = [DYYYIMShareParser directItemIDsForMessage:message peerID:peer accountID:account];
+                        if (kinds.count < 16) [kinds addObject:[DYYYIMShareParser diagnosticsForMessage:message peerID:peer accountID:account]];
                         for (NSString *itemID in ids) {
                             if ([seen containsObject:itemID]) continue;
                             [seen addObject:itemID];
-                            [rows addObject:@{ @"itemID": itemID, @"friendID": peer }];
+                            [rows addObject:[DYYYIMShareParser receiptForMessage:message peerID:peer itemID:itemID]];
                         }
                     }
+                    diagnostics[@"incomingMessageKinds"] = kinds;
+                    NSDictionary *reconciliation = [DYYYIMShareParser reconcileRows:legacyRows history:history peerID:peer accountID:account];
+                    [rows addObjectsFromArray:reconciliation[@"verifiedRows"]];
+                    [rejectedRows addObjectsFromArray:reconciliation[@"rejectedRows"]];
+                    diagnostics[@"verifiedLegacyCount"] = @([reconciliation[@"verifiedRows"] count]);
+                    diagnostics[@"rejectedLegacyCount"] = @([reconciliation[@"rejectedRows"] count]);
                 } @catch (__unused NSException *exception) { diagnostics[@"query"] = @"query_exception"; failed++; }
             }
         }
@@ -154,15 +144,16 @@
             // 读取途中切换账户时整批丢弃，不向新账户插入上一账户的分享。
             if (![[self accountID] isEqual:account]) {
                 state[@"stage"] = @"account_changed";
-                completion(@[], @"扫描时登录账户已变化，请重新扫描");
+                completion(@[], @[], @"扫描时登录账户已变化，请重新扫描");
                 return;
             }
             state[@"queries"] = queries;
             state[@"failedConversationCount"] = @(failed);
-            state[@"sharedVideoCount"] = @(rows.count);
+            state[@"sharedVideoCount"] = @([NSSet setWithArray:[rows valueForKey:@"itemID"]].count);
+            state[@"rejectedLegacyCount"] = @(rejectedRows.count);
             state[@"stage"] = failed ? @"partial" : @"complete";
             NSString *warning = failed ? (rows.count ? @"部分好友近期消息暂不可读，已继续加载其余好友的分享" : @"好友近期消息暂不可读，请导出本次调试记录") : nil;
-            completion(rows, warning);
+            completion(rows, rejectedRows, warning);
         });
     });
 }

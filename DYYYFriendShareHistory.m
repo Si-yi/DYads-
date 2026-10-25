@@ -53,8 +53,9 @@
         NSString *itemID = value[@"itemID"];
         if (![itemID isKindOfClass:NSString.class] || !itemID.length || [self.watched containsObject:itemID]) continue;
         NSMutableDictionary *row = [self.rows[itemID] mutableCopy] ?: [@{ @"itemID": itemID } mutableCopy];
-        for (NSString *key in @[ @"friendID", @"name", @"avatar" ])
+        for (NSString *key in @[ @"friendID", @"name", @"avatar", @"shareMessageID" ])
             if ([value[key] isKindOfClass:NSString.class] && [value[key] length]) row[key] = value[key];
+        if ([value[@"shareValidationVersion"] isKindOfClass:NSNumber.class]) row[@"shareValidationVersion"] = value[@"shareValidationVersion"];
         if (!row[@"collectedAt"] && [value[@"collectedAt"] isKindOfClass:NSNumber.class]) row[@"collectedAt"] = value[@"collectedAt"];
         if ([self.rows[itemID] isEqual:row]) continue;
         self.rows[itemID] = row;
@@ -62,6 +63,20 @@
         changed = YES;
     }
     if (changed) [self savePending];
+}
+- (NSSet<NSString *> *)discardUnverifiedRows:(NSArray<NSDictionary *> *)rows {
+    NSMutableSet *removed = [NSMutableSet set];
+    for (NSDictionary *rejected in rows) {
+        NSString *itemID = rejected[@"itemID"];
+        NSDictionary *stored = [itemID isKindOfClass:NSString.class] ? self.rows[itemID] : nil;
+        if (!stored || ![stored[@"friendID"] isEqual:rejected[@"friendID"]] ||
+            [stored[@"shareValidationVersion"] unsignedIntegerValue] >= 1) continue;
+        [self.rows removeObjectForKey:itemID];
+        [self.order removeObject:itemID];
+        [removed addObject:itemID];
+    }
+    if (removed.count) [self savePending];
+    return removed;
 }
 - (void)importLegacySources:(NSDictionary *)sources {
     NSMutableArray *legacy = [NSMutableArray array];

@@ -6,6 +6,8 @@
 @property (nonatomic, readonly, copy) NSArray<NSDictionary *> *pendingRows;
 @property (nonatomic, readonly, copy) NSSet<NSString *> *watchedItemIDs;
 - (void)mergeRows:(NSArray<NSDictionary *> *)rows;
+/// 只撤销来源好友匹配、尚未保存直接分享凭据的旧误判，不改已刷记录。
+- (NSSet<NSString *> *)discardUnverifiedRows:(NSArray<NSDictionary *> *)rows;
 - (void)importLegacySources:(NSDictionary *)sources;
 - (void)clearWatched;
 - (NSDictionary *)diagnostics;

@@ -7,6 +7,9 @@ xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
     DYYYIMHistoryReader.m Tests/DYYYIMHistoryReaderTests.m -o "$test_dir/im-history-tests"
 "$test_dir/im-history-tests"
 xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
+    DYYYIMShareParser.m DYYYFriendShareHistory.m Tests/DYYYIMShareParserTests.m -o "$test_dir/im-share-parser-tests"
+"$test_dir/im-share-parser-tests"
+xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
     DYYYFriendShareHistory.m Tests/DYYYFriendShareHistoryTests.m -o "$test_dir/share-history-tests"
 "$test_dir/share-history-tests"
 xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
