@@ -1,6 +1,7 @@
 #import <UIKit/UIKit.h>
 
 @interface DYYYCommentMenuPalette : NSObject
++ (BOOL)isManagedSelectionOverlay:(UIView *)view;
 + (void)synchronizeCell:(UIView *)cell;
 + (void)synchronizeSelectionSection:(id)section overlay:(UIView *)overlay;
 + (void)synchronizeContentController:(UIViewController *)controller;

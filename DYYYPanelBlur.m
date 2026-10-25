@@ -133,7 +133,7 @@ static char kDYYYPanelBlurOwnerKey;
         CGFloat panelWidth = CGRectGetWidth(state.host.bounds);
         for (NSUInteger index = 0; index < queue.count && index < 600; index++) {
             UIView *view = queue[index];
-            if (view == state.blur || [view isKindOfClass:UIImageView.class]) continue;
+            if (view == state.blur || [DYYYCommentMenuPalette isManagedSelectionOverlay:view] || [view isKindOfClass:UIImageView.class]) continue;
             if ([view isKindOfClass:UILabel.class]) {
                 if (state.dark) [DYYYCommentMenuPalette applyLabel:(UILabel *)view controller:state.controller];
                 continue;
