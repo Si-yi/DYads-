@@ -1158,6 +1158,10 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @interface DYYYCommentMenuNativeLayout : UICollectionViewLayout
 @end
 
+// 选人输入区的真实装卸时机，用于取消后最终恢复菜单，不轮询动画。
+@interface DYYYCommentMenuComposerView : UIVisualEffectView
+@end
+
 // 评论分享留言的原生 UITextView 子类；只在 ShareAdditionTextView 内局部处理外观。
 @interface DYYYCommentMenuShareTextView : UITextView
 @end

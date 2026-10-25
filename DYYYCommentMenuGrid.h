@@ -13,6 +13,7 @@
 + (BOOL)isMenuLayout:(UICollectionViewLayout *)layout;
 + (UICollectionViewLayoutAttributes *)adjustAttributes:(UICollectionViewLayoutAttributes *)attributes layout:(UICollectionViewLayout *)layout;
 + (UICollectionView *)collectionForController:(UIViewController *)controller;
++ (void)synchronizeMenuController:(UIViewController *)controller;
 + (void)synchronizeController:(UIViewController *)controller;
 + (CGFloat)constrainedHeight:(CGFloat)height controller:(UIViewController *)controller;
 + (void)restoreController:(UIViewController *)controller;

@@ -267,6 +267,29 @@
 %end
 %end
 
+%group DYYYCommentMenuComposerHooks
+%hook DYYYCommentMenuComposerView
+- (void)didMoveToSuperview {
+    %orig;
+    [DYYYCommentMenuPalette synchronizeComposer:(UIView *)self];
+}
+- (void)didMoveToWindow {
+    %orig;
+    [DYYYCommentMenuPalette synchronizeComposer:(UIView *)self];
+}
+- (void)setHidden:(BOOL)hidden {
+    BOOL changed = ((UIView *)self).hidden != hidden;
+    %orig;
+    if (changed) [DYYYCommentMenuPalette synchronizeComposer:(UIView *)self];
+}
+- (void)setAlpha:(CGFloat)alpha {
+    BOOL wasVisible = ((UIView *)self).alpha > 0.01;
+    %orig;
+    if (wasVisible != (alpha > 0.01)) [DYYYCommentMenuPalette synchronizeComposer:(UIView *)self];
+}
+%end
+%end
+
 %group DYYYCommentMenuShareTextHooks
 %hook DYYYCommentMenuShareTextView
 - (void)setTextColor:(UIColor *)color {
@@ -321,7 +344,7 @@
         dispatch_async(dispatch_get_main_queue(), ^{ [self installHooks]; });
         return;
     }
-    static BOOL sheetInstalled, cardInstalled, contactInstalled, selectionInstalled, recentInstalled, collectionInstalled, gridInstalled, sendInstalled, modelsInstalled, shareTextInstalled;
+    static BOOL sheetInstalled, cardInstalled, contactInstalled, selectionInstalled, recentInstalled, collectionInstalled, gridInstalled, sendInstalled, modelsInstalled, shareTextInstalled, composerInstalled;
     Class sheetClass = NSClassFromString(@"AWECommentLongPressPanelSwiftImpl.CommentLongPressPanelSheet");
     if (!sheetInstalled && sheetClass && [sheetClass isSubclassOfClass:UIViewController.class]) {
         %init(DYYYCommentMenuThemeHooks, DYYYCommentLongPressPanelSheet = sheetClass);
@@ -351,6 +374,11 @@
         class_getInstanceVariable(cellClass, "$__lazy_storage_$_mainView")) {
         %init(DYYYCommentMenuGridHooks, DYYYCommentMenuNormalSection = sectionClass);
         gridInstalled = YES;
+    }
+    Class composerClass = NSClassFromString(@"AWEIMShareImpl.ShareAdditionTextView");
+    if (!composerInstalled && composerClass && [composerClass isSubclassOfClass:UIVisualEffectView.class]) {
+        %init(DYYYCommentMenuComposerHooks, DYYYCommentMenuComposerView = composerClass);
+        composerInstalled = YES;
     }
     Class shareText = NSClassFromString(@"AWEIMShareImpl.ShareTextView");
     if (!shareTextInstalled && shareText && [shareText isSubclassOfClass:UITextView.class]) {

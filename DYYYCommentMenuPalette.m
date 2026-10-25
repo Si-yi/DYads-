@@ -26,6 +26,7 @@
 #import "DYYYCommentMenuPalette.h"
 #import "DYYYCommentMenuTheme.h"
 #import "DYYYPanelBlur.h"
+#import "DYYYCommentMenuGrid.h"
 #import "AwemeHeaders.h"
 #import <QuartzCore/QuartzCore.h>
 #import <objc/runtime.h>
@@ -42,6 +43,46 @@ static char kDYYYMenuNativeActionIconKey;
 static char kDYYYMenuSelectionBusyKey;
 static char kDYYYMenuSelectionScheduledKey;
 static char kDYYYMenuSelectionLabelKey;
+static char kDYYYMenuComposerOwnerKey;
+static char kDYYYMenuLabelWatchKey;
+static char kDYYYMenuLabelWatchContext;
+
+@interface DYYYCommentMenuLabelWatch : NSObject
+@property (nonatomic, weak) UILabel *label;
+@property (nonatomic, weak) UIViewController *controller;
+@property (nonatomic, assign) BOOL observesColor;
+@property (nonatomic, assign) BOOL observesAttributed;
+@property (nonatomic, assign) BOOL observesText;
+@property (nonatomic, assign) BOOL busy;
+- (void)stop;
+@end
+@implementation DYYYCommentMenuLabelWatch
+- (void)stop {
+    _busy = YES;
+    @try { if (_observesColor) [_label removeObserver:self forKeyPath:@"textColor" context:&kDYYYMenuLabelWatchContext]; } @catch (__unused NSException *exception) {}
+    @try { if (_observesAttributed) [_label removeObserver:self forKeyPath:@"attributedText" context:&kDYYYMenuLabelWatchContext]; } @catch (__unused NSException *exception) {}
+    @try { if (_observesText) [_label removeObserver:self forKeyPath:@"text" context:&kDYYYMenuLabelWatchContext]; } @catch (__unused NSException *exception) {}
+    _observesColor = NO;
+    _observesAttributed = NO;
+    _observesText = NO;
+}
+- (void)dealloc { [self stop]; }
+- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context {
+    if (context != &kDYYYMenuLabelWatchContext) { [super observeValueForKeyPath:keyPath ofObject:object change:change context:context]; return; }
+    if (_busy) return;
+    UILabel *label = _label;
+    if (!NSThread.isMainThread) {
+        __weak UILabel *weakLabel = label;
+        dispatch_async(dispatch_get_main_queue(), ^{ if (weakLabel) [DYYYCommentMenuPalette synchronizeCell:weakLabel]; });
+        return;
+    }
+    UIViewController *owner = [DYYYCommentMenuTheme controllerForView:label];
+    if (owner != _controller || !label.window || [DYYYCommentMenuTheme styleForController:owner] != UIUserInterfaceStyleDark) {
+        [DYYYCommentMenuPalette restoreView:label]; return;
+    }
+    [DYYYCommentMenuPalette applyLabel:label controller:owner];
+}
+@end
 
 @implementation DYYYCommentMenuPalette
 
@@ -107,29 +148,56 @@ static char kDYYYMenuSelectionLabelKey;
     return [UIColor colorWithWhite:a < 0.85 ? 0.78 : 0.96 alpha:1];
 }
 
-+ (void)applyLabel:(UILabel *)label controller:(UIViewController *)controller {
-    BOOL disabled = [self selectionMaskForActionLabel:label controller:controller] != nil;
-    if (!disabled && objc_getAssociatedObject(label, &kDYYYMenuSelectionLabelKey))
-        [self restoreObject:label];
-    if (disabled) objc_setAssociatedObject(label, &kDYYYMenuSelectionLabelKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    // 富文本只改对应的颜色段，不再调用 textColor setter 覆盖彩色火花或原始样式。
-    NSAttributedString *originalText = label.attributedText;
-    if (originalText.length) {
-        NSMutableAttributedString *text = [originalText mutableCopy];
-        __block BOOL changed = NO;
-        [originalText enumerateAttribute:NSForegroundColorAttributeName inRange:NSMakeRange(0, originalText.length) options:0 usingBlock:^(id color, NSRange range, BOOL *stop) {
-            UIColor *source = [color isKindOfClass:UIColor.class] ? color : label.textColor;
-            UIColor *target = [self readableTextColor:source disabled:disabled];
-            if (target) {
-                [text addAttribute:NSForegroundColorAttributeName value:target range:range];
-                changed = YES;
-            }
-        }];
-        if (changed) [self write:text key:@"attributedText" object:label controller:controller];
-        return;
++ (DYYYCommentMenuLabelWatch *)watchLabel:(UILabel *)label controller:(UIViewController *)controller {
+    BOOL contact = NO;
+    Class target = NSClassFromString(@"AWEIMShareImpl.ShareContactListTargetCell");
+    Class recent = NSClassFromString(@"AWEIMShareImpl.ShareContactListRecentShareCell");
+    UIView *view = label.superview;
+    for (NSUInteger depth = 0; view && depth < 8; depth++, view = view.superview)
+        if ((target && [view isKindOfClass:target]) || (recent && [view isKindOfClass:recent])) { contact = YES; break; }
+    if (!contact || [DYYYCommentMenuTheme styleForController:controller] != UIUserInterfaceStyleDark) return nil;
+    DYYYCommentMenuLabelWatch *watch = objc_getAssociatedObject(label, &kDYYYMenuLabelWatchKey);
+    if (!watch) {
+        watch = [DYYYCommentMenuLabelWatch new];
+        watch.label = label;
+        @try { [label addObserver:watch forKeyPath:@"textColor" options:0 context:&kDYYYMenuLabelWatchContext]; watch.observesColor = YES; } @catch (__unused NSException *exception) {}
+        @try { [label addObserver:watch forKeyPath:@"attributedText" options:0 context:&kDYYYMenuLabelWatchContext]; watch.observesAttributed = YES; } @catch (__unused NSException *exception) {}
+        @try { [label addObserver:watch forKeyPath:@"text" options:0 context:&kDYYYMenuLabelWatchContext]; watch.observesText = YES; } @catch (__unused NSException *exception) {}
+        objc_setAssociatedObject(label, &kDYYYMenuLabelWatchKey, watch, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [[self objectsForController:controller] addObject:label];
     }
-    UIColor *target = [self readableTextColor:label.textColor disabled:disabled];
-    if (target) [self write:target key:@"textColor" object:label controller:controller];
+    watch.controller = controller;
+    return watch;
+}
+
++ (void)applyLabel:(UILabel *)label controller:(UIViewController *)controller {
+    DYYYCommentMenuLabelWatch *watch = [self watchLabel:label controller:controller];
+    BOOL busy = watch.busy;
+    watch.busy = YES;
+    @try {
+        BOOL disabled = [self selectionMaskForActionLabel:label controller:controller] != nil;
+        if (!disabled && objc_getAssociatedObject(label, &kDYYYMenuSelectionLabelKey))
+            [self restoreObject:label];
+        if (disabled) objc_setAssociatedObject(label, &kDYYYMenuSelectionLabelKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        // 富文本只改对应的颜色段，不再调用 textColor setter 覆盖彩色火花或原始样式。
+        NSAttributedString *originalText = label.attributedText;
+        if (originalText.length) {
+            NSMutableAttributedString *text = [originalText mutableCopy];
+            __block BOOL changed = NO;
+            [originalText enumerateAttribute:NSForegroundColorAttributeName inRange:NSMakeRange(0, originalText.length) options:0 usingBlock:^(id color, NSRange range, BOOL *stop) {
+                UIColor *source = [color isKindOfClass:UIColor.class] ? color : label.textColor;
+                UIColor *target = [self readableTextColor:source disabled:disabled];
+                if (target) {
+                    [text addAttribute:NSForegroundColorAttributeName value:target range:range];
+                    changed = YES;
+                }
+            }];
+            if (changed) [self write:text key:@"attributedText" object:label controller:controller];
+            return;
+        }
+        UIColor *target = [self readableTextColor:label.textColor disabled:disabled];
+        if (target) [self write:target key:@"textColor" object:label controller:controller];
+    } @finally { watch.busy = busy; }
 }
 
 + (UIImageView *)actionIconInCell:(UIView *)cell {
@@ -169,7 +237,7 @@ static char kDYYYMenuSelectionLabelKey;
     dispatch_once(&once, ^{
         NSMutableDictionary *images = [NSMutableDictionary dictionary];
         UIImageSymbolConfiguration *config = [UIImageSymbolConfiguration configurationWithPointSize:20 weight:UIImageSymbolWeightMedium];
-        for (NSString *key in @[ @"doc.on.doc", @"star", @"star.fill", @"magnifyingglass", @"square.and.arrow.down", @"video" ]) {
+        for (NSString *key in @[ @"doc.on.doc", @"star", @"star.fill", @"magnifyingglass", @"square.and.arrow.down", @"video", @"camera.viewfinder" ]) {
             UIImage *image = [UIImage systemImageNamed:key withConfiguration:config];
             if (image) images[key] = [image imageWithTintColor:UIColor.whiteColor renderingMode:UIImageRenderingModeAlwaysOriginal];
         }
@@ -184,7 +252,7 @@ static char kDYYYMenuSelectionLabelKey;
     dispatch_once(&once, ^{
         NSMutableDictionary *images = [NSMutableDictionary dictionary];
         UIColor *color = [UIColor colorWithWhite:0.78 alpha:1];
-        for (NSString *key in @[ @"doc.on.doc", @"star", @"star.fill", @"magnifyingglass", @"square.and.arrow.down", @"video" ]) {
+        for (NSString *key in @[ @"doc.on.doc", @"star", @"star.fill", @"magnifyingglass", @"square.and.arrow.down", @"video", @"camera.viewfinder" ]) {
             UIImage *image = [[self whiteActionSymbolNamed:key] imageWithTintColor:color renderingMode:UIImageRenderingModeAlwaysOriginal];
             if (image) images[key] = image;
         }
@@ -201,6 +269,7 @@ static char kDYYYMenuSelectionLabelKey;
     if ([title isEqualToString:@"搜索"]) return @"magnifyingglass";
     if ([title isEqualToString:@"保存到相册"]) return @"square.and.arrow.down";
     if ([title isEqualToString:@"发作品回复"]) return @"video";
+    if ([title isEqualToString:@"识别图片"]) return @"camera.viewfinder";
     return nil;
 }
 
@@ -271,7 +340,10 @@ static char kDYYYMenuSelectionLabelKey;
 + (void)refreshSelectionController:(UIViewController *)controller {
     if (!controller.viewIfLoaded.window || objc_getAssociatedObject(controller, &kDYYYMenuSelectionBusyKey)) return;
     objc_setAssociatedObject(controller, &kDYYYMenuSelectionBusyKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    @try { [DYYYCommentMenuTheme prepareController:controller]; }
+    @try {
+        [DYYYCommentMenuTheme prepareController:controller];
+        [DYYYCommentMenuGrid synchronizeMenuController:controller];
+    }
     @finally { objc_setAssociatedObject(controller, &kDYYYMenuSelectionBusyKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
 }
 
@@ -281,6 +353,25 @@ static char kDYYYMenuSelectionLabelKey;
         [(DYYYCommentMenuSelectionSection *)section viewController] : nil;
     UIViewController *controller = [DYYYCommentMenuTheme menuControllerForController:content] ?:
         (overlay ? [DYYYCommentMenuTheme controllerForView:overlay] : nil);
+    [self scheduleSelectionController:controller];
+}
+
++ (void)synchronizeComposer:(UIView *)composer {
+    if (!NSThread.isMainThread) return;
+    NSHashTable *owners = objc_getAssociatedObject(composer, &kDYYYMenuComposerOwnerKey);
+    UIViewController *menu = [DYYYCommentMenuTheme controllerForView:composer];
+    if (menu) {
+        if (!owners) {
+            owners = [NSHashTable weakObjectsHashTable];
+            objc_setAssociatedObject(composer, &kDYYYMenuComposerOwnerKey, owners, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+        [owners removeAllObjects];
+        [owners addObject:menu];
+    } else menu = owners.allObjects.firstObject;
+    [self scheduleSelectionController:menu];
+}
+
++ (void)scheduleSelectionController:(UIViewController *)controller {
     if (!controller || objc_getAssociatedObject(controller, &kDYYYMenuSelectionBusyKey)) return;
     [self refreshSelectionController:controller];
     if (objc_getAssociatedObject(controller, &kDYYYMenuSelectionScheduledKey)) return;
@@ -466,6 +557,9 @@ static char kDYYYMenuSelectionLabelKey;
 }
 
 + (void)restoreObject:(id)object {
+    DYYYCommentMenuLabelWatch *watch = objc_getAssociatedObject(object, &kDYYYMenuLabelWatchKey);
+    [watch stop];
+    objc_setAssociatedObject(object, &kDYYYMenuLabelWatchKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     objc_setAssociatedObject(object, &kDYYYMenuSelectionLabelKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     [self removeActionOverlayFromObject:object];
     NSDictionary *changes = objc_getAssociatedObject(object, &kDYYYMenuPaletteChangesKey);

@@ -19,6 +19,10 @@ static char kDYYYShareComposerStateKey;
 @property (nonatomic, assign) BOOL insetChanged;
 @property (nonatomic, assign) BOOL busy;
 @property (nonatomic, assign) BOOL restoring;
+@property (nonatomic, weak) UIImageView *preview;
+@property (nonatomic, assign) CGAffineTransform nativePreviewTransform;
+@property (nonatomic, assign) CGAffineTransform appliedPreviewTransform;
+@property (nonatomic, assign) BOOL previewChanged;
 @end
 @implementation DYYYShareComposerState
 - (void)dealloc {
@@ -192,9 +196,26 @@ static char kDYYYShareComposerStateKey;
         CGFloat leading = 16;
         for (UIView *view in host.subviews)
             if ([view isKindOfClass:UIStackView.class] && CGRectGetHeight(view.bounds) >= 36) { leading = CGRectGetMinX(view.frame); break; }
-        CGFloat right = MIN(CGRectGetMaxX(rect), CGRectGetMaxX(host.bounds) - leading);
+        CGFloat right = CGRectGetMaxX(host.bounds) - leading;
         CGRect frame = CGRectMake(leading, CGRectGetMinY(rect) + 4, right - leading, CGRectGetHeight(rect) - 8);
         if (frame.size.width < 80 || frame.size.height < 24) return;
+        UIImageView *preview = nil;
+        for (UIView *view in host.subviews)
+            if ([view isKindOfClass:UIImageView.class] && !view.hidden && view.alpha > 0.01 &&
+                view.bounds.size.width >= 24 && CGRectGetMinX(view.frame) > CGRectGetMidX(host.bounds)) { preview = (id)view; break; }
+        if (state.preview != preview && state.previewChanged) [self restorePreview:state];
+        if (preview) {
+            CGAffineTransform current = preview.transform;
+            CGAffineTransform original = state.previewChanged && CGAffineTransformEqualToTransform(current, state.appliedPreviewTransform) ? state.nativePreviewTransform : current;
+            CGFloat nativeRight = preview.center.x + preview.bounds.size.width * 0.5;
+            CGAffineTransform applied = original;
+            applied.tx += MIN(0, CGRectGetMaxX(frame) - 8 - nativeRight);
+            state.preview = preview;
+            state.nativePreviewTransform = original;
+            state.appliedPreviewTransform = applied;
+            state.previewChanged = YES;
+            if (!CGAffineTransformEqualToTransform(current, applied)) preview.transform = applied;
+        }
         UIEdgeInsets inset = input.textContainerInset;
         if (!state.insetChanged || fabs(inset.left - state.appliedLeftInset) > 0.1) state.nativeLeftInset = inset.left;
         CGFloat left = MAX(state.nativeLeftInset, leading - CGRectGetMinX(rect) + 8 - input.textContainer.lineFragmentPadding);
@@ -220,6 +241,13 @@ static char kDYYYShareComposerStateKey;
     } @finally { state.busy = NO; }
 }
 
++ (void)restorePreview:(DYYYShareComposerState *)state {
+    if (state.previewChanged && CGAffineTransformEqualToTransform(state.preview.transform, state.appliedPreviewTransform))
+        state.preview.transform = state.nativePreviewTransform;
+    state.previewChanged = NO;
+    state.preview = nil;
+}
+
 + (void)restoreInput:(UITextView *)input {
     if (!NSThread.isMainThread) return;
     DYYYShareComposerState *state = [self stateForInput:input create:NO];
@@ -229,6 +257,7 @@ static char kDYYYShareComposerStateKey;
     @try {
         [state.outline removeFromSuperlayer];
         state.outline = nil;
+        [self restorePreview:state];
         [self paintNeutralRuns:input target:state.nativeColor ?: UIColor.labelColor restoring:YES state:state];
         __block BOOL hasColoredRuns = NO;
         [input.textStorage enumerateAttribute:NSForegroundColorAttributeName inRange:NSMakeRange(0, input.textStorage.length) options:0 usingBlock:^(id color, NSRange range, BOOL *stop) {
@@ -265,7 +294,7 @@ static char kDYYYShareComposerStateKey;
     for (DYYYShareComposerState *state in [self states].allObjects) {
         if (state.controller != controller || !state.input) continue;
         [inputs addObject:@{ @"class": NSStringFromClass(state.input.class), @"borderFrame": NSStringFromCGRect(state.outline.frame),
-            @"attached": @(state.outline.superlayer != nil), @"marked": @(state.input.markedTextRange != nil),
+            @"attached": @(state.outline.superlayer != nil), @"previewIncluded": @(state.preview != nil), @"marked": @(state.input.markedTextRange != nil),
             @"dark": @([DYYYUtils isDarkMode]), @"leftInset": @(state.input.textContainerInset.left),
             @"foreground": [self colorSummary:state.input.textColor],
             @"typingForeground": [self colorSummary:state.input.typingAttributes[NSForegroundColorAttributeName]] }];

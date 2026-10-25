@@ -27,6 +27,7 @@
 #import "DYYYCommentMenuTheme.h"
 #import "AwemeHeaders.h"
 #import "DYYYCommentMenuItems.h"
+#import "DYYYCommentMenuMetrics.h"
 #import <objc/runtime.h>
 #import <math.h>
 
@@ -246,6 +247,15 @@ static char kDYYYCommentGridHeightKey;
     return adjusted;
 }
 
++ (void)synchronizeMenuController:(UIViewController *)controller {
+    NSMutableArray *queue = [NSMutableArray arrayWithObject:controller];
+    for (NSUInteger index = 0; index < queue.count && index < 24; index++) {
+        UIViewController *child = queue[index];
+        if ([self collectionForController:child]) { [self synchronizeController:child]; return; }
+        [queue addObjectsFromArray:child.childViewControllers];
+    }
+}
+
 + (void)synchronizeController:(UIViewController *)controller {
     if (!NSThread.isMainThread) return;
     DYYYCommentLongPressPanelSheet *menu = (id)[DYYYCommentMenuTheme menuControllerForController:controller];
@@ -261,19 +271,35 @@ static char kDYYYCommentGridHeightKey;
         record = [@{ @"original": @(menu.sheetHeight), @"minimum": @(menu.minimumSheetHeight), @"inset": @(inset) } mutableCopy];
         objc_setAssociatedObject(menu, &kDYYYCommentGridHeightKey, record, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
-    CGFloat target = content + [record[@"inset"] doubleValue];
+    CGFloat composerHeight = 0, firstRowBottom = 0;
     Class composerClass = NSClassFromString(@"AWEIMShareImpl.ShareAdditionTextView");
     for (UIView *view in list.superview.subviews) {
         if (!composerClass || ![view isKindOfClass:composerClass] || view.hidden || view.alpha <= 0.01) continue;
-        CGFloat firstRowBottom = 0;
-        Class card = NSClassFromString(@"CommentLongPressPanelNormalBaseCell");
-        for (UICollectionViewCell *cell in list.visibleCells)
-            if (card && [cell isKindOfClass:card] && (!firstRowBottom || CGRectGetMaxY(cell.frame) < firstRowBottom))
-                firstRowBottom = CGRectGetMaxY(cell.frame);
-        CGFloat sendHeight = CGRectGetHeight(list.bounds) - CGRectGetMinY(view.frame);
-        if (firstRowBottom && sendHeight > 0) target = MAX(target, firstRowBottom + sendHeight + [record[@"inset"] doubleValue]);
+        // 不再使用 list.bounds.height - composer.y：键盘会移动输入区，这个差值不是发送区高度。
+        composerHeight = CGRectGetHeight(view.bounds) + list.window.safeAreaInsets.bottom;
+        for (UIView *plate in list.superview.subviews) {
+            if (plate == view || ![NSStringFromClass(plate.class) isEqualToString:@"UIView"] || plate.hidden || plate.alpha <= 0.01 || plate.subviews.count) continue;
+            CGFloat height = CGRectGetHeight(plate.bounds);
+            if (fabs(CGRectGetMinY(plate.frame) - CGRectGetMinY(view.frame)) < 2 &&
+                CGRectGetWidth(plate.bounds) >= CGRectGetWidth(list.bounds) * 0.9 &&
+                height >= CGRectGetHeight(view.bounds) && height <= CGRectGetHeight(view.bounds) + 64)
+                composerHeight = MAX(composerHeight, height);
+        }
+        NSArray *attributes = [list.collectionViewLayout layoutAttributesForElementsInRect:CGRectMake(0, 0, list.bounds.size.width, content)];
+        for (UICollectionViewLayoutAttributes *item in attributes) {
+            if (item.representedElementCategory != UICollectionElementCategoryCell || item.size.height < 36 ||
+                item.size.width >= list.bounds.size.width * 0.75) continue;
+            CGFloat bottom = CGRectGetMaxY(item.frame);
+            if (!firstRowBottom || bottom < firstRowBottom) firstRowBottom = bottom;
+        }
+        break;
     }
-    target = ceil(MIN(target, MIN([record[@"original"] doubleValue], list.window.bounds.size.height * 0.9)));
+    CGFloat target = [DYYYCommentMenuMetrics compactHeightForContent:content inset:[record[@"inset"] doubleValue]
+        firstRowBottom:firstRowBottom composerHeight:composerHeight
+        maximum:MIN([record[@"original"] doubleValue], list.window.bounds.size.height * 0.9)];
+    record[@"selectionActive"] = @(composerHeight > 0);
+    record[@"composerHeight"] = @(composerHeight);
+    record[@"contentHeight"] = @(content);
     record[@"target"] = @(target);
     if (fabs(menu.sheetHeight - target) < 0.5 ||
         (record[@"applied"] && fabs([record[@"applied"] doubleValue] - target) < 0.5) || [record[@"scheduled"] boolValue]) return;

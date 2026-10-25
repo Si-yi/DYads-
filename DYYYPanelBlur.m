@@ -168,7 +168,17 @@ static char kDYYYPanelGroupSendBorderKey;
     }
     CGRect bounds = list.bounds;
     CGRect composerRect = [composer convertRect:composer.bounds toView:list];
-    CGFloat height = CGRectGetMinY(composerRect) - CGRectGetMinY(bounds);
+    CGFloat cutoff = CGRectGetMinY(composerRect);
+    CGFloat fullRowBottom = 0, firstActionTop = CGFLOAT_MAX;
+    Class cardClass = NSClassFromString(@"CommentLongPressPanelNormalBaseCell");
+    for (UICollectionViewCell *cell in list.visibleCells) {
+        if (!cardClass || ![cell isKindOfClass:cardClass]) continue;
+        firstActionTop = MIN(firstActionTop, CGRectGetMinY(cell.frame));
+        if (CGRectGetMaxY(cell.frame) <= cutoff + 0.5) fullRowBottom = MAX(fullRowBottom, CGRectGetMaxY(cell.frame));
+    }
+    // 输入区上方只显示完整行，不能再露出下一行的图标/文字而把边框裁掉。
+    if (firstActionTop < CGFLOAT_MAX) cutoff = MIN(cutoff, fullRowBottom > 0 ? fullRowBottom : firstActionTop);
+    CGFloat height = cutoff - CGRectGetMinY(bounds);
     if (height < 0 || height >= CGRectGetHeight(bounds) ||
         CGRectGetWidth(composerRect) < CGRectGetWidth(bounds) * 0.9) {
         [self restoreSelectionClip:state];
