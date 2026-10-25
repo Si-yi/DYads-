@@ -268,6 +268,20 @@ static NSDictionary *kDYYYCommentGridLastClosed;
     return 0;
 }
 
+// 顶部间距取原生导航内容宿主的真实起点。sheetHeight 与列表高度可能正处于不同布局阶段，
+// 二者的差不能作为顶部留白，否则 44/64pt 的过渡差值会被一直保存在本次菜单中。
++ (CGFloat)contentInsetForController:(UIViewController *)controller menu:(UIViewController *)menu {
+    UIView *host = controller.navigationController.viewIfLoaded;
+    if (!host) return NAN;
+    Class shellClass = NSClassFromString(@"DUXVisualEffectView");
+    for (UIView *shell in menu.viewIfLoaded.subviews) {
+        if (!shellClass || ![shell isKindOfClass:shellClass] || shell.hidden || ![host isDescendantOfView:shell]) continue;
+        CGRect frame = [host convertRect:host.bounds toView:shell];
+        return [DYYYCommentMenuMetrics contentInsetForShellTop:CGRectGetMinY(shell.bounds) contentTop:CGRectGetMinY(frame)];
+    }
+    return NAN;
+}
+
 + (void)synchronizeMenuController:(UIViewController *)controller {
     NSMutableArray *queue = [NSMutableArray arrayWithObject:controller];
     for (NSUInteger index = 0; index < queue.count && index < 24; index++) {
@@ -328,11 +342,15 @@ static NSDictionary *kDYYYCommentGridLastClosed;
     if (!isfinite(content) || content < 100 || list.bounds.size.height < 100 || menu.sheetHeight <= 0) return;
     NSMutableDictionary *record = objc_getAssociatedObject(menu, &kDYYYCommentGridHeightKey);
     if ([record[@"applying"] boolValue]) return;
+    CGFloat inset = [self contentInsetForController:controller menu:menu];
+    if (!isfinite(inset)) return; // 还未挂入原生内容宿主时不猜尺寸，等实际布局回调。
     if (!record) {
-        CGFloat inset = MIN(64, MAX(0, menu.sheetHeight - list.bounds.size.height));
-        record = [@{ @"original": @(menu.sheetHeight), @"minimum": @(menu.minimumSheetHeight), @"inset": @(inset) } mutableCopy];
+        record = [@{ @"original": @(menu.sheetHeight), @"minimum": @(menu.minimumSheetHeight) } mutableCopy];
         objc_setAssociatedObject(menu, &kDYYYCommentGridHeightKey, record, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
+    record[@"inset"] = @(inset);
+    record[@"insetSource"] = @"navigation_content_origin";
+    record[@"nativeHeightDifference"] = @(menu.sheetHeight - list.bounds.size.height);
     CGFloat rawContent = content, composerHeight = 0, firstRowBottom = 0, actionBottom = 0;
     NSArray *attributes = [list.collectionViewLayout layoutAttributesForElementsInRect:CGRectMake(0, 0, list.bounds.size.width, rawContent)];
     for (UICollectionViewLayoutAttributes *item in attributes) {

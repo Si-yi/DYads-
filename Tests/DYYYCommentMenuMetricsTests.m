@@ -48,6 +48,21 @@ int main(void) {
         NSCAssert([DYYYCommentMenuMetrics constrainedNativeHeight:574 target:354 managed:NO] == 574, @"Disabled/unmanaged sheets keep native minimum");
         NSCAssert([DYYYCommentMenuMetrics constrainedNativeHeight:0 target:354 managed:YES] == 0, @"Native zero minimum remains zero");
         NSCAssert([DYYYCommentMenuMetrics constrainedNativeHeight:574 target:NAN managed:YES] == 574, @"Unknown compact target cannot alter native geometry");
+        // 正常/异常截图：同一内容的顶部空白曾误取 16/44/64pt，导致多出 28/48pt。
+        double stableInset = [DYYYCommentMenuMetrics contentInsetForShellTop:0 contentTop:16];
+        for (NSNumber *nativeHeightDifference in @[@16, @44, @64]) {
+            double normalHeight = [DYYYCommentMenuMetrics compactHeightForContent:initialContent inset:stableInset
+                firstRowBottom:0 composerHeight:0 maximum:684];
+            double selectedHeight = [DYYYCommentMenuMetrics compactHeightForContent:initialContent inset:stableInset
+                firstRowBottom:200 composerHeight:160 maximum:684];
+            NSCAssert(normalHeight == 354 && selectedHeight == 376, @"Transient sheet/list height differences cannot add bottom or composer gaps");
+            double oldSelected = [DYYYCommentMenuMetrics compactHeightForContent:initialContent inset:nativeHeightDifference.doubleValue
+                firstRowBottom:200 composerHeight:160 maximum:684];
+            NSCAssert(oldSelected - selectedHeight == nativeHeightDifference.doubleValue - 16, @"Regression reproduces the exact 28/48pt extra gaps");
+        }
+        NSCAssert([DYYYCommentMenuMetrics contentInsetForShellTop:10 contentTop:26] == 16, @"Measure in the same shell coordinate space");
+        NSCAssert(isnan([DYYYCommentMenuMetrics contentInsetForShellTop:0 contentTop:-5]), @"Unattached/transitional hosts must not become a cached inset");
+        NSCAssert(isnan([DYYYCommentMenuMetrics contentInsetForShellTop:0 contentTop:NAN]), @"Unknown origins cannot drive sheet sizing");
         NSLog(@"DYYYCommentMenuMetrics regression tests passed");
     }
     return 0;

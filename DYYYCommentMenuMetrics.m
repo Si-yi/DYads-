@@ -2,6 +2,10 @@
 #import <math.h>
 
 @implementation DYYYCommentMenuMetrics
++ (double)contentInsetForShellTop:(double)shellTop contentTop:(double)contentTop {
+    double inset = contentTop - shellTop;
+    return isfinite(inset) && inset >= 0 && inset <= 64 ? inset : NAN;
+}
 + (double)contentHeightForActionBottom:(double)bottom safeAreaBottom:(double)safeArea rawContent:(double)raw {
     if (!isfinite(bottom) || bottom <= 0 || !isfinite(safeArea)) return raw;
     // 原生列表可能残留 160pt 选人占位。只保留实际功能项及底部安全距离。
