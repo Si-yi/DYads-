@@ -237,7 +237,7 @@ static char kDYYYMenuLabelWatchContext;
     dispatch_once(&once, ^{
         NSMutableDictionary *images = [NSMutableDictionary dictionary];
         UIImageSymbolConfiguration *config = [UIImageSymbolConfiguration configurationWithPointSize:20 weight:UIImageSymbolWeightMedium];
-        for (NSString *key in @[ @"doc.on.doc", @"star", @"star.fill", @"magnifyingglass", @"square.and.arrow.down", @"video", @"camera.viewfinder" ]) {
+        for (NSString *key in @[ @"doc.on.doc", @"star", @"star.fill", @"magnifyingglass", @"square.and.arrow.down", @"video", @"camera.viewfinder", @"trash" ]) {
             UIImage *image = [UIImage systemImageNamed:key withConfiguration:config];
             if (image) images[key] = [image imageWithTintColor:UIColor.whiteColor renderingMode:UIImageRenderingModeAlwaysOriginal];
         }
@@ -252,7 +252,7 @@ static char kDYYYMenuLabelWatchContext;
     dispatch_once(&once, ^{
         NSMutableDictionary *images = [NSMutableDictionary dictionary];
         UIColor *color = [UIColor colorWithWhite:0.78 alpha:1];
-        for (NSString *key in @[ @"doc.on.doc", @"star", @"star.fill", @"magnifyingglass", @"square.and.arrow.down", @"video", @"camera.viewfinder" ]) {
+        for (NSString *key in @[ @"doc.on.doc", @"star", @"star.fill", @"magnifyingglass", @"square.and.arrow.down", @"video", @"camera.viewfinder", @"trash" ]) {
             UIImage *image = [[self whiteActionSymbolNamed:key] imageWithTintColor:color renderingMode:UIImageRenderingModeAlwaysOriginal];
             if (image) images[key] = image;
         }
@@ -270,6 +270,7 @@ static char kDYYYMenuLabelWatchContext;
     if ([title isEqualToString:@"保存到相册"]) return @"square.and.arrow.down";
     if ([title isEqualToString:@"发作品回复"]) return @"video";
     if ([title isEqualToString:@"识别图片"]) return @"camera.viewfinder";
+    if ([title isEqualToString:@"删除"]) return @"trash";
     return nil;
 }
 
@@ -287,7 +288,7 @@ static char kDYYYMenuLabelWatchContext;
 }
 
 + (BOOL)applyReadableActionIconInCell:(UIView *)cell controller:(UIViewController *)controller {
-    // 原生图片可能在布局之后重新着色。已确认的三个动作独立绘制白色符号，避免只改 tintColor 后仍变黑。
+    // 原生图片可能在布局之后重新着色。已确认语义的动作独立绘制白色符号，避免只改 tintColor 后仍变黑。
     UILabel *actionLabel = [self actionLabelInCell:cell];
     NSString *symbolName = [self actionSymbolForTitle:actionLabel.text ?: actionLabel.attributedText.string];
     UIImageView *overlay = objc_getAssociatedObject(cell, &kDYYYMenuActionOverlayKey);
