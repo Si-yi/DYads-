@@ -1121,6 +1121,7 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @property (nonatomic, assign) CGFloat minimumSheetHeight;
 @property (nonatomic, assign) BOOL userDragging;
 - (void)updateSheetHeight:(CGFloat)height withMinimumSheetHeight:(CGFloat)minimum animated:(BOOL)animated completion:(id)completion;
+- (void)updateSheetFrameAnimated:(BOOL)animated;
 - (void)showOnViewController:(id)arg1 completion:(id)arg2;
 - (instancetype)initWithRootViewController:(UIViewController *)controller withTopType:(NSInteger)topType withSheetAligment:(NSInteger)alignment;
 - (instancetype)initWithRootViewController:(UIViewController *)controller withTopType:(NSInteger)topType withHeight:(CGFloat)height;

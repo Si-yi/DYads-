@@ -10,6 +10,7 @@
 + (BOOL)isManagedSectionModel:(id)section;
 + (NSArray *)modelsForSection:(id)section incoming:(NSArray *)models;
 + (void)didReplaceModelsInSection:(id)section;
++ (BOOL)isComposerVisible:(UIView *)composer;
 + (BOOL)isMenuLayout:(UICollectionViewLayout *)layout;
 + (UICollectionViewLayoutAttributes *)adjustAttributes:(UICollectionViewLayoutAttributes *)attributes layout:(UICollectionViewLayout *)layout;
 + (UICollectionView *)collectionForController:(UIViewController *)controller;
@@ -17,5 +18,6 @@
 + (void)synchronizeController:(UIViewController *)controller;
 + (CGFloat)constrainedHeight:(CGFloat)height controller:(UIViewController *)controller;
 + (void)restoreController:(UIViewController *)controller;
++ (NSDictionary *)lastClosedDiagnostics;
 + (NSDictionary *)diagnosticsForController:(UIViewController *)controller;
 @end

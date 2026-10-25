@@ -21,6 +21,23 @@ int main(void) {
         }
         NSCAssert([DYYYCommentMenuMetrics compactHeightForContent:800 inset:16 firstRowBottom:0 composerHeight:0 maximum:500] == 500, @"Respect native screen-height limits");
         NSCAssert([DYYYCommentMenuMetrics compactHeightForContent:NAN inset:16 firstRowBottom:0 composerHeight:0 maximum:500] == 0, @"Reject invalid geometry");
+        // Real cancellation failure: raw collection size retains a 160pt input reservation.
+        double actualBottom = 303.3333333333;
+        double initialContent = [DYYYCommentMenuMetrics contentHeightForActionBottom:actualBottom safeAreaBottom:34 rawContent:335.2];
+        double staleContent = [DYYYCommentMenuMetrics contentHeightForActionBottom:actualBottom safeAreaBottom:34 rawContent:495.2];
+        NSCAssert(initialContent == staleContent, @"A retained 160pt placeholder must not become menu content");
+        double before = [DYYYCommentMenuMetrics compactHeightForContent:initialContent inset:16 firstRowBottom:0 composerHeight:0 maximum:574];
+        double after = [DYYYCommentMenuMetrics compactHeightForContent:staleContent inset:16 firstRowBottom:0 composerHeight:0 maximum:684];
+        NSCAssert(before == 354 && after == before, @"Six actual actions return to their compact height after cancellation");
+        for (NSUInteger cycle = 0; cycle < 20; cycle++) {
+            double raw = 335.2 + 160 * (cycle + 1);
+            double measured = [DYYYCommentMenuMetrics contentHeightForActionBottom:actualBottom safeAreaBottom:34 rawContent:raw];
+            NSCAssert(measured == initialContent, @"Repeated stale reservations cannot accumulate blank space");
+        }
+        NSCAssert([DYYYCommentMenuMetrics needsUpdateForTarget:354 propertyHeight:354 renderedHeight:514], @"Matching stored height must not hide a stale real shell");
+        NSCAssert(![DYYYCommentMenuMetrics needsUpdateForTarget:354 propertyHeight:354 renderedHeight:354], @"Settled geometry needs no repeated layout request");
+        NSCAssert([DYYYCommentMenuMetrics needsUpdateForTarget:354 propertyHeight:514 renderedHeight:514], @"Both property and rendered height can need correction");
+        NSCAssert([DYYYCommentMenuMetrics contentHeightForActionBottom:0 safeAreaBottom:34 rawContent:335.2] == 335.2, @"Unknown action layout preserves native content");
         NSLog(@"DYYYCommentMenuMetrics regression tests passed");
     }
     return 0;

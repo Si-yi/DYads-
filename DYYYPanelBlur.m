@@ -152,7 +152,7 @@ static char kDYYYPanelGroupSendBorderKey;
                 for (UIView *view in host.subviews) {
                     if (view.hidden || view.alpha <= 0.01) continue;
                     if ([view isKindOfClass:UICollectionView.class]) list = (id)view;
-                    if (composerClass && [view isKindOfClass:composerClass] &&
+                    if (composerClass && [view isKindOfClass:composerClass] && [DYYYCommentMenuGrid isComposerVisible:view] &&
                         CGRectGetWidth(view.bounds) >= CGRectGetWidth(host.bounds) * 0.9 &&
                         CGRectGetHeight(view.bounds) >= 16) composer = view;
                 }
@@ -560,7 +560,7 @@ static char kDYYYPanelGroupSendBorderKey;
             @"shareComposer": [DYYYShareComposer diagnosticsForController:controller]
         }];
     }
-    return @{ @"panels": panels,
+    return @{ @"panels": panels, @"lastClosedCommentGrid": [DYYYCommentMenuGrid lastClosedDiagnostics],
         @"legacyShareClassAvailable": @(NSClassFromString(@"AWESharePanelController") != Nil),
         @"shareContainerClassAvailable": @(NSClassFromString(@"AWESharePanelContainerViewController") != Nil),
         @"shareContentClassAvailable": @(NSClassFromString(@"AWESharePanelViewController") != Nil) };

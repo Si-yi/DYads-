@@ -37,6 +37,7 @@ static char kDYYYCommentGridListStateKey;
 static char kDYYYCommentGridCellStateKey;
 static char kDYYYCommentGridMenuStatesKey;
 static char kDYYYCommentGridHeightKey;
+static NSDictionary *kDYYYCommentGridLastClosed;
 
 @interface DYYYCommentGridModelsState : NSObject
 @property (nonatomic, strong) NSArray *sections;
@@ -247,6 +248,26 @@ static char kDYYYCommentGridHeightKey;
     return adjusted;
 }
 
++ (BOOL)isComposerVisible:(UIView *)composer {
+    if (!composer.window || composer.hidden || composer.alpha <= 0.01 || composer.bounds.size.height < 16) return NO;
+    NSMutableArray *queue = [NSMutableArray arrayWithObject:composer];
+    for (NSUInteger index = 0; index < queue.count && index < 64; index++) {
+        UIView *view = queue[index];
+        if (view.hidden || view.alpha <= 0.01) continue;
+        if ([view isKindOfClass:UIButton.class] && [((UIButton *)view).currentTitle containsString:@"发送"]) return YES;
+        if ([view isKindOfClass:UIVisualEffectView.class]) [queue addObject:((UIVisualEffectView *)view).contentView];
+        else [queue addObjectsFromArray:view.subviews];
+    }
+    return NO;
+}
+
++ (CGFloat)renderedHeightForMenu:(UIViewController *)menu {
+    Class shell = NSClassFromString(@"DUXVisualEffectView");
+    for (UIView *view in menu.viewIfLoaded.subviews)
+        if (shell && [view isKindOfClass:shell] && !view.hidden) return CGRectGetHeight(view.bounds);
+    return 0;
+}
+
 + (void)synchronizeMenuController:(UIViewController *)controller {
     NSMutableArray *queue = [NSMutableArray arrayWithObject:controller];
     for (NSUInteger index = 0; index < queue.count && index < 24; index++) {
@@ -261,7 +282,7 @@ static char kDYYYCommentGridHeightKey;
     DYYYCommentLongPressPanelSheet *menu = (id)[DYYYCommentMenuTheme menuControllerForController:controller];
     UICollectionView *list = [self collectionForController:controller];
     if (!menu || !list.window || ![NSUserDefaults.standardUserDefaults boolForKey:@"DYYYEnableCommentMenuBlur"] ||
-        list.dragging || list.decelerating || menu.userDragging || fabs(list.contentOffset.y) > 1 ||
+        list.dragging || list.decelerating || menu.userDragging ||
         ![menu respondsToSelector:@selector(updateSheetHeight:withMinimumSheetHeight:animated:completion:)]) return;
     CGFloat content = list.contentSize.height;
     if (!isfinite(content) || content < 100 || list.bounds.size.height < 100 || menu.sheetHeight <= 0) return;
@@ -271,10 +292,20 @@ static char kDYYYCommentGridHeightKey;
         record = [@{ @"original": @(menu.sheetHeight), @"minimum": @(menu.minimumSheetHeight), @"inset": @(inset) } mutableCopy];
         objc_setAssociatedObject(menu, &kDYYYCommentGridHeightKey, record, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
-    CGFloat composerHeight = 0, firstRowBottom = 0;
+    CGFloat rawContent = content, composerHeight = 0, firstRowBottom = 0, actionBottom = 0;
+    NSArray *attributes = [list.collectionViewLayout layoutAttributesForElementsInRect:CGRectMake(0, 0, list.bounds.size.width, rawContent)];
+    for (UICollectionViewLayoutAttributes *item in attributes) {
+        if (item.representedElementCategory != UICollectionElementCategoryCell || item.size.height < 36 ||
+            item.size.width < 100 || item.size.width >= list.bounds.size.width * 0.75) continue;
+        CGFloat bottom = CGRectGetMaxY(item.frame);
+        actionBottom = MAX(actionBottom, bottom);
+        if (!firstRowBottom || bottom < firstRowBottom) firstRowBottom = bottom;
+    }
+    content = [DYYYCommentMenuMetrics contentHeightForActionBottom:actionBottom
+        safeAreaBottom:list.window.safeAreaInsets.bottom rawContent:rawContent];
     Class composerClass = NSClassFromString(@"AWEIMShareImpl.ShareAdditionTextView");
     for (UIView *view in list.superview.subviews) {
-        if (!composerClass || ![view isKindOfClass:composerClass] || view.hidden || view.alpha <= 0.01) continue;
+        if (!composerClass || ![view isKindOfClass:composerClass] || ![self isComposerVisible:view]) continue;
         // 不再使用 list.bounds.height - composer.y：键盘会移动输入区，这个差值不是发送区高度。
         composerHeight = CGRectGetHeight(view.bounds) + list.window.safeAreaInsets.bottom;
         for (UIView *plate in list.superview.subviews) {
@@ -285,13 +316,6 @@ static char kDYYYCommentGridHeightKey;
                 height >= CGRectGetHeight(view.bounds) && height <= CGRectGetHeight(view.bounds) + 64)
                 composerHeight = MAX(composerHeight, height);
         }
-        NSArray *attributes = [list.collectionViewLayout layoutAttributesForElementsInRect:CGRectMake(0, 0, list.bounds.size.width, content)];
-        for (UICollectionViewLayoutAttributes *item in attributes) {
-            if (item.representedElementCategory != UICollectionElementCategoryCell || item.size.height < 36 ||
-                item.size.width >= list.bounds.size.width * 0.75) continue;
-            CGFloat bottom = CGRectGetMaxY(item.frame);
-            if (!firstRowBottom || bottom < firstRowBottom) firstRowBottom = bottom;
-        }
         break;
     }
     CGFloat target = [DYYYCommentMenuMetrics compactHeightForContent:content inset:[record[@"inset"] doubleValue]
@@ -300,9 +324,21 @@ static char kDYYYCommentGridHeightKey;
     record[@"selectionActive"] = @(composerHeight > 0);
     record[@"composerHeight"] = @(composerHeight);
     record[@"contentHeight"] = @(content);
+    record[@"rawContentHeight"] = @(rawContent);
+    record[@"actionBottom"] = @(actionBottom);
     record[@"target"] = @(target);
-    if (fabs(menu.sheetHeight - target) < 0.5 ||
-        (record[@"applied"] && fabs([record[@"applied"] doubleValue] - target) < 0.5) || [record[@"scheduled"] boolValue]) return;
+    CGFloat rendered = [self renderedHeightForMenu:menu];
+    record[@"renderedHeight"] = @(rendered);
+    record[@"propertyHeight"] = @(menu.sheetHeight);
+    NSArray *signature = @[ @(target), @(composerHeight > 0), @(list.bounds.size.width) ];
+    record[@"targetSignature"] = signature;
+    BOOL needsUpdate = [DYYYCommentMenuMetrics needsUpdateForTarget:target propertyHeight:menu.sheetHeight renderedHeight:rendered];
+    if (!needsUpdate || [record[@"scheduled"] boolValue]) return;
+    if ([record[@"appliedSignature"] isEqual:signature]) {
+        // 同一状态最多补一次真实外壳重排，避免因旧 minimum/动画写回而永久跳过，也避免布局循环。
+        if ([record[@"repairSignature"] isEqual:signature]) return;
+        record[@"repairSignature"] = signature;
+    }
     record[@"scheduled"] = @YES;
     __weak DYYYCommentLongPressPanelSheet *weakMenu = menu;
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -312,9 +348,18 @@ static char kDYYYCommentGridHeightKey;
         current[@"scheduled"] = @NO;
         if (!sheet.viewIfLoaded.window || ![NSUserDefaults.standardUserDefaults boolForKey:@"DYYYEnableCommentMenuBlur"] || sheet.userDragging) return;
         CGFloat height = [current[@"target"] doubleValue];
-        if (fabs(sheet.sheetHeight - height) < 0.5) return;
+        CGFloat drawn = [self renderedHeightForMenu:sheet];
+        if (![DYYYCommentMenuMetrics needsUpdateForTarget:height propertyHeight:sheet.sheetHeight renderedHeight:drawn]) return;
         current[@"applied"] = @(height);
+        current[@"appliedSignature"] = current[@"targetSignature"];
         [sheet updateSheetHeight:height withMinimumSheetHeight:MIN([current[@"minimum"] doubleValue], height) animated:NO completion:nil];
+        // DUX 在数值未变时可能跳过刷新，需通过它自己的布局入口同步实际外壳。
+        if (fabs([self renderedHeightForMenu:sheet] - height) > 0.5 && [sheet respondsToSelector:@selector(updateSheetFrameAnimated:)]) {
+            current[@"repairSignature"] = current[@"targetSignature"];
+            [sheet updateSheetFrameAnimated:NO];
+        }
+        current[@"renderedHeight"] = @([self renderedHeightForMenu:sheet]);
+        current[@"propertyHeight"] = @(sheet.sheetHeight);
     });
 }
 
@@ -323,6 +368,7 @@ static char kDYYYCommentGridHeightKey;
     DYYYCommentLongPressPanelSheet *sheet = (id)controller;
     if (!isfinite(height) || height <= 0 || !record[@"applied"] || sheet.userDragging || sheet.isBeingDismissed ||
         ![NSUserDefaults.standardUserDefaults boolForKey:@"DYYYEnableCommentMenuBlur"]) return height;
+    record[@"lastNativeHeightRequest"] = @(height);
     if (height > [record[@"original"] doubleValue]) record[@"original"] = @(height);
     // 原生刷新仍可能写入旧单列高度，在同一个入口使用目标值，避免布局后反复改高/改低。
     return MIN(height, [record[@"target"] doubleValue]);
@@ -330,8 +376,12 @@ static char kDYYYCommentGridHeightKey;
 
 + (void)restoreController:(UIViewController *)controller {
     NSMutableDictionary *record = objc_getAssociatedObject(controller, &kDYYYCommentGridHeightKey);
-    objc_setAssociatedObject(controller, &kDYYYCommentGridHeightKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     DYYYCommentLongPressPanelSheet *menu = (id)controller;
+    if (record) {
+        kDYYYCommentGridLastClosed = @{ @"height": [record copy], @"propertyHeight": @(menu.sheetHeight),
+            @"renderedHeight": @([self renderedHeightForMenu:menu]), @"capturedAt": @([NSDate date].timeIntervalSince1970) };
+    }
+    objc_setAssociatedObject(controller, &kDYYYCommentGridHeightKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     if (record[@"applied"] && fabs(menu.sheetHeight - [record[@"applied"] doubleValue]) < 0.5)
         [menu updateSheetHeight:[record[@"original"] doubleValue] withMinimumSheetHeight:[record[@"minimum"] doubleValue] animated:NO completion:nil];
     if (![NSUserDefaults.standardUserDefaults boolForKey:@"DYYYEnableCommentMenuBlur"]) {
@@ -344,6 +394,10 @@ static char kDYYYCommentGridHeightKey;
             } @finally { state.updating = NO; }
         }
     }
+}
+
++ (NSDictionary *)lastClosedDiagnostics {
+    return kDYYYCommentGridLastClosed ?: @{};
 }
 
 + (NSDictionary *)diagnosticsForController:(UIViewController *)controller {

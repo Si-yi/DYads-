@@ -263,6 +263,12 @@
 - (void)didMoveToWindow {
     %orig;
     [DYYYPanelBlur synchronizeView:(UIView *)self];
+    [DYYYCommentMenuPalette synchronizeComposer:(UIView *)self];
+}
+- (void)setHidden:(BOOL)hidden {
+    BOOL changed = ((UIView *)self).hidden != hidden;
+    %orig;
+    if (changed) [DYYYCommentMenuPalette synchronizeComposer:(UIView *)self];
 }
 %end
 %end
