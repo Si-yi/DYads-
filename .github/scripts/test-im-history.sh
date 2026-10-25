@@ -27,3 +27,6 @@ xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
 xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
     DYYYFriendShareReturnState.m Tests/DYYYFriendShareReturnStateTests.m -o "$test_dir/share-return-tests"
 "$test_dir/share-return-tests"
+xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
+    DYYYDetailCaptionMetrics.m Tests/DYYYDetailCaptionMetricsTests.m -o "$test_dir/detail-caption-tests"
+"$test_dir/detail-caption-tests"

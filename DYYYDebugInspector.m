@@ -6,6 +6,7 @@
 #import "DYYYIMService.h"
 #import "DYYYFriendShareService.h"
 #import "DYYYAvatarRing.h"
+#import "DYYYDetailCaptionLayout.h"
 #import "DKDebugCapture.h"
 #import "DKClassDump.h"
 #import "DKZipWriter.h"
@@ -311,6 +312,7 @@ static NSDictionary *DYYYDebugMetadata(void) {
         @"floatingTabBar": DKGlassGeometryStatus() ?: @"",
         @"panelBlur": [DYYYPanelBlur diagnostics],
         @"avatarRing": [DYYYAvatarRing diagnostics],
+        @"detailCaption": [DYYYDetailCaptionLayout diagnostics],
         @"loadedPluginImages": pluginImages,
         @"inputSettings": @{
             @"DYYYEnableFloatingCommentInput": [defaults objectForKey:@"DYYYEnableFloatingCommentInput"] ?: NSNull.null,

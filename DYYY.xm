@@ -28,6 +28,7 @@
 #import "DYYYDebugInspector.h"
 #import "DYYYChatVideoLayout.h"
 #import "DYYYCollectionRows.h"
+#import "DYYYDetailCaptionLayout.h"
 
 extern "C" void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed);
 #import "DYYYFloatClearButton.h"
@@ -11795,6 +11796,7 @@ static void DYYYUpdateDetailInputTransparency(UIView *root) {
         }
     } @finally {
         objc_setAssociatedObject(root, &kDYYYCompactInputBusyKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [DYYYDetailCaptionLayout synchronizeInputRoot:root];
     }
 }
 
@@ -13061,6 +13063,7 @@ static Class TagViewClass = nil;
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(dyyy_applyGlobalTransparency) name:kDYYYGlobalTransparencyDidChangeNotification object:nil];
     } else {
         [[NSNotificationCenter defaultCenter] removeObserver:self name:kDYYYGlobalTransparencyDidChangeNotification object:nil];
+        [DYYYDetailCaptionLayout restoreStack:self];
     }
 }
 
@@ -13069,7 +13072,14 @@ static Class TagViewClass = nil;
     %orig;
 }
 
+- (void)setFrame:(CGRect)frame {
+    [DYYYDetailCaptionLayout beginStackLayout:self];
+    %orig(frame);
+    [DYYYDetailCaptionLayout endStackLayout:self];
+}
+
 - (void)layoutSubviews {
+    [DYYYDetailCaptionLayout beginStackLayout:self];
     [DYYYCollectionRows applyStack:self];
     %orig;
 
@@ -13199,9 +13209,11 @@ static Class TagViewClass = nil;
             }
         }
     }
+    [DYYYDetailCaptionLayout endStackLayout:self];
 }
 
 - (NSArray<__kindof UIView *> *)arrangedSubviews {
+    [DYYYDetailCaptionLayout beginStackLayout:self];
 
     UIViewController *viewController = [DYYYUtils firstAvailableViewControllerFromView:self];
     if ([viewController isKindOfClass:%c(AWEPlayInteractionViewController)]) {
@@ -13229,6 +13241,7 @@ static Class TagViewClass = nil;
     }
 
     NSArray *originalSubviews = %orig;
+    [DYYYDetailCaptionLayout endStackLayout:self];
     return originalSubviews;
 }
 

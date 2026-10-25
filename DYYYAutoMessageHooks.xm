@@ -4,17 +4,32 @@
 #import "DYYYFriendShareService.h"
 #import "DYYYFriendShareBadgeView.h"
 #import "DYYYChatVideoLayout.h"
+#import "DYYYDetailCaptionLayout.h"
 #import "DYYYUtils.h"
 
 %hook AWEPlayInteractionViewController
 - (void)setModel:(AWEAwemeModel *)model {
     [DYYYFriendShareBadgeView resetForController:self];
+    [DYYYDetailCaptionLayout restoreController:self];
     %orig(model);
+}
+- (void)viewWillLayoutSubviews {
+    [DYYYDetailCaptionLayout restoreController:self];
+    %orig;
 }
 - (void)viewDidLayoutSubviews {
     %orig;
     [DYYYChatVideoLayout layoutInteractionController:self];
     [DYYYFriendShareBadgeView updateForController:self];
+    [DYYYDetailCaptionLayout synchronizeController:self];
+}
+- (void)viewWillDisappear:(BOOL)animated {
+    [DYYYDetailCaptionLayout restoreController:self];
+    %orig;
+}
+- (void)viewDidAppear:(BOOL)animated {
+    %orig;
+    [DYYYDetailCaptionLayout synchronizeController:self];
 }
 %end
 
