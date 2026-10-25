@@ -277,6 +277,42 @@ static NSDictionary *kDYYYCommentGridLastClosed;
     }
 }
 
++ (void)synchronizeMenuControllerImmediately:(UIViewController *)controller {
+    NSMutableDictionary *record = objc_getAssociatedObject(controller, &kDYYYCommentGridHeightKey);
+    if ([record[@"applying"] boolValue]) return;
+    BOOL immediate = [record[@"immediate"] boolValue];
+    record[@"immediate"] = @YES;
+    @try {
+        [UIView performWithoutAnimation:^{ [self synchronizeMenuController:controller]; }];
+    } @finally {
+        if (!immediate) [record removeObjectForKey:@"immediate"];
+    }
+}
+
++ (void)applyHeightToMenu:(DYYYCommentLongPressPanelSheet *)sheet record:(NSMutableDictionary *)current {
+    if (!sheet.viewIfLoaded.window || ![NSUserDefaults.standardUserDefaults boolForKey:@"DYYYEnableCommentMenuBlur"] ||
+        sheet.userDragging || [current[@"applying"] boolValue]) return;
+    CGFloat height = [current[@"target"] doubleValue];
+    CGFloat drawn = [self renderedHeightForMenu:sheet];
+    if (![DYYYCommentMenuMetrics needsUpdateForTarget:height propertyHeight:sheet.sheetHeight renderedHeight:drawn]) return;
+    current[@"applying"] = @YES;
+    @try {
+        [UIView performWithoutAnimation:^{
+            current[@"applied"] = @(height);
+            current[@"appliedSignature"] = current[@"targetSignature"];
+            [sheet updateSheetHeight:height withMinimumSheetHeight:MIN([current[@"minimum"] doubleValue], height) animated:NO completion:nil];
+            // 数值未变而外壳仍旧时，通过原生入口重排；applying 阻止嵌套布局再次改高。
+            if (fabs([self renderedHeightForMenu:sheet] - height) > 0.5 && [sheet respondsToSelector:@selector(updateSheetFrameAnimated:)]) {
+                current[@"repairSignature"] = current[@"targetSignature"];
+                [sheet updateSheetFrameAnimated:NO];
+            }
+        }];
+        current[@"renderedHeight"] = @([self renderedHeightForMenu:sheet]);
+        current[@"propertyHeight"] = @(sheet.sheetHeight);
+        current[@"renderedMinimum"] = @(sheet.minimumSheetHeight);
+    } @finally { [current removeObjectForKey:@"applying"]; }
+}
+
 + (void)synchronizeController:(UIViewController *)controller {
     if (!NSThread.isMainThread) return;
     DYYYCommentLongPressPanelSheet *menu = (id)[DYYYCommentMenuTheme menuControllerForController:controller];
@@ -287,6 +323,7 @@ static NSDictionary *kDYYYCommentGridLastClosed;
     CGFloat content = list.contentSize.height;
     if (!isfinite(content) || content < 100 || list.bounds.size.height < 100 || menu.sheetHeight <= 0) return;
     NSMutableDictionary *record = objc_getAssociatedObject(menu, &kDYYYCommentGridHeightKey);
+    if ([record[@"applying"] boolValue]) return;
     if (!record) {
         CGFloat inset = MIN(64, MAX(0, menu.sheetHeight - list.bounds.size.height));
         record = [@{ @"original": @(menu.sheetHeight), @"minimum": @(menu.minimumSheetHeight), @"inset": @(inset) } mutableCopy];
@@ -333,7 +370,11 @@ static NSDictionary *kDYYYCommentGridLastClosed;
     NSArray *signature = @[ @(target), @(composerHeight > 0), @(list.bounds.size.width) ];
     record[@"targetSignature"] = signature;
     BOOL needsUpdate = [DYYYCommentMenuMetrics needsUpdateForTarget:target propertyHeight:menu.sheetHeight renderedHeight:rendered];
-    if (!needsUpdate || [record[@"scheduled"] boolValue]) return;
+    if (!needsUpdate) return;
+    if ([record[@"immediate"] boolValue]) {
+        [self applyHeightToMenu:menu record:record]; return;
+    }
+    if ([record[@"scheduled"] boolValue]) return;
     if ([record[@"appliedSignature"] isEqual:signature]) {
         // 同一状态最多补一次真实外壳重排，避免因旧 minimum/动画写回而永久跳过，也避免布局循环。
         if ([record[@"repairSignature"] isEqual:signature]) return;
@@ -346,20 +387,7 @@ static NSDictionary *kDYYYCommentGridLastClosed;
         NSMutableDictionary *current = objc_getAssociatedObject(sheet, &kDYYYCommentGridHeightKey);
         if (current != record) return;
         current[@"scheduled"] = @NO;
-        if (!sheet.viewIfLoaded.window || ![NSUserDefaults.standardUserDefaults boolForKey:@"DYYYEnableCommentMenuBlur"] || sheet.userDragging) return;
-        CGFloat height = [current[@"target"] doubleValue];
-        CGFloat drawn = [self renderedHeightForMenu:sheet];
-        if (![DYYYCommentMenuMetrics needsUpdateForTarget:height propertyHeight:sheet.sheetHeight renderedHeight:drawn]) return;
-        current[@"applied"] = @(height);
-        current[@"appliedSignature"] = current[@"targetSignature"];
-        [sheet updateSheetHeight:height withMinimumSheetHeight:MIN([current[@"minimum"] doubleValue], height) animated:NO completion:nil];
-        // DUX 在数值未变时可能跳过刷新，需通过它自己的布局入口同步实际外壳。
-        if (fabs([self renderedHeightForMenu:sheet] - height) > 0.5 && [sheet respondsToSelector:@selector(updateSheetFrameAnimated:)]) {
-            current[@"repairSignature"] = current[@"targetSignature"];
-            [sheet updateSheetFrameAnimated:NO];
-        }
-        current[@"renderedHeight"] = @([self renderedHeightForMenu:sheet]);
-        current[@"propertyHeight"] = @(sheet.sheetHeight);
+        [self applyHeightToMenu:sheet record:current];
     });
 }
 
@@ -371,7 +399,16 @@ static NSDictionary *kDYYYCommentGridLastClosed;
     record[@"lastNativeHeightRequest"] = @(height);
     if (height > [record[@"original"] doubleValue]) record[@"original"] = @(height);
     // 原生刷新仍可能写入旧单列高度，在同一个入口使用目标值，避免布局后反复改高/改低。
-    return MIN(height, [record[@"target"] doubleValue]);
+    return [DYYYCommentMenuMetrics constrainedNativeHeight:height target:[record[@"target"] doubleValue] managed:YES];
+}
+
++ (CGFloat)constrainedMinimumHeight:(CGFloat)height controller:(UIViewController *)controller {
+    NSMutableDictionary *record = objc_getAssociatedObject(controller, &kDYYYCommentGridHeightKey);
+    DYYYCommentLongPressPanelSheet *sheet = (id)controller;
+    BOOL managed = record[@"applied"] && !sheet.userDragging && !sheet.isBeingDismissed &&
+        [NSUserDefaults.standardUserDefaults boolForKey:@"DYYYEnableCommentMenuBlur"];
+    if (managed) record[@"lastNativeMinimumRequest"] = @(height);
+    return [DYYYCommentMenuMetrics constrainedNativeHeight:height target:[record[@"target"] doubleValue] managed:managed];
 }
 
 + (void)restoreController:(UIViewController *)controller {

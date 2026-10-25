@@ -38,6 +38,16 @@ int main(void) {
         NSCAssert(![DYYYCommentMenuMetrics needsUpdateForTarget:354 propertyHeight:354 renderedHeight:354], @"Settled geometry needs no repeated layout request");
         NSCAssert([DYYYCommentMenuMetrics needsUpdateForTarget:354 propertyHeight:514 renderedHeight:514], @"Both property and rendered height can need correction");
         NSCAssert([DYYYCommentMenuMetrics contentHeightForActionBottom:0 safeAreaBottom:34 rawContent:335.2] == 335.2, @"Unknown action layout preserves native content");
+        // 1.7.6 真机：正常高度 354，但旧 minimum=574 可在取消时把外壳先撑高。
+        for (NSNumber *target in @[@376, @354, @376, @354]) {
+            double nativeHeight = [DYYYCommentMenuMetrics constrainedNativeHeight:508 target:target.doubleValue managed:YES];
+            double nativeMinimum = [DYYYCommentMenuMetrics constrainedNativeHeight:574 target:target.doubleValue managed:YES];
+            NSCAssert(nativeHeight == target.doubleValue && nativeMinimum == target.doubleValue,
+                @"Both native height and minimum must remain inside the current compact target throughout select/cancel");
+        }
+        NSCAssert([DYYYCommentMenuMetrics constrainedNativeHeight:574 target:354 managed:NO] == 574, @"Disabled/unmanaged sheets keep native minimum");
+        NSCAssert([DYYYCommentMenuMetrics constrainedNativeHeight:0 target:354 managed:YES] == 0, @"Native zero minimum remains zero");
+        NSCAssert([DYYYCommentMenuMetrics constrainedNativeHeight:574 target:NAN managed:YES] == 574, @"Unknown compact target cannot alter native geometry");
         NSLog(@"DYYYCommentMenuMetrics regression tests passed");
     }
     return 0;

@@ -77,6 +77,9 @@
 - (void)setSheetHeight:(CGFloat)height {
     %orig([DYYYCommentMenuGrid constrainedHeight:height controller:(UIViewController *)self]);
 }
+- (void)setMinimumSheetHeight:(CGFloat)height {
+    %orig([DYYYCommentMenuGrid constrainedMinimumHeight:height controller:(UIViewController *)self]);
+}
 - (void)updateSheetHeight:(CGFloat)height withMinimumSheetHeight:(CGFloat)minimum animated:(BOOL)animated completion:(id)completion {
     CGFloat compact = [DYYYCommentMenuGrid constrainedHeight:height controller:(UIViewController *)self];
     %orig(compact, MIN(minimum, compact), animated, completion);
@@ -168,8 +171,15 @@
     return overlay;
 }
 - (void)shareContactList:(id)list stateDidChangeFromState:(NSUInteger)fromState toState:(NSUInteger)toState {
-    %orig;
-    [DYYYCommentMenuPalette synchronizeSelectionSection:self overlay:nil];
+    UIViewController *content = [(DYYYCommentMenuSelectionSection *)self viewController];
+    BOOL managed = [NSUserDefaults.standardUserDefaults boolForKey:@"DYYYEnableCommentMenuBlur"] &&
+        [DYYYCommentMenuTheme menuControllerForController:content] != nil;
+    if (!managed) { %orig; return; }
+    // 原生尺寸变化和最终紧凑尺寸在同一次回调内完成，不绘制中间的单列/选人高度。
+    [UIView performWithoutAnimation:^{
+        %orig(list, fromState, toState);
+        [DYYYCommentMenuPalette synchronizeSelectionSection:self overlay:nil];
+    }];
 }
 %end
 %end

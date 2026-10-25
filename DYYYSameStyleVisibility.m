@@ -40,19 +40,16 @@ static char kDYYYSameStyleUpdateDepthKey;
         return;
     }
     NSMapTable<UILabel *, NSNumber *> *originals = objc_getAssociatedObject(view, &kDYYYSameStyleOriginalsKey);
-    // 复用成音乐/听抖音等其他文案时，立即交还先前接管的标题。
+    // 组件中的标题不再按文案匹配：拍同款、玩同款、听音乐等均只隐藏文字。
+    // 保留按钮/缩略图/点击遮罩及无障碍动作。当前已确认文字均为直接子 UILabel。
     for (UILabel *label in originals.keyEnumerator.allObjects) {
-        if (label.superview != view || ![label.text isEqualToString:@"拍同款"]) {
-            if (label.hidden) label.hidden = [[originals objectForKey:label] boolValue];
-            [originals removeObjectForKey:label];
-        }
+        if (label.superview == view) continue;
+        if (label.hidden) label.hidden = [[originals objectForKey:label] boolValue];
+        [originals removeObjectForKey:label];
     }
-    // 导出确认标题是组件的直接子 UILabel。只隐藏这三个字，保留缩略图、
-    // 原生点击遮罩、音乐按钮、组件尺寸和无障碍动作，不改变点击功能。
     for (UIView *child in view.subviews) {
         if (![child isKindOfClass:UILabel.class]) continue;
         UILabel *label = (UILabel *)child;
-        if (![label.text isEqualToString:@"拍同款"]) continue;
         if (!originals) {
             originals = [NSMapTable weakToStrongObjectsMapTable];
             objc_setAssociatedObject(view, &kDYYYSameStyleOriginalsKey, originals, OBJC_ASSOCIATION_RETAIN_NONATOMIC);

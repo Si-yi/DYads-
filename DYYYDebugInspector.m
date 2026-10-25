@@ -5,6 +5,7 @@
 #import "DYYYGlassTabBar.h"
 #import "DYYYIMService.h"
 #import "DYYYFriendShareService.h"
+#import "DYYYAvatarRing.h"
 #import "DKDebugCapture.h"
 #import "DKClassDump.h"
 #import "DKZipWriter.h"
@@ -309,11 +310,13 @@ static NSDictionary *DYYYDebugMetadata(void) {
         @"debugImplementation": @"global-overlay-r5-layout-pulse",
         @"floatingTabBar": DKGlassGeometryStatus() ?: @"",
         @"panelBlur": [DYYYPanelBlur diagnostics],
+        @"avatarRing": [DYYYAvatarRing diagnostics],
         @"loadedPluginImages": pluginImages,
         @"inputSettings": @{
             @"DYYYEnableFloatingCommentInput": [defaults objectForKey:@"DYYYEnableFloatingCommentInput"] ?: NSNull.null,
             @"DYYYEnableFullScreen": [defaults objectForKey:@"DYYYEnableFullScreen"] ?: NSNull.null,
             @"DYYYHideAvatarColorRing": [defaults objectForKey:@"DYYYHideAvatarColorRing"] ?: NSNull.null,
+            @"DYYYHideSameStyleButton": [defaults objectForKey:@"DYYYHideSameStyleButton"] ?: NSNull.null,
             @"DYYYEnableCommentBlur": [defaults objectForKey:@"DYYYEnableCommentBlur"] ?: NSNull.null,
             @"DYYYEnableSharePanelBlur": [defaults objectForKey:@"DYYYEnableSharePanelBlur"] ?: NSNull.null,
             @"DYYYEnableCommentMenuBlur": [defaults objectForKey:@"DYYYEnableCommentMenuBlur"] ?: NSNull.null,

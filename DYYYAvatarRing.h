@@ -6,4 +6,5 @@
 + (void)beginNativeUpdate:(UIView *)ring;
 + (void)endNativeUpdate:(UIView *)ring;
 + (void)refreshVisibleRings;
++ (NSDictionary *)diagnostics;
 @end

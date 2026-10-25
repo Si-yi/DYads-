@@ -1,7 +1,9 @@
 #import "DYYYAvatarRing.h"
+#import <QuartzCore/QuartzCore.h>
 #import <objc/runtime.h>
 
-static char kDYYYAvatarRingOriginalsKey;
+static char kDYYYAvatarRingMaskKey;
+static char kDYYYAvatarRingOriginalMaskKey;
 static char kDYYYAvatarRingUpdateDepthKey;
 
 @implementation DYYYAvatarRing
@@ -22,11 +24,11 @@ static char kDYYYAvatarRingUpdateDepthKey;
 
 + (void)restoreRing:(UIView *)ring {
     if (!NSThread.isMainThread || !ring) return;
-    NSMapTable<UIView *, NSNumber *> *originals = objc_getAssociatedObject(ring, &kDYYYAvatarRingOriginalsKey);
-    objc_setAssociatedObject(ring, &kDYYYAvatarRingOriginalsKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    for (UIView *renderer in originals.keyEnumerator.allObjects) {
-        if (renderer.hidden) renderer.hidden = [[originals objectForKey:renderer] boolValue];
-    }
+    CALayer *mask = objc_getAssociatedObject(ring, &kDYYYAvatarRingMaskKey);
+    id original = objc_getAssociatedObject(ring, &kDYYYAvatarRingOriginalMaskKey);
+    if (mask && ring.layer.mask == mask) ring.layer.mask = original == NSNull.null ? nil : original;
+    objc_setAssociatedObject(ring, &kDYYYAvatarRingMaskKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    objc_setAssociatedObject(ring, &kDYYYAvatarRingOriginalMaskKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 
 + (void)applyToRing:(UIView *)ring {
@@ -35,21 +37,36 @@ static char kDYYYAvatarRingUpdateDepthKey;
     [[self rings] addObject:ring];
     if (!ring.window || ![self isFeedAvatarRing:ring] ||
         ![NSUserDefaults.standardUserDefaults boolForKey:@"DYYYHideAvatarColorRing"]) {
-        [self restoreRing:ring];
-        return;
+        [self restoreRing:ring]; return;
     }
-    NSMapTable<UIView *, NSNumber *> *originals = objc_getAssociatedObject(ring, &kDYYYAvatarRingOriginalsKey);
-    if (!originals) {
-        originals = [NSMapTable weakToStrongObjectsMapTable];
-        objc_setAssociatedObject(ring, &kDYYYAvatarRingOriginalsKey, originals, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    CALayer *mask = objc_getAssociatedObject(ring, &kDYYYAvatarRingMaskKey);
+    if (!mask) {
+        mask = [CALayer layer];
+        mask.name = @"DYYY.AvatarRing.DrawingMask";
+        mask.backgroundColor = UIColor.clearColor.CGColor;
+        objc_setAssociatedObject(ring, &kDYYYAvatarRingMaskKey, mask, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
-    // 导出确认其子视图只有静态渐变圈、动画圈和挂件。头像是外层的兄弟视图。
-    // 不隐藏 ring 本身、不改 alpha/手势，保留原有点击动作与命中范围。
-    for (UIView *renderer in ring.subviews) {
-        if (![originals objectForKey:renderer] || !renderer.hidden)
-            [originals setObject:@(renderer.hidden) forKey:renderer];
-        if (!renderer.hidden) renderer.hidden = YES;
+    [CATransaction begin]; [CATransaction setDisableActions:YES];
+    if (ring.layer.mask != mask) {
+        objc_setAssociatedObject(ring, &kDYYYAvatarRingOriginalMaskKey, ring.layer.mask ?: NSNull.null, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        ring.layer.mask = mask;
     }
+    if (!CGRectEqualToRect(mask.frame, ring.bounds)) mask.frame = ring.bounds;
+    [CATransaction commit];
+    // 导出确认头像是 ring 的兄弟。透明 mask 仅遮住光圈绘制，原生晚写子视图 hidden
+    // 不会重新露圈；根视图的 hidden/alpha/手势和头像按钮均保持原状。
+}
+
++ (NSDictionary *)diagnostics {
+    NSUInteger visible = 0, masked = 0;
+    for (UIView *ring in [self rings].allObjects) {
+        if (!ring.window || ![self isFeedAvatarRing:ring]) continue;
+        visible++;
+        CALayer *mask = objc_getAssociatedObject(ring, &kDYYYAvatarRingMaskKey);
+        if (mask && ring.layer.mask == mask) masked++;
+    }
+    return @{ @"enabled": @([NSUserDefaults.standardUserDefaults boolForKey:@"DYYYHideAvatarColorRing"]),
+        @"classAvailable": @(NSClassFromString(@"AFDColorRingView") != Nil), @"visibleRings": @(visible), @"maskedRings": @(masked) };
 }
 
 + (void)beginNativeUpdate:(UIView *)ring {

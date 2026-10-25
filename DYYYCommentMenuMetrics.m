@@ -16,4 +16,8 @@
     double body = composer > 0 && rowBottom > 0 ? rowBottom + composer : content;
     return ceil(MIN(MAX(0, body) + MAX(0, inset), maximum));
 }
++ (double)constrainedNativeHeight:(double)height target:(double)target managed:(BOOL)managed {
+    if (!managed || !isfinite(height) || height < 0 || !isfinite(target) || target <= 0) return height;
+    return MIN(height, target);
+}
 @end

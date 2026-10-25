@@ -113,21 +113,37 @@
 %end
 %end
 
-%ctor {
+@implementation DYYYFeedTagGlass (DecorationHooks)
++ (void)installHooks {
+    if (!NSThread.isMainThread) {
+        dispatch_async(dispatch_get_main_queue(), ^{ [self installHooks]; }); return;
+    }
+    static BOOL stackInstalled, generalInstalled, containerInstalled, ringInstalled, musicInstalled;
     // 均位于 AwemeCore，按实际存在的类分别安装，不依赖未出现的标签种类。
-    if (NSClassFromString(@"AWEPlayInteractionTagsStackView")) {
+    if (!stackInstalled && NSClassFromString(@"AWEPlayInteractionTagsStackView")) {
         %init(DYYYTagStackGlassHooks);
+        stackInstalled = YES;
     }
-    if (NSClassFromString(@"AWEPlayInteractionGeneralTagView")) {
+    if (!generalInstalled && NSClassFromString(@"AWEPlayInteractionGeneralTagView")) {
         %init(DYYYGeneralTagGlassHooks);
+        generalInstalled = YES;
     }
-    if (NSClassFromString(@"AWEPlayInteractionTagsContainerLabelView")) {
+    if (!containerInstalled && NSClassFromString(@"AWEPlayInteractionTagsContainerLabelView")) {
         %init(DYYYContainerTagGlassHooks);
+        containerInstalled = YES;
     }
-    if (NSClassFromString(@"AFDColorRingView")) {
+    if (!ringInstalled && NSClassFromString(@"AFDColorRingView")) {
         %init(DYYYAvatarRingHooks);
+        ringInstalled = YES;
     }
-    if (NSClassFromString(@"AWEPlayInteractionSingleSongMusicStyleView")) {
+    if (!musicInstalled && NSClassFromString(@"AWEPlayInteractionSingleSongMusicStyleView")) {
         %init(DYYYSameStyleVisibilityHooks);
+        musicInstalled = YES;
     }
+}
+@end
+
+%ctor {
+    [DYYYFeedTagGlass installHooks];
+    dispatch_async(dispatch_get_main_queue(), ^{ [DYYYFeedTagGlass installHooks]; });
 }

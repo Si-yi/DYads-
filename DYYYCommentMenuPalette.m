@@ -342,7 +342,7 @@ static char kDYYYMenuLabelWatchContext;
     objc_setAssociatedObject(controller, &kDYYYMenuSelectionBusyKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     @try {
         [DYYYCommentMenuTheme prepareController:controller];
-        [DYYYCommentMenuGrid synchronizeMenuController:controller];
+        [DYYYCommentMenuGrid synchronizeMenuControllerImmediately:controller];
     }
     @finally { objc_setAssociatedObject(controller, &kDYYYMenuSelectionBusyKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
 }

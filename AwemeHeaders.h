@@ -2147,7 +2147,7 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @interface AWEPlayInteractionTagsContainerLabelView : UIView
 @end
 
-// 头像彩色光圈。保留其手势与外层头像，仅控制其内部绘制视图。
+// 头像彩色光圈。保留手势、外层头像和根视图显隐，仅遮住光圈绘制。
 @interface AFDColorRingView : UIView
 - (void)updateDisplayConfig:(id)config;
 - (void)startAnimationWithType:(NSInteger)type;

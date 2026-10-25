@@ -25,6 +25,7 @@ SOFTWARE.
 */
 
 #import "DYYYSearchClean.h"
+#import "DYYYFeedTagGlass.h"
 #import "DYYYArticleBackdrop.h"
 #import "DYYYPanelBlur.h"
 #import "AwemeHeaders.h"
@@ -147,6 +148,7 @@ SOFTWARE.
     // 复用搜索框架延迟加载通知，文章 Hook 仅安装一次。
     [DYYYArticleBackdrop installHooks];
     [DYYYPanelBlur installHooks];
+    [DYYYFeedTagGlass installHooks];
     static BOOL ranksInstalled, propsInstalled, voiceInstalled, permissionInstalled, legacyInstalled, topBarInstalled, footerInstalled;
     Class ranks = NSClassFromString(@"AWESearchMiddleNATabViewComponent");
     if (!ranksInstalled && class_getClassMethod(ranks, @selector(filerTabDataModel:))) {
@@ -197,7 +199,7 @@ static void DYYYSearchImageAdded(const struct mach_header *header, intptr_t slid
     const char *name = slash ? slash + 1 : image.dli_fname;
     if (strncmp(name, "AWESearch", 9) && strncmp(name, "Lynx", 4) && strncmp(name, "BDX", 3) &&
         strncmp(name, "AWEShare", 8) && strncmp(name, "AWEIMShare", 10) && strncmp(name, "AWESocial", 9) &&
-        strncmp(name, "AWEComment", 10)) return;
+        strncmp(name, "AWEComment", 10) && strncmp(name, "AwemeCore", 9)) return;
     dispatch_async(dispatch_get_main_queue(), ^{ [DYYYSearchClean installHooks]; });
 }
 %ctor {
