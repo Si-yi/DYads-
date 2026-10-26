@@ -17,7 +17,9 @@ static char kDYYYSameStyleUpdateDepthKey;
 }
 
 + (BOOL)isRightMusicView:(UIView *)view {
-    if (![view isKindOfClass:NSClassFromString(@"AWEPlayInteractionSingleSongMusicStyleView")]) return NO;
+    // 81ADA564：同一原生右栈还会使用独立的 StyleOne 类显示“玩同款”。
+    if (![view isKindOfClass:NSClassFromString(@"AWEPlayInteractionSingleSongMusicStyleView")] &&
+        ![view isKindOfClass:NSClassFromString(@"AWEPlayInteractionStyleOneMusicView")]) return NO;
     for (UIView *parent = view.superview; parent; parent = parent.superview) {
         if ([parent isKindOfClass:NSClassFromString(@"AWEElementStackView")] &&
             [parent.accessibilityLabel isEqualToString:@"right"]) return YES;
@@ -95,7 +97,7 @@ static char kDYYYSameStyleUpdateDepthKey;
     [CATransaction commit];
     NSMapTable<UILabel *, NSNumber *> *originals = objc_getAssociatedObject(view, &kDYYYSameStyleOriginalsKey);
     // 组件中的标题不再按文案匹配：拍同款、玩同款、听音乐等均只隐藏文字。
-    // 保留按钮/缩略图/点击遮罩及无障碍动作。当前已确认文字均为直接子 UILabel。
+    // 两种已确认的原生音乐控件均使用直接子 UILabel；按钮/缩略图/点击遮罩及无障碍动作保留。
     for (UILabel *label in originals.keyEnumerator.allObjects) {
         if (label.superview == view) continue;
         if (label.hidden) label.hidden = [[originals objectForKey:label] boolValue];

@@ -395,6 +395,15 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 - (void)updatePlayInteractionLayout:(double)layout;
 @end
 
+@interface AWEPlayInteractionStyleOneMusicView : UIView
+@property (nonatomic, readonly, strong) UIView *playInteractionCircleMaskView;
+@property (nonatomic, readonly, strong) UIImageView *playInteractionMaskView;
+- (void)setAwemeModel:(id)model;
+- (void)updatePlayInteractionTitle:(id)title;
+- (void)updatePlayInteractionDecorationHidden:(BOOL)hidden;
+- (void)updatePlayInteractionLayout:(double)layout;
+@end
+
 @interface AWEAwemePlayVideoViewController : UIViewController
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary<NSKeyValueChangeKey, id> *)change context:(void *)context;
 - (void)setVideoControllerPlaybackRate:(double)arg0;

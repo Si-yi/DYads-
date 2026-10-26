@@ -113,12 +113,45 @@
 %end
 %end
 
+%group DYYYStyleOneMusicVisibilityHooks
+%hook AWEPlayInteractionStyleOneMusicView
+- (void)layoutSubviews {
+    %orig;
+    [DYYYSameStyleVisibility applyToView:(UIView *)self];
+}
+- (void)didMoveToWindow {
+    %orig;
+    [DYYYSameStyleVisibility applyToView:(UIView *)self];
+}
+- (void)setAwemeModel:(id)model {
+    [DYYYSameStyleVisibility beginNativeUpdate:(UIView *)self];
+    %orig(model);
+    [DYYYSameStyleVisibility endNativeUpdate:(UIView *)self];
+}
+- (void)updatePlayInteractionTitle:(id)title {
+    [DYYYSameStyleVisibility beginNativeUpdate:(UIView *)self];
+    %orig(title);
+    [DYYYSameStyleVisibility endNativeUpdate:(UIView *)self];
+}
+- (void)updatePlayInteractionDecorationHidden:(BOOL)hidden {
+    [DYYYSameStyleVisibility beginNativeUpdate:(UIView *)self];
+    %orig(hidden);
+    [DYYYSameStyleVisibility endNativeUpdate:(UIView *)self];
+}
+- (void)updatePlayInteractionLayout:(double)layout {
+    [DYYYSameStyleVisibility beginNativeUpdate:(UIView *)self];
+    %orig(layout);
+    [DYYYSameStyleVisibility endNativeUpdate:(UIView *)self];
+}
+%end
+%end
+
 @implementation DYYYFeedTagGlass (DecorationHooks)
 + (void)installHooks {
     if (!NSThread.isMainThread) {
         dispatch_async(dispatch_get_main_queue(), ^{ [self installHooks]; }); return;
     }
-    static BOOL stackInstalled, generalInstalled, containerInstalled, ringInstalled, musicInstalled;
+    static BOOL stackInstalled, generalInstalled, containerInstalled, ringInstalled, musicInstalled, styleOneMusicInstalled;
     // 均位于 AwemeCore，按实际存在的类分别安装，不依赖未出现的标签种类。
     if (!stackInstalled && NSClassFromString(@"AWEPlayInteractionTagsStackView")) {
         %init(DYYYTagStackGlassHooks);
@@ -139,6 +172,10 @@
     if (!musicInstalled && NSClassFromString(@"AWEPlayInteractionSingleSongMusicStyleView")) {
         %init(DYYYSameStyleVisibilityHooks);
         musicInstalled = YES;
+    }
+    if (!styleOneMusicInstalled && NSClassFromString(@"AWEPlayInteractionStyleOneMusicView")) {
+        %init(DYYYStyleOneMusicVisibilityHooks);
+        styleOneMusicInstalled = YES;
     }
 }
 @end
