@@ -33,15 +33,21 @@ static char kDYYYDetailCaptionControllerDepthKey;
         if (detailClass && [controller isKindOfClass:detailClass]) return controller;
     return nil;
 }
-+ (BOOL)isAuthorDetail:(UIViewController *)detail {
++ (BOOL)isSupportedDetail:(UIViewController *)detail {
     if (!detail) return NO;
+    // 私信视频详情使用独立的快捷回复布局，不能因来源相同而套用本规则。
+    Class chatDetail = NSClassFromString(@"AWEAwemeIMDetailTableViewController");
+    if (chatDetail && [detail isKindOfClass:chatDetail]) return NO;
     NSArray *pages = detail.navigationController.viewControllers;
     NSUInteger index = [pages indexOfObjectIdenticalTo:detail];
     if (index == NSNotFound || index == 0) return NO;
     UIViewController *source = pages[index - 1];
     Class author = NSClassFromString(@"AWEUserDetailViewControllerV2");
     Class own = NSClassFromString(@"AWEUserHomeViewControllerV2");
-    return (author && [source isKindOfClass:author]) || (own && [source isKindOfClass:own]);
+    // 39.5 导出确认：评论回复通知直接从互动消息页进入同一个原生详情容器。
+    Class notices = NSClassFromString(@"AWEIMFansAndInteractMergeViewController");
+    return (author && [source isKindOfClass:author]) || (own && [source isKindOfClass:own]) ||
+        (notices && [source isKindOfClass:notices]);
 }
 + (BOOL)isPhotoController:(UIViewController *)controller {
     if (![controller isKindOfClass:NSClassFromString(@"AWEPlayInteractionViewController")]) return NO;
@@ -126,7 +132,7 @@ static char kDYYYDetailCaptionControllerDepthKey;
         ![NSUserDefaults.standardUserDefaults boolForKey:@"DYYYEnableFloatingCommentInput"]) return state;
     UIViewController *controller = [DYYYUtils firstAvailableViewControllerFromView:stack];
     UIViewController *detail = [self detailForController:controller];
-    if (![self isAuthorDetail:detail] || ![self isPhotoController:controller]) return nil;
+    if (![self isSupportedDetail:detail] || ![self isPhotoController:controller]) return nil;
     state = [DYYYDetailCaptionState new];
     state.stack = stack; state.controller = controller; state.detail = detail;
     state.transforms = [NSMapTable weakToStrongObjectsMapTable];
@@ -157,7 +163,7 @@ static char kDYYYDetailCaptionControllerDepthKey;
         state.controller = controller; state.detail = detail;
         UIView *page = [self pageForController:controller];
         if (![NSUserDefaults.standardUserDefaults boolForKey:@"DYYYEnableFloatingCommentInput"] ||
-            ![self isAuthorDetail:detail] || ![self isPhotoController:controller] || ![self visibleView:detail.viewIfLoaded] ||
+            ![self isSupportedDetail:detail] || ![self isPhotoController:controller] || ![self visibleView:detail.viewIfLoaded] ||
             ![self visibleView:stack withinPage:page]) return;
         UIWindow *window = stack.window;
         if (CGRectGetHeight(window.bounds) <= CGRectGetWidth(window.bounds)) return;
@@ -240,7 +246,7 @@ static char kDYYYDetailCaptionControllerDepthKey;
             [self applyState:[self stateForStack:view create:YES]];
 }
 + (void)beginControllerLayout:(UIViewController *)controller {
-    if (!NSThread.isMainThread || ![self isAuthorDetail:[self detailForController:controller]]) return;
+    if (!NSThread.isMainThread || ![self isSupportedDetail:[self detailForController:controller]]) return;
     NSUInteger depth = [objc_getAssociatedObject(controller, &kDYYYDetailCaptionControllerDepthKey) unsignedIntegerValue];
     objc_setAssociatedObject(controller, &kDYYYDetailCaptionControllerDepthKey, @(depth + 1), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     if (!depth) [self restoreController:controller];
@@ -252,7 +258,7 @@ static char kDYYYDetailCaptionControllerDepthKey;
     if (depth <= 1) [self synchronizeController:controller];
 }
 + (void)synchronizePageController:(UIViewController *)page {
-    if (!NSThread.isMainThread || ![self isAuthorDetail:[self detailForController:page]]) return;
+    if (!NSThread.isMainThread || ![self isSupportedDetail:[self detailForController:page]]) return;
     NSMutableArray<UIViewController *> *queue = [NSMutableArray arrayWithObject:page];
     for (NSUInteger index = 0; index < queue.count && index < 64; index++) {
         UIViewController *controller = queue[index];
