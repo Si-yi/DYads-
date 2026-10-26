@@ -11604,10 +11604,25 @@ static void DYYYUpdateDetailInputTransparency(UIView *root) {
             BOOL isContainer = view == root || view == container || view == middle;
             BOOL widePlain = view.class == UIView.class && CGRectGetWidth(view.bounds) >= CGRectGetWidth(root.bounds) * 0.70 &&
                 CGRectGetHeight(view.bounds) <= CGRectGetHeight(root.bounds) + 1;
+            BOOL mentionCollection = NO;
+            if (container && [view isKindOfClass:UICollectionView.class] && [view isDescendantOfView:container]) {
+                UIViewController *owner = [DYYYUtils firstAvailableViewControllerFromView:view];
+                Class mentionClass = NSClassFromString(@"AWECommentSearchViewController");
+                mentionCollection = mentionClass && [owner isKindOfClass:mentionClass] &&
+                    ((AWECommentSearchViewController *)owner).collectionView == view;
+            }
             BOOL oldBlur = [view isKindOfClass:UIVisualEffectView.class] && view.tag == 999;
             BOOL otherGlass = [name isEqualToString:@"DKCommentBarGlassView"] || [name isEqualToString:@"DKGlassFlexView"];
             NSDictionary *saved = objc_getAssociatedObject(view, &kDYYYCompactInputAppearanceKey);
-            if (clearBackground && !panelContent && (isContainer || widePlain || oldBlur || otherGlass)) {
+            if (clearBackground && !panelContent && (isContainer || widePlain || oldBlur || otherGlass || (floating && expanded && mentionCollection))) {
+                // @ 好友栏的黑底来自 UICollectionView，玻璃本来已覆盖这一行。只清理已确认的列表填充。
+                if (mentionCollection && saved && view.backgroundColor && CGColorGetAlpha(view.backgroundColor.CGColor) > 0) {
+                    NSMutableDictionary *updated = [saved mutableCopy];
+                    updated[@"color"] = view.backgroundColor;
+                    if (view.opaque) updated[@"opaque"] = @YES;
+                    saved = updated;
+                    objc_setAssociatedObject(view, &kDYYYCompactInputAppearanceKey, saved, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                }
                 if (!saved) {
                     saved = @{ @"color": view.backgroundColor ?: NSNull.null, @"opaque": @(view.opaque), @"hidden": @(view.hidden) };
                     objc_setAssociatedObject(view, &kDYYYCompactInputAppearanceKey, saved, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -12001,6 +12016,61 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
 %end
 %end
 
+
+// @ 好友头像栏：只管理悬浮评论输入容器内的原生候选列表背景。
+%hook AWECommentSearchViewController
+%new
+- (void)dyyy_restoreMentionInputBackground {
+    if (!NSThread.isMainThread || !self.isViewLoaded) return;
+    UIView *list = self.collectionView;
+    NSDictionary *saved = objc_getAssociatedObject(list, &kDYYYCompactInputAppearanceKey);
+    if (!saved) return;
+    objc_setAssociatedObject(list, &kDYYYCompactInputAppearanceKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if (!list.backgroundColor || CGColorGetAlpha(list.backgroundColor.CGColor) == 0)
+        list.backgroundColor = saved[@"color"] == NSNull.null ? nil : saved[@"color"];
+    if (!list.opaque) list.opaque = [saved[@"opaque"] boolValue];
+}
+%new
+- (void)dyyy_syncMentionInputBackground {
+    if (!NSThread.isMainThread || !self.isViewLoaded) return;
+    UIView *host = self.viewIfLoaded;
+    for (NSUInteger depth = 0; host && depth < 10; depth++, host = host.superview) {
+        if ([NSStringFromClass(host.class) isEqualToString:@"AWECommentInputViewSwiftImpl.CommentInputContainerView"]) {
+            DYYYUpdateDetailInputTransparency(host);
+            return;
+        }
+    }
+    [self dyyy_restoreMentionInputBackground];
+}
+- (void)viewWillAppear:(BOOL)animated {
+    %orig;
+    [self dyyy_syncMentionInputBackground];
+}
+- (void)viewDidLayoutSubviews {
+    %orig;
+    [self dyyy_syncMentionInputBackground];
+}
+- (void)setIsLightTheme:(BOOL)light {
+    %orig(light);
+    [self dyyy_syncMentionInputBackground];
+}
+- (void)p_reloadList:(id)list error:(id)error {
+    %orig(list, error);
+    [self dyyy_syncMentionInputBackground];
+}
+- (void)changeUIWithinFullscreen {
+    %orig;
+    [self dyyy_syncMentionInputBackground];
+}
+- (void)didMoveToParentViewController:(UIViewController *)parent {
+    %orig(parent);
+    [self dyyy_syncMentionInputBackground];
+}
+- (void)viewDidDisappear:(BOOL)animated {
+    %orig;
+    [self dyyy_restoreMentionInputBackground];
+}
+%end
 
 %hook AWECommentInputBackgroundView
 - (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {

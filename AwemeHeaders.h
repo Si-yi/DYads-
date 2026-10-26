@@ -525,6 +525,15 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @interface AWECommentInputViewController : UIViewController
 @end
 
+@interface AWECommentSearchViewController : UIViewController
+@property (nonatomic, strong) UICollectionView *collectionView;
+- (void)setIsLightTheme:(BOOL)light;
+- (void)p_reloadList:(id)list error:(id)error;
+- (void)changeUIWithinFullscreen;
+- (void)dyyy_restoreMentionInputBackground;
+- (void)dyyy_syncMentionInputBackground;
+@end
+
 @interface AWEAwemeDetailTableViewCell : UITableViewCell
 @property (nonatomic, strong) UIViewController *viewController;
 @end
