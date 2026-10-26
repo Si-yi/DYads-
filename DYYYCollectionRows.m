@@ -35,9 +35,47 @@ static char kDYYYCollectionRowBusyKey;
 static char kDYYYCollectionStackBusyKey;
 static char kDYYYCollectionLookupBusyKey;
 static char kDYYYCollectionTemplateKindKey;
+static char kDYYYCollectionCaptionFollowKey;
 
 @implementation DYYYCollectionRows
 
++ (NSHashTable<UIView *> *)stacks {
+    static NSHashTable *stacks;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ stacks = [NSHashTable weakObjectsHashTable]; });
+    return stacks;
+}
++ (BOOL)isInteractionStack:(UIView *)stack {
+    Class cls = NSClassFromString(@"AWEPlayInteractionViewController");
+    for (UIResponder *responder = stack.nextResponder; responder; responder = responder.nextResponder)
+        if ([responder isKindOfClass:UIViewController.class]) return cls && [responder isKindOfClass:cls];
+    return NO;
+}
++ (BOOL)isCaptionFollowRow:(UIView *)row {
+    Class cls = NSClassFromString(@"AWEBaseElementView");
+    if (!cls || ![row isKindOfClass:cls]) return NO;
+    // 精确确认一整行内的两个原生按钮，不匹配普通文案或右侧头像的关注加号。
+    NSMutableArray<UIView *> *queue = [NSMutableArray arrayWithObject:row];
+    UIView *follow = nil, *dismiss = nil;
+    for (NSUInteger index = 0; index < queue.count && index < 128; index++) {
+        UIView *view = queue[index];
+        NSString *title = [view isKindOfClass:UIButton.class] ? [(UIButton *)view currentTitle] :
+            ([view isKindOfClass:UILabel.class] ? [(UILabel *)view text] : nil);
+        title = [title stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        if ([title isEqualToString:@"关注"] || [title isEqualToString:@"暂不关注"]) {
+            UIView *control = view;
+            while (control && control != row && ![control isKindOfClass:UIControl.class] &&
+                !(control.accessibilityTraits & UIAccessibilityTraitButton)) control = control.superview;
+            if (control && control != row) {
+                if ([title isEqualToString:@"关注"]) follow = control;
+                else dismiss = control;
+            }
+        }
+        if (follow && dismiss && follow != dismiss) return YES;
+        [queue addObjectsFromArray:view.subviews];
+    }
+    return NO;
+}
 + (id)value:(id)object key:(NSString *)key {
     @try { return [object valueForKey:key]; } @catch (__unused NSException *exception) { return nil; }
 }
@@ -64,6 +102,8 @@ static char kDYYYCollectionTemplateKindKey;
     }
 }
 + (BOOL)removeRow:(UIView *)row {
+    if ([NSUserDefaults.standardUserDefaults boolForKey:@"DYYYHideCaptionFollow"] &&
+        [objc_getAssociatedObject(row, &kDYYYCollectionCaptionFollowKey) boolValue]) return YES;
     NSUInteger flags = [self flags];
     if (!flags) return NO;
     NSUInteger elementKind = [self elementKind:row];
@@ -102,12 +142,21 @@ static char kDYYYCollectionTemplateKindKey;
     @try {
         id arranged = ((UIStackView *)stack).arrangedSubviews;
         if (![arranged isKindOfClass:NSArray.class]) return;
-        NSArray *rows = [arranged copy];
+        NSMutableArray *rows = [arranged mutableCopy];
+        // 自定义栈若从 arrangedSubviews 中滤掉已隐藏行，关闭开关仍须找到并恢复它。
+        for (UIView *row in stack.subviews)
+            if ((objc_getAssociatedObject(row, &kDYYYCollectionCaptionFollowKey) || objc_getAssociatedObject(row, &kDYYYCollectionRowRemovedKey)) &&
+                ![rows containsObject:row]) [rows addObject:row];
+        BOOL interaction = [self isInteractionStack:stack];
+        if (interaction) [[self stacks] addObject:stack];
+        BOOL hideCaptionFollow = interaction && [NSUserDefaults.standardUserDefaults boolForKey:@"DYYYHideCaptionFollow"];
         // 单独启用一个开关时，才在原生布局开始前读取已存在的交互模型，绝不在 setHidden 内读取它。
         NSUInteger flags = [self flags];
         NSUInteger templateKind = 0;
         BOOL lookedUpModel = NO;
         for (UIView *row in rows) {
+            BOOL captionFollow = hideCaptionFollow && [self isCaptionFollowRow:row];
+            objc_setAssociatedObject(row, &kDYYYCollectionCaptionFollowKey, captionFollow ? @YES : nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             NSUInteger elementKind = [self elementKind:row];
             if (elementKind == 2 && (flags == 1 || flags == 2)) {
                 if (!lookedUpModel) {
@@ -128,10 +177,17 @@ static char kDYYYCollectionTemplateKindKey;
             } else if (elementKind != 2) {
                 objc_setAssociatedObject(row, &kDYYYCollectionTemplateKindKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             }
-            if (elementKind || objc_getAssociatedObject(row, &kDYYYCollectionRowRemovedKey)) [self syncRow:row];
+            if (elementKind || captionFollow || objc_getAssociatedObject(row, &kDYYYCollectionRowRemovedKey)) [self syncRow:row];
         }
     } @finally {
         objc_setAssociatedObject(stack, &kDYYYCollectionStackBusyKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+}
++ (void)refreshVisibleStacks {
+    if (!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(), ^{ [self refreshVisibleStacks]; }); return; }
+    for (UIView *stack in [self stacks].allObjects) {
+        [self applyStack:stack];
+        [stack setNeedsLayout];
     }
 }
 @end

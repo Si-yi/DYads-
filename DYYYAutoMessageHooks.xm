@@ -12,24 +12,38 @@
     [DYYYFriendShareBadgeView resetForController:self];
     [DYYYDetailCaptionLayout restoreController:self];
     %orig(model);
+    [DYYYDetailCaptionLayout synchronizeController:self];
 }
 - (void)viewWillLayoutSubviews {
-    [DYYYDetailCaptionLayout restoreController:self];
+    [DYYYDetailCaptionLayout beginControllerLayout:self];
     %orig;
 }
 - (void)viewDidLayoutSubviews {
     %orig;
     [DYYYChatVideoLayout layoutInteractionController:self];
     [DYYYFriendShareBadgeView updateForController:self];
+    [DYYYDetailCaptionLayout endControllerLayout:self];
+}
+- (void)viewWillAppear:(BOOL)animated {
+    %orig;
     [DYYYDetailCaptionLayout synchronizeController:self];
 }
-- (void)viewWillDisappear:(BOOL)animated {
-    [DYYYDetailCaptionLayout restoreController:self];
+- (void)viewDidDisappear:(BOOL)animated {
     %orig;
+    // 相邻缓存页仍使用页内最终位置；真正离开详情或离窗时由作用域检查恢复。
+    [DYYYDetailCaptionLayout synchronizeController:self];
 }
 - (void)viewDidAppear:(BOOL)animated {
     %orig;
     [DYYYDetailCaptionLayout synchronizeController:self];
+}
+%end
+
+%hook AWEAwemeDetailTableViewController
+- (void)tableView:(UITableView *)tableView willDisplayCell:(UITableViewCell *)cell forRowAtIndexPath:(NSIndexPath *)indexPath {
+    %orig;
+    if ([cell isKindOfClass:NSClassFromString(@"AWEAwemeDetailTableViewCell")])
+        [DYYYDetailCaptionLayout synchronizePageController:((AWEAwemeDetailTableViewCell *)cell).viewController];
 }
 %end
 

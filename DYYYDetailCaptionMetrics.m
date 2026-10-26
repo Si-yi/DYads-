@@ -2,6 +2,14 @@
 #import <math.h>
 
 @implementation DYYYDetailCaptionMetrics
++ (double)pageInputTopForViewportInputTop:(double)inputTop viewportMinY:(double)viewportMinY
+                         viewportHeight:(double)viewportHeight pageMinY:(double)pageMinY pageHeight:(double)pageHeight {
+    // 页内坐标不包含 table 的滚动位移；仅映射尺寸一致的整页，不能猜未知布局。
+    if (!isfinite(inputTop) || !isfinite(viewportMinY) || !isfinite(viewportHeight) ||
+        !isfinite(pageMinY) || !isfinite(pageHeight) || viewportHeight <= 0 || pageHeight <= 0 ||
+        fabs(pageHeight - viewportHeight) > 1 || inputTop <= viewportMinY || inputTop > viewportMinY + viewportHeight) return NAN;
+    return pageMinY + inputTop - viewportMinY;
+}
 + (double)captionBottomForRowBottom:(double)rowBottom plainTextBottom:(double)textBottom {
     // 时间/IP 的 UILabel 可在原生行内上移；行尾空白不能当成文字。
     if (isfinite(textBottom) && textBottom > 0 && isfinite(rowBottom) && fabs(textBottom - rowBottom) <= 64)

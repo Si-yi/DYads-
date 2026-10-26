@@ -13060,6 +13060,7 @@ static Class TagViewClass = nil;
     %orig;
     if (self.window) {
         [self dyyy_applyGlobalTransparency];
+        [DYYYDetailCaptionLayout synchronizeStack:self];
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(dyyy_applyGlobalTransparency) name:kDYYYGlobalTransparencyDidChangeNotification object:nil];
     } else {
         [[NSNotificationCenter defaultCenter] removeObserver:self name:kDYYYGlobalTransparencyDidChangeNotification object:nil];
@@ -13744,6 +13745,7 @@ static Class TagViewClass = nil;
 - (void)viewDidLayoutSubviews {
     %orig;
     [DYYYChatVideoLayout layoutCellController:self];
+    [DYYYDetailCaptionLayout synchronizePageController:self];
 }
 %end
 

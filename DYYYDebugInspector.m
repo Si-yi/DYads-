@@ -319,6 +319,7 @@ static NSDictionary *DYYYDebugMetadata(void) {
             @"DYYYEnableFullScreen": [defaults objectForKey:@"DYYYEnableFullScreen"] ?: NSNull.null,
             @"DYYYHideAvatarColorRing": [defaults objectForKey:@"DYYYHideAvatarColorRing"] ?: NSNull.null,
             @"DYYYHideSameStyleButton": [defaults objectForKey:@"DYYYHideSameStyleButton"] ?: NSNull.null,
+            @"DYYYHideCaptionFollow": [defaults objectForKey:@"DYYYHideCaptionFollow"] ?: NSNull.null,
             @"DYYYEnableCommentBlur": [defaults objectForKey:@"DYYYEnableCommentBlur"] ?: NSNull.null,
             @"DYYYEnableSharePanelBlur": [defaults objectForKey:@"DYYYEnableSharePanelBlur"] ?: NSNull.null,
             @"DYYYEnableCommentMenuBlur": [defaults objectForKey:@"DYYYEnableCommentMenuBlur"] ?: NSNull.null,

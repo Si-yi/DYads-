@@ -525,7 +525,8 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @interface AWECommentInputViewController : UIViewController
 @end
 
-@interface AWEAwemeDetailTableViewCell : UIView
+@interface AWEAwemeDetailTableViewCell : UITableViewCell
+@property (nonatomic, strong) UIViewController *viewController;
 @end
 
 @interface IESLiveFeedDrawerEntranceView : UIView
@@ -1420,6 +1421,7 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @end
 @interface AWEAwemeDetailTableViewController : UIViewController
 @property(nonatomic, strong) UITableView *tableView;
+- (void)tableView:(UITableView *)tableView willDisplayCell:(UITableViewCell *)cell forRowAtIndexPath:(NSIndexPath *)indexPath;
 - (void)setupDetailTableView;
 - (double)fixedCellHeight;
 - (double)cellHeightAtIndex:(long long)index;

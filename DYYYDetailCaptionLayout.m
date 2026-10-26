@@ -6,6 +6,7 @@
 #import <math.h>
 
 static char kDYYYDetailCaptionStateKey;
+static char kDYYYDetailCaptionControllerDepthKey;
 
 @interface DYYYDetailCaptionState : NSObject
 @property (nonatomic, weak) UIView *stack;
@@ -56,6 +57,23 @@ static char kDYYYDetailCaptionStateKey;
         if (parent.hidden || parent.alpha <= 0.01) return NO;
     return YES;
 }
++ (UIView *)pageForController:(UIViewController *)controller {
+    Class cellClass = NSClassFromString(@"AWEAwemeDetailCellViewController");
+    for (NSUInteger depth = 0; controller && depth < 12; depth++, controller = controller.parentViewController)
+        if (cellClass && [controller isKindOfClass:cellClass]) return controller.viewIfLoaded;
+    return nil;
+}
++ (BOOL)visibleView:(UIView *)view withinPage:(UIView *)page {
+    if (!view.window || !page || ![view isDescendantOfView:page]) return NO;
+    // 原生会隐藏相邻缓存 Cell；不必等它进入屏幕中央才给页内内容排版。
+    for (UIView *parent = view; parent && parent != page; parent = parent.superview)
+        if (parent.hidden || parent.alpha <= 0.01) return NO;
+    return YES;
+}
++ (void)setManagedTransform:(CGAffineTransform)transform view:(UIView *)view {
+    if (!CGAffineTransformEqualToTransform(view.transform, transform))
+        [UIView performWithoutAnimation:^{ view.transform = transform; }];
+}
 + (BOOL)isEmptyProgressPlaceholder:(UIView *)view {
     // 动图保留一个无子视图、无绘制层的 3pt 分页空壳，不是实际分页线。
     CALayer *layer = view.layer;
@@ -63,14 +81,14 @@ static char kDYYYDetailCaptionStateKey;
     return !view.subviews.count && !layer.sublayers.count && !layer.contents && !layer.mask &&
         (!background || CGColorGetAlpha(background) <= 0.01) && layer.borderWidth == 0 && layer.shadowOpacity == 0;
 }
-+ (CGFloat)captionBottomForRow:(UIView *)row inDetail:(UIViewController *)detail {
-    CGFloat rowBottom = CGRectGetMaxY([row convertRect:row.bounds toView:detail.view]);
++ (CGFloat)captionBottomForRow:(UIView *)row inPage:(UIView *)page {
+    CGFloat rowBottom = CGRectGetMaxY([row convertRect:row.bounds toView:page]);
     CGFloat textBottom = 0;
     BOOL plainText = YES;
     for (UIView *child in row.subviews) {
         if (child.hidden || child.alpha <= 0.01 || CGRectIsEmpty(child.bounds)) continue;
         if (![child isKindOfClass:UILabel.class]) { plainText = NO; break; }
-        textBottom = MAX(textBottom, CGRectGetMaxY([child convertRect:child.bounds toView:detail.view]));
+        textBottom = MAX(textBottom, CGRectGetMaxY([child convertRect:child.bounds toView:page]));
     }
     return [DYYYDetailCaptionMetrics captionBottomForRowBottom:rowBottom plainTextBottom:plainText && textBottom > 0 ? textBottom : NAN];
 }
@@ -98,7 +116,7 @@ static char kDYYYDetailCaptionStateKey;
     for (UIView *view in state.transforms.keyEnumerator.allObjects) {
         NSDictionary *saved = [state.transforms objectForKey:view];
         if (CGAffineTransformEqualToTransform(view.transform, [saved[@"applied"] CGAffineTransformValue]))
-            view.transform = [saved[@"native"] CGAffineTransformValue];
+            [self setManagedTransform:[saved[@"native"] CGAffineTransformValue] view:view];
     }
     [state.transforms removeAllObjects];
 }
@@ -116,17 +134,19 @@ static char kDYYYDetailCaptionStateKey;
     [[self states] addObject:state];
     return state;
 }
-+ (void)moveView:(UIView *)view down:(CGFloat)shift inDetail:(UIViewController *)detail state:(DYYYDetailCaptionState *)state {
++ (void)moveView:(UIView *)view down:(CGFloat)shift inPage:(UIView *)page state:(DYYYDetailCaptionState *)state {
     if (!view.superview) return;
-    CGPoint zero = [view.superview convertPoint:CGPointZero fromView:detail.view];
-    CGPoint moved = [view.superview convertPoint:CGPointMake(0, shift) fromView:detail.view];
+    CGPoint zero = [view.superview convertPoint:CGPointZero fromView:page];
+    CGPoint moved = [view.superview convertPoint:CGPointMake(0, shift) fromView:page];
     CGAffineTransform native = view.transform, applied = native;
     applied.tx += moved.x - zero.x; applied.ty += moved.y - zero.y;
     [state.transforms setObject:@{@"native": [NSValue valueWithCGAffineTransform:native], @"applied": [NSValue valueWithCGAffineTransform:applied]} forKey:view];
-    view.transform = applied;
+    [self setManagedTransform:applied view:view];
 }
 + (void)applyState:(DYYYDetailCaptionState *)state {
     if (!state || state.busy || state.depth) return;
+    UIViewController *owner = [DYYYUtils firstAvailableViewControllerFromView:state.stack];
+    if ([objc_getAssociatedObject(owner, &kDYYYDetailCaptionControllerDepthKey) unsignedIntegerValue]) return;
     state.busy = YES;
     @try {
         [self restoreState:state];
@@ -135,40 +155,44 @@ static char kDYYYDetailCaptionStateKey;
         UIViewController *controller = [DYYYUtils firstAvailableViewControllerFromView:stack];
         UIViewController *detail = [self detailForController:controller];
         state.controller = controller; state.detail = detail;
+        UIView *page = [self pageForController:controller];
         if (![NSUserDefaults.standardUserDefaults boolForKey:@"DYYYEnableFloatingCommentInput"] ||
-            ![self isAuthorDetail:detail] || ![self isPhotoController:controller] || ![self visibleView:stack]) return;
+            ![self isAuthorDetail:detail] || ![self isPhotoController:controller] || ![self visibleView:detail.viewIfLoaded] ||
+            ![self visibleView:stack withinPage:page]) return;
         UIWindow *window = stack.window;
         if (CGRectGetHeight(window.bounds) <= CGRectGetWidth(window.bounds)) return;
-        CGRect visible = [controller.view convertRect:controller.view.bounds toView:window];
-        CGPoint center = CGPointMake(CGRectGetMidX(window.bounds), CGRectGetMidY(window.bounds));
-        if (!CGRectContainsPoint(visible, center)) return;
+        if (page.window != window || fabs(CGRectGetWidth(page.bounds) - CGRectGetWidth(detail.view.bounds)) > 1) return;
         UIView *input = [self collapsedInputInDetail:detail];
         if (!input || input.window != window) return;
         CGRect inputRect = [input convertRect:input.bounds toView:detail.view];
+        CGFloat inputTop = [DYYYDetailCaptionMetrics pageInputTopForViewportInputTop:CGRectGetMinY(inputRect)
+            viewportMinY:CGRectGetMinY(detail.view.bounds) viewportHeight:CGRectGetHeight(detail.view.bounds)
+            pageMinY:CGRectGetMinY(page.bounds) pageHeight:CGRectGetHeight(page.bounds)];
+        if (!isfinite(inputTop)) return;
         CGFloat captionBottom = 0;
         for (UIView *row in stack.subviews) {
             if (row.hidden || row.alpha <= 0.01 || CGRectIsEmpty(row.bounds)) continue;
-            captionBottom = MAX(captionBottom, [self captionBottomForRow:row inDetail:detail]);
+            captionBottom = MAX(captionBottom, [self captionBottomForRow:row inPage:page]);
         }
         if (captionBottom <= 0) return;
         CGFloat progressBottom = 0;
-        CGFloat progressLimit = CGRectGetMaxY([controller.view convertRect:controller.view.bounds toView:detail.view]);
+        CGFloat progressLimit = CGRectGetMaxY([controller.view convertRect:controller.view.bounds toView:page]);
         NSMutableArray<UIView *> *progressViews = [NSMutableArray array];
         Class progressClass = NSClassFromString(@"AWEStoryProgressContainerView");
         Class slideClass = NSClassFromString(@"AWEStoryProgressSlideView");
         BOOL hasProgress = NO;
         NSUInteger emptyProgressCount = 0;
         for (UIView *view in stack.superview.subviews) {
-            if (!progressClass || ![view isKindOfClass:progressClass] || ![self visibleView:view] || CGRectIsEmpty(view.bounds)) continue;
+            if (!progressClass || ![view isKindOfClass:progressClass] || ![self visibleView:view withinPage:page] || CGRectIsEmpty(view.bounds)) continue;
             if ([self isEmptyProgressPlaceholder:view]) { emptyProgressCount++; continue; }
             hasProgress = YES;
             for (UIView *slide in view.subviews) {
-                if (!slideClass || ![slide isKindOfClass:slideClass] || ![self visibleView:slide]) continue;
+                if (!slideClass || ![slide isKindOfClass:slideClass] || ![self visibleView:slide withinPage:page]) continue;
                 for (UIView *line in slide.subviews) {
-                    if (![line isKindOfClass:UICollectionView.class] || ![self visibleView:line] ||
+                    if (![line isKindOfClass:UICollectionView.class] || ![self visibleView:line withinPage:page] ||
                         CGRectIsEmpty(line.bounds) || CGRectGetHeight(line.bounds) > 8) continue;
                     if (![progressViews containsObject:slide]) [progressViews addObject:slide];
-                    progressBottom = MAX(progressBottom, CGRectGetMaxY([line convertRect:line.bounds toView:detail.view]));
+                    progressBottom = MAX(progressBottom, CGRectGetMaxY([line convertRect:line.bounds toView:page]));
                 }
             }
         }
@@ -176,16 +200,19 @@ static char kDYYYDetailCaptionStateKey;
             state.diagnostics = @{@"active": @NO, @"reason": @"unrecognized_progress"};
             return; // 未识别的实际分页布局保留原位。
         }
-        if (!isfinite(captionBottom) || !isfinite(CGRectGetMinY(inputRect)) || !isfinite(progressBottom) || !isfinite(progressLimit)) return;
-        CGFloat shift = [DYYYDetailCaptionMetrics downwardShiftForCaptionBottom:captionBottom inputTop:CGRectGetMinY(inputRect)
+        if (!isfinite(captionBottom) || !isfinite(progressBottom) || !isfinite(progressLimit)) return;
+        CGFloat shift = [DYYYDetailCaptionMetrics downwardShiftForCaptionBottom:captionBottom inputTop:inputTop
             progressBottom:progressBottom progressLimit:progressLimit enabled:YES];
         state.diagnostics = @{@"active": @(shift > 0.1), @"shift": @(shift), @"captionBottom": @(captionBottom),
-            @"inputTop": @(CGRectGetMinY(inputRect)), @"progressBottom": @(progressBottom),
+            @"inputTop": @(inputTop), @"progressBottom": @(progressBottom), @"coordinateSpace": @"detail_cell_page",
             @"progressLimit": @(progressLimit), @"progressCount": @(progressViews.count), @"emptyProgressCount": @(emptyProgressCount)};
         if (shift <= 0.1) return;
-        [self moveView:stack down:shift inDetail:detail state:state];
-        for (UIView *progress in progressViews) [self moveView:progress down:shift inDetail:detail state:state];
+        [self moveView:stack down:shift inPage:page state:state];
+        for (UIView *progress in progressViews) [self moveView:progress down:shift inPage:page state:state];
     } @finally { state.busy = NO; }
+}
++ (void)synchronizeStack:(UIView *)stack {
+    if (NSThread.isMainThread) [self applyState:[self stateForStack:stack create:YES]];
 }
 + (void)beginStackLayout:(UIView *)stack {
     if (!NSThread.isMainThread) return;
@@ -211,6 +238,28 @@ static char kDYYYDetailCaptionStateKey;
     for (UIView *view in controller.view.subviews)
         if (stackClass && [view isKindOfClass:stackClass] && [view.accessibilityLabel isEqualToString:@"left"])
             [self applyState:[self stateForStack:view create:YES]];
+}
++ (void)beginControllerLayout:(UIViewController *)controller {
+    if (!NSThread.isMainThread || ![self isAuthorDetail:[self detailForController:controller]]) return;
+    NSUInteger depth = [objc_getAssociatedObject(controller, &kDYYYDetailCaptionControllerDepthKey) unsignedIntegerValue];
+    objc_setAssociatedObject(controller, &kDYYYDetailCaptionControllerDepthKey, @(depth + 1), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if (!depth) [self restoreController:controller];
+}
++ (void)endControllerLayout:(UIViewController *)controller {
+    if (!NSThread.isMainThread) return;
+    NSUInteger depth = [objc_getAssociatedObject(controller, &kDYYYDetailCaptionControllerDepthKey) unsignedIntegerValue];
+    objc_setAssociatedObject(controller, &kDYYYDetailCaptionControllerDepthKey, depth > 1 ? @(depth - 1) : nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if (depth <= 1) [self synchronizeController:controller];
+}
++ (void)synchronizePageController:(UIViewController *)page {
+    if (!NSThread.isMainThread || ![self isAuthorDetail:[self detailForController:page]]) return;
+    NSMutableArray<UIViewController *> *queue = [NSMutableArray arrayWithObject:page];
+    for (NSUInteger index = 0; index < queue.count && index < 64; index++) {
+        UIViewController *controller = queue[index];
+        if (!controller.isViewLoaded) continue;
+        if ([controller isKindOfClass:NSClassFromString(@"AWEPlayInteractionViewController")]) [self synchronizeController:controller];
+        else [queue addObjectsFromArray:controller.childViewControllers];
+    }
 }
 + (void)restoreController:(UIViewController *)controller {
     if (!NSThread.isMainThread) return;

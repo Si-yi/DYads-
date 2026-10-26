@@ -6,6 +6,7 @@
 #import "DYYYPanelBlur.h"
 #import "DYYYAvatarRing.h"
 #import "DYYYSameStyleVisibility.h"
+#import "DYYYCollectionRows.h"
 
 #import "DYYYAboutDialogView.h"
 #import "DYYYCustomInputView.h"
@@ -23,6 +24,7 @@
     [[NSUserDefaults standardUserDefaults] setObject:object forKey:key];
     if ([key isEqualToString:@"DYYYHideAvatarColorRing"]) [DYYYAvatarRing refreshVisibleRings];
     if ([key isEqualToString:@"DYYYHideSameStyleButton"]) [DYYYSameStyleVisibility refreshVisibleViews];
+    if ([key isEqualToString:@"DYYYHideCaptionFollow"]) [DYYYCollectionRows refreshVisibleStacks];
     if ([@[ @"DYYYEnableSharePanelBlur", @"DYYYEnableCommentMenuBlur", @"DYYYCommentBlurTransparent" ] containsObject:key]) {
         [DYYYPanelBlur refreshVisiblePanels];
     }

@@ -4,6 +4,28 @@
 
 int main(void) {
     @autoreleasepool {
+        // 同一 956pt 作品页在上下滑动时可位于屏幕外；输入胶囊仍固定在视口 y=897。
+        // 文案/分页线用页内坐标测量，不能与带滚动位移的屏幕坐标相减。
+        double pageInput = [DYYYDetailCaptionMetrics pageInputTopForViewportInputTop:897 viewportMinY:0
+            viewportHeight:956 pageMinY:0 pageHeight:956];
+        NSCAssert(pageInput == 897, @"Adjacent full-page cells share the unchanged input target before display");
+        for (NSNumber *offsetValue in @[@(-956), @(-600), @(-200), @0, @200, @600, @956]) {
+            double offset = offsetValue.doubleValue;
+            double localCaption = (855.1666667 + offset) - offset;
+            double localProgress = (871 + offset) - offset;
+            double prepared = [DYYYDetailCaptionMetrics downwardShiftForCaptionBottom:localCaption inputTop:pageInput
+                progressBottom:localProgress progressLimit:881 enabled:YES];
+            NSCAssert(fabs(prepared - 10) < 0.001, @"Album offset is identical before, during and after either swipe direction");
+            double livePrepared = [DYYYDetailCaptionMetrics downwardShiftForCaptionBottom:(867.1666667 + offset) - offset inputTop:pageInput
+                progressBottom:0 progressLimit:881 enabled:YES];
+            NSCAssert(fabs(livePrepared - 13.8333333) < 0.001, @"Live photo preparation cannot wait for the cell to reach the viewport center");
+        }
+        NSCAssert([DYYYDetailCaptionMetrics pageInputTopForViewportInputTop:917 viewportMinY:20
+            viewportHeight:956 pageMinY:10 pageHeight:956] == 907, @"Nonzero bounds origins are normalized without moving the input");
+        NSCAssert(isnan([DYYYDetailCaptionMetrics pageInputTopForViewportInputTop:897 viewportMinY:0
+            viewportHeight:956 pageMinY:0 pageHeight:881]), @"A partial or differently sized page is not guessed into the full-page layout");
+        NSCAssert(isnan([DYYYDetailCaptionMetrics pageInputTopForViewportInputTop:NAN viewportMinY:0
+            viewportHeight:956 pageMinY:0 pageHeight:956]), @"Invalid viewport geometry cannot create a transient offset");
         // 1.8.3 动图导出：行底 880.6667，时间 UILabel 因 -11pt 偏移实际底边 867.1667。
         double liveBottom = [DYYYDetailCaptionMetrics captionBottomForRowBottom:880.6666667 plainTextBottom:867.1666667];
         double liveShift = [DYYYDetailCaptionMetrics downwardShiftForCaptionBottom:liveBottom inputTop:897

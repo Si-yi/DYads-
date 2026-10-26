@@ -1941,6 +1941,12 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
       // 【视频播放界面】分类
       NSMutableArray<AWESettingItemModel *> *videoUiItems = [NSMutableArray array];
       NSArray *videoUiSettings = @[
+          @{@"identifier" : @"DYYYHideCaptionFollow",
+            @"title" : @"隐藏文案关注",
+            @"subTitle" : @"移除文案下方的关注、暂不关注按钮及占位",
+            @"detail" : @"",
+            @"cellType" : @37,
+            @"imageName" : @"ic_eyeslash_outlined_16"},
           @{@"identifier" : @"DYYYHideEntry",
             @"title" : @"隐藏全屏观看",
             @"subTitle" : @"原始位置可点击",
