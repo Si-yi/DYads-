@@ -2033,7 +2033,7 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
             @"cellType" : @6,
             @"imageName" : @"ic_eyeslash_outlined_16"},
           @{@"identifier" : @"DYYYHideSameStyleButton",
-            @"title" : @"隐藏图标文字",
+            @"title" : @"隐藏音乐文字",
             @"subTitle" : @"隐藏右下角音乐图标上的所有文字，保留图标和点击功能",
             @"detail" : @"",
             @"cellType" : @6,

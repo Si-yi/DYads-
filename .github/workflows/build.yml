@@ -67,14 +67,27 @@ jobs:
   build:
     needs: changes
     if: needs.changes.outputs.should_build == 'true'
-    # 避开 macos-latest ARM64 构建机的容量不足；iOS 目标架构仍由 Theos 管理。
-    runs-on: macos-15-intel
+    # 保留 Intel 构建机，使用带 iOS 26 SDK 的 Xcode，避免静默丢失玻璃底栏。
+    runs-on: macos-26-intel
 
     steps:
       - uses: actions/checkout@v6
         with:
           submodules: true
           fetch-depth: 0
+
+      - name: Verify iOS SDK for glass tab bar
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          sdk_version=$(xcrun --sdk iphoneos --show-sdk-version)
+          sdk_major=${sdk_version%%.*}
+          if [[ ! "$sdk_major" =~ ^[0-9]+$ ]] || (( sdk_major < 26 )); then
+            echo "Official packages require iOS SDK 26 or newer; found ${sdk_version}." >&2
+            exit 1
+          fi
+          echo "Glass tab bar SDK: ${sdk_version}"
 
       - name: Test IM history reading
         run: bash .github/scripts/test-im-history.sh
@@ -201,6 +214,20 @@ jobs:
         env:
           PACKAGE_VERSION: ${{ steps.package.outputs.version }}
         run: .github/scripts/extract-release-dylib.sh
+
+      - name: Verify floating glass tab bar in release dylib
+        env:
+          PACKAGE_VERSION: ${{ steps.package.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          symbols_file="${RUNNER_TEMP}/dyyy-release-symbols.txt"
+          xcrun nm -arch arm64e -gU "packages/DYads-${PACKAGE_VERSION}.dylib" > "$symbols_file"
+          if ! grep -Fq '_OBJC_CLASS_$_DKGlassTabBarProxy' "$symbols_file"; then
+            echo "Release dylib is missing the floating glass tab bar implementation." >&2
+            exit 1
+          fi
+          echo "Floating glass tab bar implementation verified in release dylib."
 
       - name: Upload package artifacts
         uses: actions/upload-artifact@v7

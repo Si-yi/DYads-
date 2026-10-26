@@ -25,6 +25,10 @@
 #import <objc/message.h>
 #import <objc/runtime.h>
 
+#if defined(DYYY_REQUIRE_GLASS_TAB_BAR) && __IPHONE_OS_VERSION_MAX_ALLOWED < 260000
+#error Official packages require the iOS 26 SDK or newer to include the floating glass tab bar.
+#endif
+
 #if __IPHONE_OS_VERSION_MAX_ALLOWED >= 260000   // 构建用的 SDK 带 iOS 26 的玻璃 API 才编入
 
 // ===== 从 DYKiller 搬来的小工具（DKGlassGuard / DKUtils / DKViewAdjust）=====

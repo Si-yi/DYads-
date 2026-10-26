@@ -51,6 +51,9 @@ DYYY_FILES += DYYYArticleBackdrop.m DYYYArticleBackdropHooks.xm
 DYYY_FILES += DYYYPanelBlur.m DYYYPanelBlurHooks.xm
 DYYY_FILES += DYYYFeedTagGlass.m DYYYAvatarRing.m DYYYSameStyleVisibility.m DYYYFeedDecorationsHooks.xm
 DYYY_CFLAGS = -fobjc-arc -w
+ifeq ($(GITHUB_ACTIONS),true)
+DYYY_CFLAGS += -DDYYY_REQUIRE_GLASS_TAB_BAR=1
+endif
 DYYY_LDFLAGS = -weak_framework AVFAudio -lz
 DYYY_FRAMEWORKS = CoreAudio PhotosUI
 CXXFLAGS += -std=c++11
