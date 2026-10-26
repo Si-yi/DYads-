@@ -157,6 +157,7 @@
    - 通过现有回调（下载完成、进度回调等）向 UI 传递状态。
 
 ## 构建与测试（make）
+- GitHub Actions 使用 `macos-15-intel` 构建，Theos 缓存按 `runner.os` 与 `runner.arch` 隔离；40356512045 曾因 `macos-latest` ARM64 容量不足等待 15 分钟仍无法分配 Runner，不能当作源码编译失败。主机架构不改变三种 iOS 安装包目标。
 - 本地验证优先执行 `make clean package`（或至少 `make package`），确认 tweak 能编译并生成 `.deb`。
 - 需要安装到设备验证时，执行 `make package INSTALL=1`（依赖 `THEOS_DEVICE_IP` 配置），编译完成后会通过 `after-package` 自动推送并 `dpkg -i`。
 - 切换不同包方案（roothide/rootless）时，通过 `make package SCHEME=rootless` 之类的命令指定 `SCHEME`，保持与目标设备一致。

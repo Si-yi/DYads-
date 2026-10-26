@@ -67,7 +67,8 @@ jobs:
   build:
     needs: changes
     if: needs.changes.outputs.should_build == 'true'
-    runs-on: macos-latest
+    # 避开 macos-latest ARM64 构建机的容量不足；iOS 目标架构仍由 Theos 管理。
+    runs-on: macos-15-intel
 
     steps:
       - uses: actions/checkout@v6
@@ -87,7 +88,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ github.workspace }}/theos
-          key: ${{ runner.os }}-${{ env.upstream_heads }}
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ env.upstream_heads }}
 
       - name: Remove unused Homebrew taps
         env:
