@@ -125,6 +125,33 @@
         reason:@"原生返回 nil 必须保留失败状态，不能冒充没有新分享"];
     incoming = [DYYYIMHistoryReader nativeUnreadIncomingMessages:@[unread] conversation:@"chat-A" peerID:42 unreadCount:0 diagnostics:window];
     [self check:incoming.count == 0 reason:@"残留原生结果不能复活已读会话"];
+    // 1.8.4 导出中会话未读数 182/1485/62，专用查询分别返回 0/1/2 条。
+    // 无旧凭据需要核实时，绝不能因大计数再展开 2000..32000 条完整历史。
+    __block NSUInteger scanHistoryCalls = 0;
+    id (^observedQuery)(void) = ^id { scanHistoryCalls++; return @[latest]; };
+    id (^recentQuery)(NSTimeInterval, NSUInteger) = ^id(NSTimeInterval time, NSUInteger limit) { scanHistoryCalls++; return @[latest]; };
+    id (^oldQuery)(NSUInteger) = ^id(NSUInteger limit) { scanHistoryCalls++; return all; };
+    NSArray *nativeResults = @[@[], @[unread], @[unread, boundary]];
+    NSArray *nativeCounts = @[@182, @1485, @62];
+    for (NSUInteger index = 0; index < nativeResults.count; index++) {
+        window = [NSMutableDictionary dictionary];
+        NSArray *validated = [DYYYIMHistoryReader nativeUnreadIncomingMessages:nativeResults[index]
+            conversation:@"chat-A" peerID:42 unreadCount:[nativeCounts[index] unsignedIntegerValue] diagnostics:window];
+        history = [DYYYIMHistoryReader historyForConversation:@"chat-A" latestMessage:latest firstUnreadID:@""
+            nativeUnread:validated revalidating:NO observedResult:observedQuery recentQuery:recentQuery earliestQuery:oldQuery diagnostics:window];
+        [self check:history == nil && scanHistoryCalls == 0 && [window[@"query"] isEqual:@"native_unread_only"]
+            reason:@"已验证未读结果（包括空列表）不触发任何历史入口，也不拿完整历史凑数"];
+    }
+    history = [DYYYIMHistoryReader historyForConversation:@"chat-A" latestMessage:latest firstUnreadID:@""
+        nativeUnread:nil revalidating:NO observedResult:observedQuery recentQuery:recentQuery earliestQuery:oldQuery diagnostics:window];
+    [self check:history == nil && scanHistoryCalls == 0 reason:@"专用未读失败且边界缺失时，不能盲读旧历史"];
+    history = [DYYYIMHistoryReader historyForConversation:@"chat-A" latestMessage:latest firstUnreadID:@""
+        nativeUnread:@[] revalidating:YES observedResult:observedQuery recentQuery:recentQuery earliestQuery:oldQuery diagnostics:window];
+    [self check:history.count == 1 && scanHistoryCalls == 1 reason:@"需撤销旧错误来源时仍保留历史反证读取"];
+    scanHistoryCalls = 0;
+    history = [DYYYIMHistoryReader historyForConversation:@"chat-A" latestMessage:latest firstUnreadID:[latest identifier]
+        nativeUnread:nil revalidating:NO observedResult:observedQuery recentQuery:recentQuery earliestQuery:oldQuery diagnostics:window];
+    [self check:history.count == 1 && scanHistoryCalls == 1 reason:@"专用未读失败但有确切边界时仍保留有界回退"];
     NSLog(@"DYYYIMHistoryReader regression tests passed");
 }
 @end

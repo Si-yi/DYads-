@@ -2196,6 +2196,7 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 - (id)sendMessage:(id)model error:(void *)error;
 - (id)sendMessage:(id)model isSaveDB:(BOOL)saveDB error:(void *)error;
 + (instancetype)instanceWithRootObject:(id)root identifier:(id)identifier;
++ (instancetype)cachedInstanceWithRootObject:(id)root identifier:(id)identifier;
 @property (nonatomic, readonly) long long ownerID;
 @property (nonatomic, readonly, copy) NSString *identifier;
 @property (nonatomic, readonly, strong) NSDictionary *participantsMap;
@@ -2217,6 +2218,7 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @end
 
 @interface TIMXOConversationManager : NSObject
+- (id)fetchConversationsWithIdentifiers:(id)identifiers;
 - (id)initWithRootObject:(id)root;
 - (id)conversationIDFor1to1ChatWithOtherUserID:(long long)userID inbox:(int)inbox;
 - (BOOL)conversationExitsInDB:(id)identifier;
