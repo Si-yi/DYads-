@@ -212,7 +212,7 @@ static void DYYYDebugSamplePage(void) {
     }
 }
 
-static void DYYYDebugStartRecording(UIWindow *window) {
+static void DYYYDebugStartRecording(UIWindow *window, DKDebugExportContext *context) {
     DYYYDebugPrepareRecordingHooks();
     @synchronized (DYYYDebugInstalledHooks) {
         DYYYDebugEvents = [NSMutableArray array];
@@ -222,7 +222,7 @@ static void DYYYDebugStartRecording(UIWindow *window) {
         DYYYDebugLastPageState = nil;
         DYYYDebugRecording = YES;
     }
-    DYYYDebugStartContext = DKDebugCaptureContext(window, CGPointZero, nil);
+    DYYYDebugStartContext = context;
     DYYYDebugRecordEvent(@"recordingStarted", @{ @"installedHooks": DYYYDebugHookStatus }, NO);
     DYYYDebugSamplePage();
     [DYYYDebugRecordTimer invalidate];
@@ -343,9 +343,9 @@ static NSData *DYYYDebugLightScreenshot(NSData *png) {
     return UIImageJPEGRepresentation(image, 0.70);
 }
 
-static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *window, BOOL detailed) {
-    if (!presenter || !window) return;
-    DKDebugExportContext *context = DKDebugCaptureContext(window, CGPointZero, nil);
+static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *window, BOOL detailed,
+                                       DKDebugExportContext *context, NSDictionary *capturedMetadata) {
+    if (!presenter || !window || !context || !capturedMetadata) return;
     NSString *base = [NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"DYYY_Debug_%@", NSUUID.UUID.UUIDString]];
     NSString *zipPath = [base stringByAppendingPathExtension:@"zip"];
     NSFileManager *manager = NSFileManager.defaultManager;
@@ -360,10 +360,8 @@ static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *wi
       [manager createDirectoryAtPath:path.stringByDeletingLastPathComponent withIntermediateDirectories:YES attributes:nil error:nil];
       if (data && [data writeToFile:path atomically:YES]) [files addObject:path];
     };
-    NSMutableDictionary *metadata = [DYYYDebugMetadata() mutableCopy];
+    NSMutableDictionary *metadata = [capturedMetadata mutableCopy];
     metadata[@"exportMode"] = detailed ? @"complete" : @"lightweight";
-    metadata[@"independentIM"] = [DYYYIMService diagnostics];
-    metadata[@"friendShareFeed"] = [DYYYFriendShareService diagnostics];
     writeJSON(@"metadata.json", metadata);
     if (detailed) {
         // 仅导出抖音自身的运行时声明，不执行联系人查询、消息读取或发送方法。
@@ -506,21 +504,31 @@ static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *wi
 static void DYYYDebugShowActions(UIWindow *window) {
     UIViewController *presenter = DKDebugTopPresenter(window);
     if (!presenter) return;
+    // 必须在 present 调试菜单前抓取；弹层会使 @ 候选栏和键盘等原生临时视图收起。
+    // 快照只包含纯数据，由本次菜单的处理块持有；关闭菜单后释放，不长期缓存正文或截图。
+    DKDebugExportContext *context = DKDebugCaptureContext(window, CGPointZero, nil);
+    NSMutableDictionary *snapshotMetadata = [DYYYDebugMetadata() mutableCopy];
+    snapshotMetadata[@"independentIM"] = [DYYYIMService diagnostics];
+    snapshotMetadata[@"friendShareFeed"] = [DYYYFriendShareService diagnostics];
+    snapshotMetadata[@"captureStage"] = @"before_debug_menu";
+    NSData *metadataData = DYYYDebugJSONData(snapshotMetadata);
+    NSDictionary *capturedMetadata = metadataData ? [NSJSONSerialization JSONObjectWithData:metadataData options:0 error:nil] : nil;
+    if (!context || !capturedMetadata) { DYYYDebugPresentAlert(presenter, @"调试导出失败", @"未能保存当前页面，请重试"); return; }
     NSString *message = DYYYDebugRecording ? @"正在记录首页刷新、模型切换和页面状态。出现问题后停止并导出。" : @"手动开始记录，复现问题后停止并导出。每段最多保存 12000 个事件，超出数量会写入报告。";
     NSMutableArray<DYYYDebugMenuItem *> *items = [NSMutableArray array];
     if (DYYYDebugRecording) {
         [items addObject:[DYYYDebugMenuItem itemWithTitle:@"停止记录并导出（轻量）" handler:^{
             DYYYDebugStopRecording();
-            DYYYDebugExportCurrentPage(presenter, window, NO);
+            DYYYDebugExportCurrentPage(presenter, window, NO, context, capturedMetadata);
         }]];
     } else {
-        [items addObject:[DYYYDebugMenuItem itemWithTitle:@"开始记录（覆盖上一段）" handler:^{ DYYYDebugStartRecording(window); }]];
+        [items addObject:[DYYYDebugMenuItem itemWithTitle:@"开始记录（覆盖上一段）" handler:^{ DYYYDebugStartRecording(window, context); }]];
         if (DYYYDebugStoppedAt) {
-            [items addObject:[DYYYDebugMenuItem itemWithTitle:@"重新导出上次记录（轻量）" handler:^{ DYYYDebugExportCurrentPage(presenter, window, NO); }]];
+            [items addObject:[DYYYDebugMenuItem itemWithTitle:@"重新导出上次记录（轻量）" handler:^{ DYYYDebugExportCurrentPage(presenter, window, NO, context, capturedMetadata); }]];
         }
     }
-    [items addObject:[DYYYDebugMenuItem itemWithTitle:@"导出当前页（轻量）" handler:^{ DYYYDebugExportCurrentPage(presenter, window, NO); }]];
-    [items addObject:[DYYYDebugMenuItem itemWithTitle:@"完整导出（含图层和类头文件）" handler:^{ DYYYDebugExportCurrentPage(presenter, window, YES); }]];
+    [items addObject:[DYYYDebugMenuItem itemWithTitle:@"导出当前页（轻量）" handler:^{ DYYYDebugExportCurrentPage(presenter, window, NO, context, capturedMetadata); }]];
+    [items addObject:[DYYYDebugMenuItem itemWithTitle:@"完整导出（含图层和类头文件）" handler:^{ DYYYDebugExportCurrentPage(presenter, window, YES, context, capturedMetadata); }]];
     [DYYYDebugMenuView presentFromController:presenter window:window title:@"DYYY 调试工具" message:message items:items];
 }
 
