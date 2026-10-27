@@ -18,6 +18,7 @@ for deb in "$@"; do
     data_archives=("$package_dir"/data.tar*)
     if [[ "${#data_archives[@]}" -ne 1 || ! -f "${data_archives[0]}" ]]; then
         echo "Expected one data archive in $deb" >&2
+        printf 'Extracted archive entry: %s\n' "$package_dir"/* >&2
         exit 1
     fi
     listing=$(tar -tf "${data_archives[0]}")

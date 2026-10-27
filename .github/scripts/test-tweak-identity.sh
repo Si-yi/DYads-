@@ -27,8 +27,17 @@ with tempfile.TemporaryDirectory(prefix='dyads-identity-') as directory:
                 member.size = len(data)
                 archive.addfile(member, io.BytesIO(data))
         result = folder / 'fixture package.deb'
-        subprocess.run(['ar', '-rc', str(result), 'debian-binary', 'control.tar.gz', 'data.tar.gz'],
-                       cwd=folder, check=True, capture_output=True)
+        # 固定生成标准 Deb 的 SysV ar 容器，不依赖宿主 ar 的默认格式。
+        with result.open('wb') as output:
+            output.write(b'!<arch>\n')
+            for filename in ['debian-binary', 'control.tar.gz', 'data.tar.gz']:
+                data = (folder / filename).read_bytes()
+                header = f'{filename + "/":<16}{0:<12}{0:<6}{0:<6}{"100644":<8}{len(data):<10}`\n'.encode('ascii')
+                assert len(header) == 60
+                output.write(header)
+                output.write(data)
+                if len(data) % 2:
+                    output.write(b'\n')
         return result
     cases = [
         ('rootful', 'Library/MobileSubstrate/DynamicLibraries', ['DYads-.dylib', 'DYads-.plist'], True),
