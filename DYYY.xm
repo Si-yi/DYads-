@@ -12358,26 +12358,12 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
             }
         }
 
-        if (containsDanmu) {
-            UIView *parentView = middleContainer.superview;
-            for (UIView *innerSubview in parentView.subviews) {
-                if ([innerSubview isKindOfClass:[UIView class]]) {
-                    if (innerSubview.subviews.count > 0) {
-                        innerSubview.subviews[0].hidden = YES;
-                    }
-
-                    UIView *whiteBackgroundView = [[UIView alloc] initWithFrame:innerSubview.bounds];
-                    whiteBackgroundView.backgroundColor = [UIColor whiteColor];
-                    whiteBackgroundView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-                    [innerSubview addSubview:whiteBackgroundView];
-                    break;
-                }
-            }
-        } else {
-            for (UIView *subview in middleContainer.subviews) {
-                if (subview.hidden == NO && subview.backgroundColor && CGColorGetAlpha(subview.backgroundColor.CGColor) == 1) {
-                    [DYYYUtils applyBlurEffectToView:subview transparency:0.2f blurViewTag:999];
-                }
+        // 弹幕输入使用原生绘制。原实现每次布局都追加白底并隐藏首个子视图，
+        // 会堆积视图且可能遮住原生内容；这里保留它的背景与按钮。
+        if (containsDanmu) continue;
+        for (UIView *subview in middleContainer.subviews) {
+            if (subview.hidden == NO && subview.backgroundColor && CGColorGetAlpha(subview.backgroundColor.CGColor) == 1) {
+                [DYYYUtils applyBlurEffectToView:subview transparency:0.2f blurViewTag:999];
             }
         }
     }
@@ -12568,7 +12554,6 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
         return;
     }
 
-    BOOL enableBlur = DYYYGetBool(@"DYYYEnableCommentBlur");
     BOOL enableFS = DYYYGetBool(@"DYYYEnableFullScreen");
 
     UIViewController *vc = [DYYYUtils firstAvailableViewControllerFromView:self];
@@ -12588,12 +12573,7 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
                      (PlayVCClass2 && [vc isKindOfClass:PlayVCClass2]) ||
                      (PlayVCClass3 && [vc isKindOfClass:PlayVCClass3]));
 
-    if (isPlayVC && enableBlur) {
-        if (frame.origin.x != 0) {
-            return;
-        }
-    }
-
+    // 评论毛玻璃只管理绘制，不能吞掉播放器或子视图的原生布局请求。
     if (isPlayVC && enableFS) {
         if (frame.origin.x != 0 && frame.origin.y != 0) {
             %orig(frame);

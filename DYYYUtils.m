@@ -993,10 +993,12 @@ static void DYYYApplyDisplayLocationToLabel(UILabel *label, NSString *displayLoc
 }
 
 + (void)applyBlurEffectToView:(UIView *)view transparency:(float)userTransparency blurViewTag:(NSInteger)tag {
-    if (!view)
+    if (!view || !NSThread.isMainThread)
         return;
 
-    view.backgroundColor = [UIColor clearColor];
+    if (view.backgroundColor && CGColorGetAlpha(view.backgroundColor.CGColor) > 0)
+        view.backgroundColor = UIColor.clearColor;
+    static char kDYYYReusableBlurStyleKey;
 
     UIVisualEffectView *existingBlurView = nil;
     for (UIView *subview in view.subviews) {
@@ -1018,6 +1020,7 @@ static void DYYYApplyDisplayLocationToLabel(UILabel *label, NSString *displayLoc
         blurEffectView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
         blurEffectView.alpha = userTransparency;
         blurEffectView.tag = tag;
+        objc_setAssociatedObject(blurEffectView, &kDYYYReusableBlurStyleKey, @(blurStyle), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 
         overlayView = [[UIView alloc] initWithFrame:view.bounds];
         overlayView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
@@ -1025,9 +1028,13 @@ static void DYYYApplyDisplayLocationToLabel(UILabel *label, NSString *displayLoc
 
         [view insertSubview:blurEffectView atIndex:0];
     } else {
-        UIBlurEffect *blurEffect = [UIBlurEffect effectWithStyle:blurStyle];
-        [existingBlurView setEffect:blurEffect];
-        existingBlurView.alpha = userTransparency;
+        // 只有主题变化才更换材质，普通布局复用同一效果，避免持续重建绘制管线。
+        NSNumber *savedStyle = objc_getAssociatedObject(existingBlurView, &kDYYYReusableBlurStyleKey);
+        if (!savedStyle || savedStyle.integerValue != blurStyle) {
+            existingBlurView.effect = [UIBlurEffect effectWithStyle:blurStyle];
+            objc_setAssociatedObject(existingBlurView, &kDYYYReusableBlurStyleKey, @(blurStyle), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+        if (existingBlurView.alpha != userTransparency) existingBlurView.alpha = userTransparency;
 
         for (UIView *subview in existingBlurView.contentView.subviews) {
             if ([subview isKindOfClass:[UIView class]]) {
@@ -1043,7 +1050,9 @@ static void DYYYApplyDisplayLocationToLabel(UILabel *label, NSString *displayLoc
     }
     if (overlayView) {
         CGFloat alpha = isDarkMode ? 0.2 : 0.1;
-        overlayView.backgroundColor = [UIColor colorWithWhite:(isDarkMode ? 0 : 1) alpha:alpha];
+        UIColor *color = [UIColor colorWithWhite:(isDarkMode ? 0 : 1) alpha:alpha];
+        if (!overlayView.backgroundColor || !CGColorEqualToColor(overlayView.backgroundColor.CGColor, color.CGColor))
+            overlayView.backgroundColor = color;
     }
 }
 
