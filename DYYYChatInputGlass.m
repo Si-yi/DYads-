@@ -17,6 +17,7 @@ static char kDYYYChatGlassStateKey;
 @property (nonatomic, assign) CGFloat radius;
 @property (nonatomic, assign) CGFloat appliedRadius;
 @property (nonatomic, strong) NSMapTable<UIView *, NSDictionary *> *paints;
+@property (nonatomic, strong) NSMapTable<UIView *, NSDictionary *> *backgrounds;
 @property (nonatomic, assign) NSUInteger depth;
 @property (nonatomic, assign) BOOL busy;
 @property (nonatomic, assign) BOOL active;
@@ -37,6 +38,7 @@ static char kDYYYChatGlassStateKey;
         state = [DYYYChatGlassState new];
         state.controller = controller;
         state.paints = [NSMapTable weakToStrongObjectsMapTable];
+        state.backgrounds = [NSMapTable weakToStrongObjectsMapTable];
         objc_setAssociatedObject(controller, &kDYYYChatGlassStateKey, state, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         [[self states] addObject:state];
     }
@@ -57,7 +59,48 @@ static char kDYYYChatGlassStateKey;
         if (paint.layer.mask == saved[@"applied"]) paint.layer.mask = saved[@"native"] == NSNull.null ? nil : saved[@"native"];
     }
     [state.paints removeAllObjects];
+    for (UIView *view in state.backgrounds.keyEnumerator.allObjects) {
+        NSDictionary *saved = [state.backgrounds objectForKey:view];
+        if (!view.backgroundColor || CGColorGetAlpha(view.backgroundColor.CGColor) == 0)
+            view.backgroundColor = saved[@"color"] == NSNull.null ? nil : saved[@"color"];
+        if (!view.opaque) view.opaque = [saved[@"opaque"] boolValue];
+    }
+    [state.backgrounds removeAllObjects];
     state.active = NO;
+}
+// B8C5BB62：输入 VC 的 64pt 根视图仍是 #161616，不能只替换 44pt 槽内绘制。
++ (void)clearBackground:(UIView *)view state:(DYYYChatGlassState *)state {
+    if (!view) return;
+    NSDictionary *saved = [state.backgrounds objectForKey:view];
+    UIColor *color = view.backgroundColor;
+    BOOL filled = color && CGColorGetAlpha(color.CGColor) > 0;
+    if (!saved || filled || view.opaque) {
+        saved = @{ @"color": (!saved || filled) ? (color ?: NSNull.null) : saved[@"color"],
+                   @"opaque": @(!saved ? view.opaque : ([saved[@"opaque"] boolValue] || view.opaque)) };
+        [state.backgrounds setObject:saved forKey:view];
+    }
+    if (filled) view.backgroundColor = UIColor.clearColor;
+    if (view.opaque) view.opaque = NO;
+}
++ (void)clearInputSurroundings:(IESIMInputViewController *)controller state:(DYYYChatGlassState *)state {
+    UIView *root = controller.viewIfLoaded;
+    UIView *text = controller.textView;
+    [self clearBackground:root state:state];
+    // 仅清理已确认的输入前景路径，不递归到文字绘制、按钮、附件或表情面板。
+    UIView *view = text;
+    for (NSUInteger depth = 0; view && view != root && depth < 10; depth++, view = view.superview) {
+        if (view != text && view.class != UIView.class) break;
+        [self clearBackground:view state:state];
+    }
+    // 原生无交互安全区底板伸出 root；不能把同起点的 355pt panelsContainer 一起清掉。
+    for (UIView *view in root.subviews) {
+        if (view.class != UIView.class || view.userInteractionEnabled || view.subviews.count || view.layer.sublayers.count) continue;
+        CGRect rect = view.frame;
+        if (fabs(CGRectGetMinY(rect) - CGRectGetMaxY(root.bounds)) <= 1 &&
+            fabs(CGRectGetWidth(rect) - CGRectGetWidth(root.bounds)) <= 1 &&
+            CGRectGetHeight(rect) > 0 && CGRectGetHeight(rect) <= 64)
+            [self clearBackground:view state:state];
+    }
 }
 + (BOOL)isChatController:(UIViewController *)controller {
     Class chat = NSClassFromString(@"AWEIMMessageBaseViewController");
@@ -137,6 +180,9 @@ static char kDYYYChatGlassStateKey;
             state.glass.layer.cornerCurve = kCACornerCurveContinuous;
             state.glass.layer.borderWidth = 0.5;
             state.glass.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.18].CGColor;
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 260000
+            if (@available(iOS 26.0, *)) state.glass.cornerConfiguration = [UICornerConfiguration capsuleConfiguration];
+#endif
         }
         UIUserInterfaceStyle style = [DYYYUtils isDarkMode] || root.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark
             ? UIUserInterfaceStyleDark : UIUserInterfaceStyleLight;
@@ -145,6 +191,7 @@ static char kDYYYChatGlassStateKey;
         CGFloat radius = MIN(28, CGRectGetHeight(slot.bounds) / 2);
         state.appliedRadius = radius;
         if (state.glass.layer.cornerRadius != radius) state.glass.layer.cornerRadius = radius;
+        [self clearInputSurroundings:controller state:state];
         // 只屏蔽已确认背景槽内的绘制；不改 native hidden/alpha/命中或任何输入内容。
         for (UIView *paint in slot.subviews) {
             if (paint == state.glass) continue;
@@ -173,7 +220,7 @@ static char kDYYYChatGlassStateKey;
 }
 + (void)beginUpdate:(UIViewController *)controller {
     if (!NSThread.isMainThread) return;
-    DYYYChatGlassState *state = [self state:controller create:NO];
+    DYYYChatGlassState *state = [self state:controller create:[NSUserDefaults.standardUserDefaults boolForKey:@"DYYYEnableFloatingChatInput"]];
     if (!state || state.busy) return;
     if (state.depth++ == 0) {
         state.busy = YES;
@@ -199,7 +246,9 @@ static char kDYYYChatGlassStateKey;
     for (DYYYChatGlassState *state in [self states].allObjects) {
         if (!state.controller.viewIfLoaded.window) continue;
         [states addObject:@{ @"active": @(state.active), @"slotFrame": NSStringFromCGRect(state.slot.frame),
-            @"glassFrame": NSStringFromCGRect(state.glass.frame), @"maskedBackgroundCount": @(state.paints.count) }];
+            @"glassFrame": NSStringFromCGRect(state.glass.frame), @"maskedBackgroundCount": @(state.paints.count), @"clearedBackgroundCount": @(state.backgrounds.count),
+            @"inputRootBackground": state.controller.viewIfLoaded.backgroundColor.description ?: @"",
+            @"inputRootOpaque": @(state.controller.viewIfLoaded.opaque) }];
     }
     return @{ @"enabled": @([NSUserDefaults.standardUserDefaults boolForKey:@"DYYYEnableFloatingChatInput"]), @"states": states };
 }
