@@ -8,7 +8,7 @@ is_direct_build_path() {
     local path=$1
 
     case "$path" in
-        DYYY.plist|control|Resources/*|layout/*|Tests/*|.github/scripts/test-im-history.sh)
+        DYads-.plist|control|Resources/*|layout/*|Tests/*|.github/scripts/test-im-history.sh|.github/scripts/verify-tweak-identity.sh|.github/scripts/test-tweak-identity.sh|.github/scripts/extract-release-dylib.sh)
             return 0
             ;;
     esac

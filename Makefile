@@ -34,31 +34,32 @@ INSTALL_TARGET_PROCESSES = Aweme
 
 include $(THEOS)/makefiles/common.mk
 
-TWEAK_NAME = DYYY
+TWEAK_NAME = DYads-
 
-DYYY_FILES = DYYY.xm DYYYFloatClearButton.xm DYYYFloatSpeedButton.m DYYYSettings.xm DYYYAutoMessageHooks.xm DYYYABTestHook.xm DYYYLongPressPanel.xm DYYYGlassTabBar.xm DYYYProfileClean.xm DYYYPlusIcon.m DKTabBarIcons.m DKTabBarIconDraw.m DKIconCropper.m DYYYSettingsHelper.m DYYYAutoMessage.m DYYYAutoMessagePanel.m DYYYBackupTools.m DYYYDebugInspector.m DKDebugCapture.m DKClassDump.m DKZipWriter.m DYYYImagePickerDelegate.m DYYYBackupPickerDelegate.m DYYYBottomAlertView.m DYYYCustomInputView.m DYYYOptionsSelectionView.m DYYYIconOptionsDialogView.m DYYYAboutDialogView.m DYYYKeywordListView.m DYYYFilterSettingsView.m DYYYConfirmCloseView.m DYYYToast.m DYYYManager.m DYYYUtils.m CityManager.m AWMSafeDispatchTimer.m
-DYYY_FILES += DYYYAutoMessageEditor.m DYYYAutoMessageQuietHoursPanel.m DYYYAutoMessageBatch.m
-DYYY_FILES += DYYYIMService.m DYYYIMHistoryReader.m DYYYIMShareParser.m
-DYYY_FILES += DYYYFriendShareService.m DYYYFriendShareHistory.m DYYYFriendShareDelivery.m DYYYFriendShareReturnState.m
-DYYY_FILES += DYYYFriendShareBadgeView.m DYYYChatVideoLayout.m DYYYDetailCaptionLayout.m DYYYDetailCaptionMetrics.m
-DYYY_FILES += DYYYCollectionRows.m
-DYYY_FILES += DYYYCommentMenuTheme.m DYYYCommentMenuThemeHooks.xm
-DYYY_FILES += DYYYDebugAppearance.m
-DYYY_FILES += DYYYDebugMenuView.m DYYYCommentMenuPalette.m DYYYCommentMenuGrid.m DYYYCommentMenuItems.m DYYYCommentMenuMetrics.m DYYYShareComposer.m
-DYYY_FILES += DYYYCommentHeaderLayout.m DYYYCommentHeaderLayoutHooks.xm
-DYYY_FILES += DYYYSearchClean.m DYYYSearchCleanHooks.xm
-DYYY_FILES += DYYYArticleBackdrop.m DYYYArticleBackdropHooks.xm
-DYYY_FILES += DYYYPanelBlur.m DYYYPanelBlurHooks.xm
-DYYY_FILES += DYYYFeedTagGlass.m DYYYAvatarRing.m DYYYSameStyleVisibility.m DYYYFeedDecorationsHooks.xm
-DYYY_CFLAGS = -fobjc-arc -w
+DYads-_FILES = DYYY.xm DYYYFloatClearButton.xm DYYYFloatSpeedButton.m DYYYSettings.xm DYYYAutoMessageHooks.xm DYYYABTestHook.xm DYYYLongPressPanel.xm DYYYGlassTabBar.xm DYYYProfileClean.xm DYYYPlusIcon.m DKTabBarIcons.m DKTabBarIconDraw.m DKIconCropper.m DYYYSettingsHelper.m DYYYAutoMessage.m DYYYAutoMessagePanel.m DYYYBackupTools.m DYYYDebugInspector.m DKDebugCapture.m DKClassDump.m DKZipWriter.m DYYYImagePickerDelegate.m DYYYBackupPickerDelegate.m DYYYBottomAlertView.m DYYYCustomInputView.m DYYYOptionsSelectionView.m DYYYIconOptionsDialogView.m DYYYAboutDialogView.m DYYYKeywordListView.m DYYYFilterSettingsView.m DYYYConfirmCloseView.m DYYYToast.m DYYYManager.m DYYYUtils.m CityManager.m AWMSafeDispatchTimer.m
+DYads-_FILES += DYYYAutoMessageEditor.m DYYYAutoMessageQuietHoursPanel.m DYYYAutoMessageBatch.m
+DYads-_FILES += DYYYIMService.m DYYYIMHistoryReader.m DYYYIMShareParser.m
+DYads-_FILES += DYYYFriendShareService.m DYYYFriendShareHistory.m DYYYFriendShareDelivery.m DYYYFriendShareReturnState.m
+DYads-_FILES += DYYYFriendShareBadgeView.m DYYYChatVideoLayout.m DYYYDetailCaptionLayout.m DYYYDetailCaptionMetrics.m
+DYads-_FILES += DYYYCollectionRows.m
+DYads-_FILES += DYYYCommentMenuTheme.m DYYYCommentMenuThemeHooks.xm
+DYads-_FILES += DYYYDebugAppearance.m
+DYads-_FILES += DYYYDebugMenuView.m DYYYCommentMenuPalette.m DYYYCommentMenuGrid.m DYYYCommentMenuItems.m DYYYCommentMenuMetrics.m DYYYShareComposer.m
+DYads-_FILES += DYYYCommentHeaderLayout.m DYYYCommentHeaderLayoutHooks.xm
+DYads-_FILES += DYYYSearchClean.m DYYYSearchCleanHooks.xm
+DYads-_FILES += DYYYArticleBackdrop.m DYYYArticleBackdropHooks.xm
+DYads-_FILES += DYYYPanelBlur.m DYYYPanelBlurHooks.xm
+DYads-_FILES += DYYYChatInputGlass.m DYYYChatInputGlassHooks.xm
+DYads-_FILES += DYYYFeedTagGlass.m DYYYAvatarRing.m DYYYSameStyleVisibility.m DYYYFeedDecorationsHooks.xm
+DYads-_CFLAGS = -fobjc-arc -w
 ifeq ($(GITHUB_ACTIONS),true)
-DYYY_CFLAGS += -DDYYY_REQUIRE_GLASS_TAB_BAR=1
+DYads-_CFLAGS += -DDYYY_REQUIRE_GLASS_TAB_BAR=1
 endif
-DYYY_LDFLAGS = -weak_framework AVFAudio -lz
-DYYY_FRAMEWORKS = CoreAudio PhotosUI
+DYads-_LDFLAGS = -weak_framework AVFAudio -lz
+DYads-_FRAMEWORKS = CoreAudio PhotosUI
 CXXFLAGS += -std=c++11
 CCFLAGS += -std=c++11
-DYYY_LOGOS_DEFAULT_GENERATOR = internal
+DYads-_LOGOS_DEFAULT_GENERATOR = internal
 
 export THEOS_STRICT_LOGOS=0
 export ERROR_ON_WARNINGS=0

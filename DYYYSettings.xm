@@ -1827,6 +1827,8 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
 
       [glassTabBarItems addObject:[DYYYSettingsHelper createSettingItem:@{ @"identifier": @"DYYYEnableFloatingCommentInput", @"title": @"悬浮评论输入栏", @"subTitle": @"评论区及作品详情页使用紧凑玻璃输入胶囊", @"detail": @"", @"cellType": @6, @"imageName": @"ic_comment_outlined_20" }]];
 
+      [glassTabBarItems addObject:[DYYYSettingsHelper createSettingItem:@{ @"identifier": @"DYYYEnableFloatingChatInput", @"title": @"悬浮底栏", @"subTitle": @"聊天输入栏使用玻璃样式，关闭恢复原始底栏", @"detail": @"", @"cellType": @6, @"imageName": @"ic_comment_outlined_20" }]];
+
       NSMutableArray *sections = [NSMutableArray array];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"透明度设置" items:transparencyItems]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"缩放与大小" items:scaleItems]];

@@ -528,6 +528,15 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @interface AWEAwemeDetailTableView : UITableView
 @end
 
+// 39.5 聊天输入，原生背景槽与文本/按钮前景分层。
+@interface AWEIMComponentViewController : UIViewController
+@end
+@interface IESIMInputViewController : AWEIMComponentViewController
+@property (nonatomic, strong) UIView *textView;
+- (void)refreshbackground:(BOOL)refresh;
+- (void)setHasBackgroundImage:(BOOL)hasImage;
+@end
+
 @interface AWECommentContainerViewController : UIViewController
 @end
 

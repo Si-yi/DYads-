@@ -7,7 +7,7 @@ package_version=${PACKAGE_VERSION:-$(awk -F': ' '$1 == "Version" { print $2; exi
 source_deb_glob=${SOURCE_DEB_GLOB:-packages/*arm64e*.deb}
 fallback_deb_glob=${FALLBACK_DEB_GLOB:-packages/*roothide*.deb}
 output_dir=${OUTPUT_DIR:-packages}
-tweak_dylib_name=${TWEAK_DYLIB_NAME:-DYYY.dylib}
+tweak_dylib_name=${TWEAK_DYLIB_NAME:-DYads-.dylib}
 required_arch=${REQUIRED_ARCH:-arm64e}
 
 if [[ -z "$package_version" ]]; then
@@ -60,12 +60,6 @@ dylib_paths=()
 while IFS= read -r dylib_path; do
     dylib_paths+=("$dylib_path")
 done < <(find "$extract_dir" -type f -name "$tweak_dylib_name" | sort)
-
-if [[ "${#dylib_paths[@]}" -eq 0 ]]; then
-    while IFS= read -r dylib_path; do
-        dylib_paths+=("$dylib_path")
-    done < <(find "$extract_dir" -type f -name '*.dylib' | sort)
-fi
 
 if [[ "${#dylib_paths[@]}" -ne 1 ]]; then
     echo "Expected exactly one dylib in ${source_deb}, found ${#dylib_paths[@]}:" >&2

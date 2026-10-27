@@ -15,13 +15,16 @@ on:
       - '*.cpp'
       - '*.s'
       - '*.S'
-      - 'DYYY.plist'
+      - 'DYads-.plist'
       - 'control'
       - 'Makefile'
       - 'Resources/**'
       - 'layout/**'
       - 'Tests/**'
       - '.github/scripts/test-im-history.sh'
+      - '.github/scripts/verify-tweak-identity.sh'
+      - '.github/scripts/test-tweak-identity.sh'
+      - '.github/scripts/extract-release-dylib.sh'
   workflow_dispatch:
     inputs:
       scheme:
@@ -91,6 +94,9 @@ jobs:
 
       - name: Test IM history reading
         run: bash .github/scripts/test-im-history.sh
+
+      - name: Test package identity verification
+        run: bash .github/scripts/test-tweak-identity.sh
 
       - name: Check cache
         run: |
@@ -208,12 +214,26 @@ jobs:
             fi
           done
 
+          .github/scripts/verify-tweak-identity.sh "${deb_files[@]}"
           printf 'Package artifact: %s\n' "${deb_files[@]}"
 
       - name: Extract arm64e dylib
         env:
           PACKAGE_VERSION: ${{ steps.package.outputs.version }}
         run: .github/scripts/extract-release-dylib.sh
+
+      - name: Verify DYads- dylib install identity
+        env:
+          PACKAGE_VERSION: ${{ steps.package.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          identity_file="${RUNNER_TEMP}/dyads-install-identity.txt"
+          xcrun otool -arch arm64e -D "packages/DYads-${PACKAGE_VERSION}.dylib" > "$identity_file"
+          if ! grep -Fq 'DYads-.dylib' "$identity_file" || grep -Fq 'DYYY.dylib' "$identity_file"; then
+            echo "Release dylib must use the DYads- install identity." >&2
+            exit 1
+          fi
 
       - name: Verify floating glass tab bar in release dylib
         env:
@@ -223,6 +243,10 @@ jobs:
           set -euo pipefail
           symbols_file="${RUNNER_TEMP}/dyyy-release-symbols.txt"
           xcrun nm -arch arm64e -gU "packages/DYads-${PACKAGE_VERSION}.dylib" > "$symbols_file"
+          if ! grep -Fq '_OBJC_CLASS_$_DYYYChatInputGlass' "$symbols_file"; then
+            echo "Chat input glass implementation is missing from the release dylib." >&2
+            exit 1
+          fi
           if ! grep -Fq '_OBJC_CLASS_$_DKGlassTabBarProxy' "$symbols_file"; then
             echo "Release dylib is missing the floating glass tab bar implementation." >&2
             exit 1

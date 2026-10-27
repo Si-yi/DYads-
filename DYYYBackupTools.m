@@ -1,4 +1,5 @@
 #import "DYYYBackupTools.h"
+#import "DYYYConstants.h"
 #import <objc/runtime.h>
 
 static NSString * const DYYYBackupFormat = @"com.dyyy.settings.backup";
@@ -279,7 +280,7 @@ void DYYYBackupExportSettings(UIViewController *presenter) {
     if (!presenter) return;
     NSError *error = nil;
     [[NSFileManager defaultManager] createDirectoryAtPath:DYYYBackupDirectory() withIntermediateDirectories:YES attributes:nil error:nil];
-    NSString *file = [NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"DYYY_Backup_%@.json", @((long long)(NSDate.date.timeIntervalSince1970))]];
+    NSString *file = [NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"%@_Backup_%@.json", DYYY_NAME, @((long long)(NSDate.date.timeIntervalSince1970))]];
     if (!DYYYBackupWritePayload(DYYYBackupCurrentPayload(), file, &error)) { DYYYBackupShowToast(presenter, error.localizedDescription ?: @"备份失败"); return; }
     UIDocumentPickerViewController *picker = [[UIDocumentPickerViewController alloc] initForExportingURLs:@[[NSURL fileURLWithPath:file]] asCopy:YES];
     DYYYBackupPresentPicker(presenter, picker, ^(__unused NSURL *url) { DYYYBackupShowToast(presenter, @"备份已导出"); });
@@ -305,7 +306,7 @@ void DYYYBackupUndoRestore(UIViewController *presenter) {
 
 void DYYYBackupResetSettings(UIViewController *presenter) {
     if (!presenter) return;
-    UIAlertController *confirm = [UIAlertController alertControllerWithTitle:@"恢复默认设置" message:@"将清除 DYYY 插件设置和自定义图标；操作前会创建撤销备份。" preferredStyle:UIAlertControllerStyleAlert];
+    UIAlertController *confirm = [UIAlertController alertControllerWithTitle:@"恢复默认设置" message:[NSString stringWithFormat:@"将清除 %@ 插件设置和自定义图标；操作前会创建撤销备份。", DYYY_NAME] preferredStyle:UIAlertControllerStyleAlert];
     [confirm addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
     [confirm addAction:[UIAlertAction actionWithTitle:@"恢复默认" style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
       NSDictionary *empty = @{ @"settings" : @{}, @"icons" : @{} };

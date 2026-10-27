@@ -7,6 +7,7 @@
 #import "DYYYFriendShareService.h"
 #import "DYYYAvatarRing.h"
 #import "DYYYDetailCaptionLayout.h"
+#import "DYYYChatInputGlass.h"
 #import "DKDebugCapture.h"
 #import "DKClassDump.h"
 #import "DKZipWriter.h"
@@ -30,7 +31,7 @@ static const void *DYYYDebugSharedButtonKey(void) {
 static BOOL DYYYDebugIsOverlay(UIView *view) {
     return [view isKindOfClass:UIButton.class] &&
         ([view.accessibilityIdentifier isEqualToString:DYYYDebugOverlayIdentifier] ||
-         [view.accessibilityLabel hasPrefix:@"DYYY 调试工具"]);
+         ([view.accessibilityLabel hasPrefix:[DYYY_NAME stringByAppendingString:@" 调试工具"]] || [view.accessibilityLabel hasPrefix:@"DYYY 调试工具"]));
 }
 
 static void DYYYDebugKeepOnlyOverlay(UIWindow *window, UIButton *keep) {
@@ -322,13 +323,14 @@ static NSDictionary *DYYYDebugMetadata(void) {
     for (uint32_t index = 0; index < _dyld_image_count(); index++) {
         const char *path = _dyld_get_image_name(index);
         NSString *name = path ? [NSString stringWithUTF8String:path] : nil;
-        if (name && ([name rangeOfString:@"DYYY" options:NSCaseInsensitiveSearch].location != NSNotFound ||
+        if (name && ([name rangeOfString:DYYY_NAME options:NSCaseInsensitiveSearch].location != NSNotFound ||
+                     [name rangeOfString:@"DYYY" options:NSCaseInsensitiveSearch].location != NSNotFound ||
                      [name rangeOfString:@"AutoMessage" options:NSCaseInsensitiveSearch].location != NSNotFound ||
                      [name rangeOfString:@"DYKiller" options:NSCaseInsensitiveSearch].location != NSNotFound)) [pluginImages addObject:name];
     }
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
     return @{
-        @"plugin": @"DYYY",
+        @"plugin": DYYY_NAME,
         @"pluginVersion": DYYY_VERSION,
         @"generatedAt": [[NSISO8601DateFormatter new] stringFromDate:NSDate.date],
         @"bundleIdentifier": NSBundle.mainBundle.bundleIdentifier ?: @"",
@@ -342,8 +344,10 @@ static NSDictionary *DYYYDebugMetadata(void) {
         @"panelBlur": [DYYYPanelBlur diagnostics],
         @"avatarRing": [DYYYAvatarRing diagnostics],
         @"detailCaption": [DYYYDetailCaptionLayout diagnostics],
+        @"chatInputGlass": [DYYYChatInputGlass diagnostics],
         @"loadedPluginImages": pluginImages,
         @"inputSettings": @{
+            @"DYYYEnableFloatingChatInput": [defaults objectForKey:@"DYYYEnableFloatingChatInput"] ?: NSNull.null,
             @"DYYYEnableFloatingCommentInput": [defaults objectForKey:@"DYYYEnableFloatingCommentInput"] ?: NSNull.null,
             @"DYYYEnableFullScreen": [defaults objectForKey:@"DYYYEnableFullScreen"] ?: NSNull.null,
             @"DYYYHideAvatarColorRing": [defaults objectForKey:@"DYYYHideAvatarColorRing"] ?: NSNull.null,
@@ -376,7 +380,7 @@ static NSData *DYYYDebugLightScreenshot(NSData *png) {
 static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *window, BOOL detailed,
                                        DKDebugExportContext *context, NSDictionary *capturedMetadata) {
     if (!presenter || !window || !context || !capturedMetadata) return;
-    NSString *base = [NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"DYYY_Debug_%@", NSUUID.UUID.UUIDString]];
+    NSString *base = [NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"%@_Debug_%@", DYYY_NAME, NSUUID.UUID.UUIDString]];
     NSString *zipPath = [base stringByAppendingPathExtension:@"zip"];
     NSFileManager *manager = NSFileManager.defaultManager;
     NSError *fileError = nil;
@@ -559,7 +563,7 @@ static void DYYYDebugShowActions(UIWindow *window) {
     }
     [items addObject:[DYYYDebugMenuItem itemWithTitle:@"导出当前页（轻量）" handler:^{ DYYYDebugExportCurrentPage(presenter, window, NO, context, capturedMetadata); }]];
     [items addObject:[DYYYDebugMenuItem itemWithTitle:@"完整导出（含图层和类头文件）" handler:^{ DYYYDebugExportCurrentPage(presenter, window, YES, context, capturedMetadata); }]];
-    [DYYYDebugMenuView presentFromController:presenter window:window title:@"DYYY 调试工具" message:message items:items];
+    [DYYYDebugMenuView presentFromController:presenter window:window title:[DYYY_NAME stringByAppendingString:@" 调试工具"] message:message items:items];
 }
 
 static void DYYYDebugInstallOnWindow(UIWindow *window) {
@@ -569,7 +573,7 @@ static void DYYYDebugInstallOnWindow(UIWindow *window) {
         DYYYDebugKeepOnlyOverlay(window, existing);
         UIColor *color = DYYYDebugRecording ? UIColor.systemRedColor : UIColor.whiteColor;
         if (![existing.tintColor isEqual:color]) existing.tintColor = color;
-        NSString *label = DYYYDebugRecording ? @"DYYY 调试工具：正在记录" : @"DYYY 调试工具";
+        NSString *label = DYYYDebugRecording ? [DYYY_NAME stringByAppendingString:@" 调试工具：正在记录"] : [DYYY_NAME stringByAppendingString:@" 调试工具"];
         if (![existing.accessibilityLabel isEqualToString:label]) existing.accessibilityLabel = label;
         return;
     }
@@ -588,7 +592,7 @@ static void DYYYDebugInstallOnWindow(UIWindow *window) {
     UIImage *image = [UIImage systemImageNamed:@"wrench.and.screwdriver"] ?: [UIImage systemImageNamed:@"wrench"];
     [button setImage:image forState:UIControlStateNormal];
     button.tintColor = DYYYDebugRecording ? UIColor.systemRedColor : UIColor.whiteColor;
-    button.accessibilityLabel = @"DYYY 调试工具";
+    button.accessibilityLabel = [DYYY_NAME stringByAppendingString:@" 调试工具"];
     DYYYDebugOverlayDragR2 *drag = [DYYYDebugOverlayDragR2 new];
     drag.window = window;
     drag.button = button;
