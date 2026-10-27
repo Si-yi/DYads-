@@ -1521,7 +1521,16 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 - (void)setVideoControllerPlaybackRate:(double)arg0;
 @end
 
+@interface RichContentContainerViewController : UIViewController
+- (void)updateShrinkState:(BOOL)shrink insets:(UIEdgeInsets)insets animated:(BOOL)animated;
+- (void)updateShrinkState:(BOOL)shrink insets:(UIEdgeInsets)insets animated:(BOOL)animated animationDuration:(double)duration;
+@end
+
 @interface AWEDPlayerViewController_Merge : UIViewController
+@property(nonatomic, strong) UIView *gradientBackgroundView;
+- (void)videoDidShrink;
+- (void)videoDidMagnify;
+- (void)willDisplay;
 @property(nonatomic, strong) AWEAwemeModel *model;
 - (void)player:(id)player updatePlayTime:(double)time canPlayTime:(double)buffered totalTime:(double)total;
 - (void)playerWillStartNextLoop:(id)player;

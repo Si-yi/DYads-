@@ -243,6 +243,10 @@ jobs:
           set -euo pipefail
           symbols_file="${RUNNER_TEMP}/dyyy-release-symbols.txt"
           xcrun nm -arch arm64e -gU "packages/DYads-${PACKAGE_VERSION}.dylib" > "$symbols_file"
+          if ! grep -Fq '_OBJC_CLASS_$_DYYYCommentVideoLayout' "$symbols_file"; then
+            echo "Comment video layout implementation is missing from the release dylib." >&2
+            exit 1
+          fi
           if ! grep -Fq '_OBJC_CLASS_$_DYYYChatInputList' "$symbols_file"; then
             echo "Chat message viewport extension is missing from the release dylib." >&2
             exit 1

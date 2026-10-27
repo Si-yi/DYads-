@@ -29,6 +29,7 @@
 #import "DYYYChatVideoLayout.h"
 #import "DYYYCollectionRows.h"
 #import "DYYYDetailCaptionLayout.h"
+#import "DYYYCommentVideoLayout.h"
 
 extern "C" void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed);
 #import "DYYYFloatClearButton.h"
@@ -12561,6 +12562,12 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
     Class PlayVCClass1 = NSClassFromString(@"AWEAwemePlayVideoViewController");
     Class PlayVCClass2 = NSClassFromString(@"AWEDPlayerFeedPlayerViewController");
     Class PlayVCClass3 = NSClassFromString(@"AWEDPlayerViewController_Merge");
+
+    CGRect commentFrame = [DYYYCommentVideoLayout adjustedFrame:frame view:self];
+    if (!CGRectEqualToRect(commentFrame, frame)) {
+        %orig(commentFrame);
+        return;
+    }
 
     CGRect chatFrame = [DYYYChatVideoLayout adjustedFrame:frame view:self controller:vc];
     if (!CGRectEqualToRect(chatFrame, frame)) {

@@ -9,6 +9,7 @@
 #import "DYYYDetailCaptionLayout.h"
 #import "DYYYChatInputGlass.h"
 #import "DYYYChatInputList.h"
+#import "DYYYCommentVideoLayout.h"
 #import "DKDebugCapture.h"
 #import "DKClassDump.h"
 #import "DKZipWriter.h"
@@ -347,6 +348,7 @@ static NSDictionary *DYYYDebugMetadata(void) {
         @"detailCaption": [DYYYDetailCaptionLayout diagnostics],
         @"chatInputGlass": [DYYYChatInputGlass diagnostics],
         @"chatInputList": [DYYYChatInputList diagnostics],
+        @"commentVideoLayout": [DYYYCommentVideoLayout diagnostics],
         @"loadedPluginImages": pluginImages,
         @"inputSettings": @{
             @"DYYYEnableFloatingChatInput": [defaults objectForKey:@"DYYYEnableFloatingChatInput"] ?: NSNull.null,
