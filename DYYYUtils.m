@@ -868,6 +868,16 @@ static void DYYYApplyDisplayLocationToLabel(UILabel *label, NSString *displayLoc
     return topViewController;
 }
 
++ (BOOL)isCommentInputView:(UIView *)view {
+    for (NSUInteger depth = 0; view && depth < 16; depth++, view = view.superview) {
+        NSString *name = NSStringFromClass(view.class);
+        if ([name isEqualToString:@"AWECommentInputBackgroundView"] ||
+            [name isEqualToString:@"AWECommentInputViewSwiftImpl.CommentInputContainerView"] ||
+            [name isEqualToString:@"AFDMentionFeedIMBottomBarView"]) return YES;
+    }
+    return NO;
+}
+
 + (UIViewController *)firstAvailableViewControllerFromView:(UIView *)view {
     UIResponder *responder = view;
     while ((responder = [responder nextResponder])) {

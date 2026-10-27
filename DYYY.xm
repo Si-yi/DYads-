@@ -11411,6 +11411,7 @@ static char kDYYYCompactInputAppearanceKey;
 static char kDYYYCompactMiniEmoticonAppearanceKey;
 static char kDYYYCompactInputGeometryKey;
 static char kDYYYCompactInputNativeHiddenKey;
+static char kDYYYCommentInputBackgroundTransformKey;
 static char kDYYYCompactInputTransformKey;
 static char kDYYYCompactInputLiftKey;
 static char kDYYYCompactInputClipKey;
@@ -11540,22 +11541,13 @@ static void DYYYUpdateDetailInputTransparency(UIView *root) {
             if (parent.hidden || parent.alpha <= 0.01) { ancestorsVisible = NO; break; }
         }
         CGRect screenRect = window ? [root convertRect:root.bounds toView:window] : CGRectZero;
-        BOOL atBottom = window && CGRectGetMinY(screenRect) > CGRectGetHeight(window.bounds) * 0.65 &&
-            CGRectGetHeight(root.bounds) > 0 && CGRectGetHeight(root.bounds) < CGRectGetHeight(window.bounds) * 0.2;
         BOOL visibleInput = window && ancestorsVisible && !container.hidden && container.alpha > 0.01 &&
             CGRectIntersectsRect(screenRect, window.bounds);
         BOOL floating = DYYYGetBool(@"DYYYEnableFloatingCommentInput") && visibleInput && container && middle &&
             CGRectGetHeight(middle.bounds) >= 36 && CGRectGetWidth(middle.bounds) > 160;
         BOOL expanded = (editing && !dyyyCompactKeyboardDismissed) || CGRectGetHeight(middle.bounds) > 64 || CGRectGetHeight(container.bounds) > 120;
-        BOOL detail = NO;
-        Class detailClass = NSClassFromString(@"AWEAwemeDetailTableViewController");
-        for (UIView *host = root; host && !detail; host = host.superview) {
-            UIViewController *controller = [DYYYUtils firstAvailableViewControllerFromView:host];
-            for (NSUInteger n = 0; controller && n < 12; n++, controller = controller.parentViewController) {
-                if (detailClass && [controller isKindOfClass:detailClass]) { detail = YES; break; }
-            }
-        }
-        BOOL clearBackground = floating || (DYYYGetBool(@"DYYYEnableFullScreen") && detail && atBottom && !editing);
+        // 输入底色只由悬浮输入开关接管；全屏不能在关闭后继续清底。
+        BOOL clearBackground = floating;
         UIUserInterfaceStyle commentStyle = DYYYCommentInputTheme(container);
         if (container && !DYYYGetBool(@"DYYYEnableFloatingCommentInput")) {
             NSNumber *originalStyle = objc_getAssociatedObject(container, &kDYYYCommentInputOriginalThemeKey);
@@ -12276,17 +12268,29 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
     return NO;
 }
 - (void)layoutSubviews {
+    if (NSThread.isMainThread) {
+        NSDictionary *saved = objc_getAssociatedObject(self, &kDYYYCommentInputBackgroundTransformKey);
+        if (saved && CGAffineTransformEqualToTransform(self.transform, [saved[@"applied"] CGAffineTransformValue]))
+            self.transform = [saved[@"base"] CGAffineTransformValue];
+        objc_setAssociatedObject(self, &kDYYYCommentInputBackgroundTransformKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
     %orig;
+    if (!NSThread.isMainThread) return;
 
     if (DYYYGetBool(@"DYYYHideComment")) {
         [self removeFromSuperview];
         return;
     }
 
-    CGAffineTransform newTransform = CGAffineTransformMakeTranslation(0, originalTabBarHeight - gCurrentTabBarHeight);
-
-    if (!CGAffineTransformEqualToTransform(self.transform, newTransform)) {
-        self.transform = newTransform;
+    if (DYYYGetBool(@"DYYYEnableFloatingCommentInput")) {
+        CGAffineTransform base = self.transform, applied = base;
+        applied.ty += originalTabBarHeight - gCurrentTabBarHeight;
+        if (!CGAffineTransformEqualToTransform(base, applied)) {
+            objc_setAssociatedObject(self, &kDYYYCommentInputBackgroundTransformKey,
+                @{ @"base": [NSValue valueWithCGAffineTransform:base], @"applied": [NSValue valueWithCGAffineTransform:applied] },
+                OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            self.transform = applied;
+        }
     }
     DYYYUpdateDetailInputTransparency(self);
 }
@@ -12517,6 +12521,10 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
         UIViewController *vc = [DYYYUtils firstAvailableViewControllerFromView:self];
         if ([vc isKindOfClass:%c(AWEAwemeDetailTableViewController)] ||
             [vc isKindOfClass:%c(AWEAwemeDetailCellViewController)]) {
+            if (!DYYYGetBool(@"DYYYEnableFloatingCommentInput") && [DYYYUtils isCommentInputView:self]) {
+                %orig(backgroundColor);
+                return;
+            }
             %orig([UIColor clearColor]);
             return;
         }
@@ -12533,7 +12541,8 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
             UIViewController *vc = [DYYYUtils firstAvailableViewControllerFromView:self];
             if ([vc isKindOfClass:NSClassFromString(@"AWEMixVideoPanelDetailTableViewController")] || [vc isKindOfClass:NSClassFromString(@"AWECommentInputViewController")] ||
                 [vc isKindOfClass:NSClassFromString(@"AWEAwemeDetailTableViewController")]) {
-                self.backgroundColor = [UIColor clearColor];
+                if (DYYYGetBool(@"DYYYEnableFloatingCommentInput") || ![DYYYUtils isCommentInputView:self])
+                    self.backgroundColor = [UIColor clearColor];
             }
         }
     }
@@ -12541,6 +12550,7 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
     if (DYYYGetBool(@"DYYYEnableFullScreen") || DYYYGetBool(@"DYYYEnableCommentBlur")) {
         UIViewController *vc = [DYYYUtils firstAvailableViewControllerFromView:self];
         if ([vc isKindOfClass:%c(AWEPlayInteractionViewController)]) {
+            if (!DYYYGetBool(@"DYYYEnableFloatingCommentInput") && [DYYYUtils isCommentInputView:self]) return;
             for (UIView *subview in self.subviews) {
                 if ([subview isKindOfClass:[UIView class]] && subview.backgroundColor && CGColorEqualToColor(subview.backgroundColor.CGColor, [UIColor blackColor].CGColor)) {
                     subview.hidden = YES;

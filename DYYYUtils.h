@@ -50,6 +50,8 @@ NS_ASSUME_NONNULL_BEGIN
 
 /* 在视图控制器层级中查找指定类的控制器 */
 + (UIViewController *)firstAvailableViewControllerFromView:(UIView *)view;
+// 已确认的评论输入外壳及其子树，用于隔离输入样式与独立全屏处理。
++ (BOOL)isCommentInputView:(UIView *)view;
 + (UIViewController *)findViewControllerOfClass:(Class)targetClass inViewController:(UIViewController *)vc;
 
 + (UIResponder *)findAncestorResponderOfClass:(Class)targetClass fromView:(UIView *)view;
