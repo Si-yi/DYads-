@@ -11410,6 +11410,7 @@ static char kDYYYCompactInputChromeKey;
 static char kDYYYCompactInputAppearanceKey;
 static char kDYYYCompactMiniEmoticonAppearanceKey;
 static char kDYYYCompactInputGeometryKey;
+static char kDYYYCompactInputNativeHiddenKey;
 static char kDYYYCompactInputTransformKey;
 static char kDYYYCompactInputLiftKey;
 static char kDYYYCompactInputClipKey;
@@ -13951,6 +13952,15 @@ static Class TagViewClass = nil;
 }
 - (void)layoutSubviews {
     UIView *view = (UIView *)self;
+    // 原生布局前撤回我们写入的显隐；不缓存可能被 Swift 替换或释放的子视图指针。
+    if (NSThread.isMainThread) {
+        for (UIView *child in view.subviews) {
+            NSNumber *hidden = objc_getAssociatedObject(child, &kDYYYCompactInputNativeHiddenKey);
+            if (!hidden) continue;
+            objc_setAssociatedObject(child, &kDYYYCompactInputNativeHiddenKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            child.hidden = hidden.boolValue;
+        }
+    }
     NSDictionary *state = NSThread.isMainThread ? objc_getAssociatedObject(view, &kDYYYCompactInputLiftKey) : nil;
     if (state) {
         if (CGAffineTransformEqualToTransform(view.transform, [state[@"applied"] CGAffineTransformValue]))
@@ -13958,6 +13968,7 @@ static Class TagViewClass = nil;
         objc_setAssociatedObject(view, &kDYYYCompactInputLiftKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
     %orig;
+    if (!NSThread.isMainThread) return;
     UIViewController *parentVC = nil;
     if ([self respondsToSelector:@selector(viewController)]) {
         id viewController = [self performSelector:@selector(viewController)];
@@ -13966,20 +13977,16 @@ static Class TagViewClass = nil;
         }
     }
 
-    if (parentVC && ([parentVC isKindOfClass:%c(AWEAwemeDetailTableViewController)] || [parentVC isKindOfClass:%c(AWEAwemeDetailCellViewController)])) {
-        static char kDYCommentHideCacheKey;
-        UIView *target = objc_getAssociatedObject(self, &kDYCommentHideCacheKey);
-        if (!target) {
-            for (UIView *subview in [self subviews]) {
-                if ([subview class] == [UIView class]) {
-                    target = subview;
-                    objc_setAssociatedObject(self, &kDYCommentHideCacheKey, target, OBJC_ASSOCIATION_ASSIGN);
-                    break;
-                }
+    if (DYYYGetBool(@"DYYYEnableFloatingCommentInput") && parentVC &&
+        ([parentVC isKindOfClass:%c(AWEAwemeDetailTableViewController)] || [parentVC isKindOfClass:%c(AWEAwemeDetailCellViewController)])) {
+        for (UIView *child in view.subviews) {
+            if (child.class != UIView.class) continue;
+            BOOL hidden = CGRectGetHeight(view.frame) == gCurrentTabBarHeight;
+            if (child.hidden != hidden) {
+                objc_setAssociatedObject(child, &kDYYYCompactInputNativeHiddenKey, @(child.hidden), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                child.hidden = hidden;
             }
-        }
-        if (target) {
-            target.hidden = ([(UIView *)self frame].size.height == gCurrentTabBarHeight);
+            break;
         }
     }
     UIView *background = (UIView *)self;

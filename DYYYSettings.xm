@@ -1825,16 +1825,14 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
           [glassTabBarItems addObject:item];
       }
 
+      [glassTabBarItems addObject:[DYYYSettingsHelper createSettingItem:@{ @"identifier": @"DYYYEnableFloatingCommentInput", @"title": @"悬浮评论输入栏", @"subTitle": @"评论区及作品详情页使用紧凑玻璃输入胶囊", @"detail": @"", @"cellType": @6, @"imageName": @"ic_comment_outlined_20" }]];
+
       NSMutableArray *sections = [NSMutableArray array];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"透明度设置" items:transparencyItems]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"缩放与大小" items:scaleItems]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"标题自定义" items:titleItems]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"底栏自定义" items:glassTabBarItems]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"图标自定义" items:iconItems]];
-      // 创建并组织所有section
-      [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"输入栏" items:@[
-          [DYYYSettingsHelper createSettingItem:@{ @"identifier": @"DYYYEnableFloatingCommentInput", @"title": @"悬浮评论输入栏", @"subTitle": @"评论区及作品详情页使用紧凑玻璃输入胶囊", @"detail": @"", @"cellType": @6, @"imageName": @"ic_comment_outlined_20" }]
-      ]]];
       DYYYRegisterSearchSections(@"界面设置", sections);
       if (DYYYBuildingSettingsSearchIndex) {
           return;
