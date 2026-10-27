@@ -1303,7 +1303,7 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
             @"title" : @"屏蔽展开视频缩放",
             @"subTitle" : @"展开评论区时，视频保持原尺寸，评论面板覆盖在画面上",
             @"detail" : @"",
-            @"cellType" : @6,
+            @"cellType" : @37,
             @"imageName" : @"ic_fullscreen_outlined_16"}
       ];
 
