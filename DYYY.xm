@@ -219,6 +219,7 @@ static UIImage *DYYYLoadCustomImage(NSString *fileName, CGSize targetSize) {
 // 参考 DYK：在详情页计算行高前撑高视频表，HUD 保留原生高度。
 static char kDYYYDetailNativeHeightKey;
 static char kDYYYDetailBottomReserveKey;
+static char kDYYYDetailPreparingKey;
 
 static CGRect DYYYDetailTableFrame(UITableView *table, CGRect frame, CGFloat target) {
     if (!NSThread.isMainThread || !DYYYGetBool(@"DYYYEnableFullScreen")) return frame;
@@ -232,7 +233,8 @@ static CGRect DYYYDetailTableFrame(UITableView *table, CGRect frame, CGFloat tar
 }
 
 static void DYYYPrepareDetailTable(AWEAwemeDetailTableViewController *controller, UITableView *table) {
-    if (!NSThread.isMainThread || !table || !controller.isViewLoaded) return;
+    if (!NSThread.isMainThread || !table || !controller.isViewLoaded ||
+        objc_getAssociatedObject(table, &kDYYYDetailPreparingKey)) return;
     UIView *root = controller.viewIfLoaded;
     if (table.superview && ![table isDescendantOfView:root]) return;
     if (root.window && root.window.windowLevel != UIWindowLevelNormal) return;
@@ -246,7 +248,11 @@ static void DYYYPrepareDetailTable(AWEAwemeDetailTableViewController *controller
     } else {
         frame = DYYYDetailTableFrame(table, frame, target);
     }
-    if (!CGRectEqualToRect(frame, table.frame)) table.frame = frame;
+    if (!CGRectEqualToRect(frame, table.frame)) {
+        objc_setAssociatedObject(table, &kDYYYDetailPreparingKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        @try { table.frame = frame; }
+        @finally { objc_setAssociatedObject(table, &kDYYYDetailPreparingKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
+    }
 }
 
 static double DYYYDetailPageHeight(UITableView *table, double native) {
@@ -11399,6 +11405,7 @@ static Class tabBarButtonClass = nil;
 // 39.5.0：评论面板的输入容器没有 AWECommentInputBackgroundView 外壳。
 // 保留整条原生输入区的 82 点（含安全区），只把可见胶囊绘制成 36 点高。
 static char kDYYYCompactInputBusyKey;
+static char kDYYYMentionInputNativeDepthKey;
 static char kDYYYCompactInputChromeKey;
 static char kDYYYCompactInputAppearanceKey;
 static char kDYYYCompactMiniEmoticonAppearanceKey;
@@ -12050,13 +12057,13 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
 %new
 - (void)dyyy_syncFloatingBackground {
     if (!NSThread.isMainThread || objc_getAssociatedObject(self, &kDYYYCompactInputBusyKey)) return;
-    if (!self.window || !DYYYGetBool(@"DYYYEnableFloatingCommentInput") ||
-        CGRectGetWidth(self.bounds) < 160 || CGRectGetHeight(self.bounds) <= 0 || CGRectGetHeight(self.bounds) > 80) {
-        [self dyyy_restoreFloatingBackground];
-        return;
-    }
     objc_setAssociatedObject(self, &kDYYYCompactInputBusyKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     @try {
+        if (!self.window || !DYYYGetBool(@"DYYYEnableFloatingCommentInput") ||
+            CGRectGetWidth(self.bounds) < 160 || CGRectGetHeight(self.bounds) <= 0 || CGRectGetHeight(self.bounds) > 80) {
+            [self dyyy_restoreFloatingBackground];
+            return;
+        }
         NSDictionary *saved = objc_getAssociatedObject(self, &kDYYYCompactInputAppearanceKey);
         if (!saved || (self.backgroundColor && CGColorGetAlpha(self.backgroundColor.CGColor) > 0)) {
             saved = @{ @"color": self.backgroundColor ?: NSNull.null,
@@ -12127,36 +12134,75 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
         objc_setAssociatedObject(self, &kDYYYCompactInputBusyKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
 }
-- (void)setFrame:(CGRect)frame {
-    if (NSThread.isMainThread && !objc_getAssociatedObject(self, &kDYYYCompactInputBusyKey)) {
-        CGRect previous = self.frame;
+%new
+- (BOOL)dyyy_beginFloatingNativeUpdate {
+    if (!NSThread.isMainThread) return NO;
+    NSUInteger depth = [objc_getAssociatedObject(self, &kDYYYMentionInputNativeDepthKey) unsignedIntegerValue];
+    if (!depth && objc_getAssociatedObject(self, &kDYYYCompactInputBusyKey)) return NO;
+    objc_setAssociatedObject(self, &kDYYYMentionInputNativeDepthKey, @(depth + 1), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if (!depth) {
+        objc_setAssociatedObject(self, &kDYYYCompactInputBusyKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         [self dyyy_restoreFloatingPosition];
-        // 兼容原生读取已显示的 frame 再改尺寸，避免把平移量写回原始坐标。
-        if (CGPointEqualToPoint(frame.origin, previous.origin)) {
+    }
+    return YES;
+}
+%new
+- (void)dyyy_endFloatingNativeUpdate:(BOOL)synchronize {
+    NSUInteger depth = [objc_getAssociatedObject(self, &kDYYYMentionInputNativeDepthKey) unsignedIntegerValue];
+    if (!depth) return;
+    objc_setAssociatedObject(self, &kDYYYMentionInputNativeDepthKey, depth > 1 ? @(depth - 1) : nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if (depth == 1) {
+        objc_setAssociatedObject(self, &kDYYYCompactInputBusyKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        if (synchronize) [self dyyy_syncFloatingBackground];
+        else [self setNeedsLayout];
+    }
+}
+- (void)setFrame:(CGRect)frame {
+    CGRect previous = self.frame;
+    BOOL managed = [self dyyy_beginFloatingNativeUpdate];
+    @try {
+        if (managed && CGPointEqualToPoint(frame.origin, previous.origin)) {
             frame.origin.x += self.frame.origin.x - previous.origin.x;
             frame.origin.y += self.frame.origin.y - previous.origin.y;
         }
+        %orig(frame);
+    } @finally {
+        // setFrame 可能来自原生构造/转场/销毁；此处不创建或重新挂载玻璃。
+        if (managed) [self dyyy_endFloatingNativeUpdate:NO];
     }
-    %orig(frame);
-    [self dyyy_syncFloatingBackground];
 }
 - (void)layoutSubviews {
-    [self dyyy_restoreFloatingPosition];
-    %orig;
-    [self dyyy_syncFloatingBackground];
+    BOOL managed = [self dyyy_beginFloatingNativeUpdate];
+    @try {
+        %orig;
+    } @finally {
+        if (managed) [self dyyy_endFloatingNativeUpdate:YES];
+    }
 }
 - (void)didMoveToWindow {
-    %orig;
-    [self dyyy_syncFloatingBackground];
+    BOOL managed = [self dyyy_beginFloatingNativeUpdate];
+    @try {
+        %orig;
+    } @finally {
+        if (managed) [self dyyy_endFloatingNativeUpdate:YES];
+    }
 }
 - (void)traitCollectionDidChange:(UITraitCollection *)previous {
-    %orig(previous);
-    [self dyyy_syncFloatingBackground];
+    BOOL managed = [self dyyy_beginFloatingNativeUpdate];
+    @try {
+        %orig(previous);
+    } @finally {
+        if (managed) [self dyyy_endFloatingNativeUpdate:YES];
+    }
 }
 - (void)updateWithAweme:(id)model {
-    [self dyyy_restoreFloatingBackground];
-    %orig(model);
-    [self dyyy_syncFloatingBackground];
+    BOOL managed = [self dyyy_beginFloatingNativeUpdate];
+    @try {
+        if (managed) [self dyyy_restoreFloatingBackground];
+        %orig(model);
+    } @finally {
+        if (managed) [self dyyy_endFloatingNativeUpdate:YES];
+    }
 }
 %end
 

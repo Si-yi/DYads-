@@ -2325,6 +2325,8 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @end
 
 @interface AFDMentionFeedIMBottomBarView : UIView
+- (BOOL)dyyy_beginFloatingNativeUpdate;
+- (void)dyyy_endFloatingNativeUpdate:(BOOL)synchronize;
 - (void)dyyy_restoreFloatingPosition;
 - (void)updateWithAweme:(id)model;
 - (void)dyyy_restoreFloatingBackground;
