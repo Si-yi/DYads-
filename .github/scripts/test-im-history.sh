@@ -30,3 +30,6 @@ xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
 xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
     DYYYDetailCaptionMetrics.m Tests/DYYYDetailCaptionMetricsTests.m -o "$test_dir/detail-caption-tests"
 "$test_dir/detail-caption-tests"
+xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
+    DYYYChatInputMetrics.m Tests/DYYYChatInputMetricsTests.m -o "$test_dir/chat-input-tests"
+"$test_dir/chat-input-tests"

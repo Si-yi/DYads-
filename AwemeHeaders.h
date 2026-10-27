@@ -533,8 +533,31 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @end
 @interface IESIMInputViewController : AWEIMComponentViewController
 @property (nonatomic, strong) UIView *textView;
+@property (nonatomic, readonly) long long currentInputType;
 - (void)refreshbackground:(BOOL)refresh;
 - (void)setHasBackgroundImage:(BOOL)hasImage;
+@end
+
+// 参照 DYKiller 最新 ChatInput 原生组件入口；列表快照计算前必须撤回悬浮延伸。
+@interface AWEIMComponentContext : NSObject
+@property (nonatomic, weak) UIViewController *hostViewController;
+@end
+@interface AWEIMComponentBase : NSObject
+@property (nonatomic, weak) AWEIMComponentContext *context;
+@end
+@interface AWEIMConversationViewController : AWEIMComponentViewController
+@end
+@interface AWEIMMessageBaseViewController : AWEIMConversationViewController
+@property (nonatomic, strong) UIViewController *messageListVC;
+@end
+@interface AWEIMMessageListViewController : UIViewController
+@property (nonatomic, strong) UITableView *tableView;
+@end
+@interface AWEIMMessageListLayoutComponent : AWEIMComponentBase
+- (void)p_layoutWithAnimation:(BOOL)animated coordinate:(id)coordinate;
+- (void)updatePageLayout:(id)layoutInfo;
+@end
+@interface AWEIMBottomNewMessageTipsImageView : UIView
 @end
 
 @interface AWECommentContainerViewController : UIViewController

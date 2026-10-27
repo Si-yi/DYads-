@@ -8,6 +8,7 @@
 #import "DYYYAvatarRing.h"
 #import "DYYYDetailCaptionLayout.h"
 #import "DYYYChatInputGlass.h"
+#import "DYYYChatInputList.h"
 #import "DKDebugCapture.h"
 #import "DKClassDump.h"
 #import "DKZipWriter.h"
@@ -345,6 +346,7 @@ static NSDictionary *DYYYDebugMetadata(void) {
         @"avatarRing": [DYYYAvatarRing diagnostics],
         @"detailCaption": [DYYYDetailCaptionLayout diagnostics],
         @"chatInputGlass": [DYYYChatInputGlass diagnostics],
+        @"chatInputList": [DYYYChatInputList diagnostics],
         @"loadedPluginImages": pluginImages,
         @"inputSettings": @{
             @"DYYYEnableFloatingChatInput": [defaults objectForKey:@"DYYYEnableFloatingChatInput"] ?: NSNull.null,

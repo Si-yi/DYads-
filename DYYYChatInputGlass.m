@@ -1,4 +1,5 @@
 #import "DYYYChatInputGlass.h"
+#import "DYYYChatInputList.h"
 #import "DYYYUtils.h"
 #import "AwemeHeaders.h"
 #import <objc/runtime.h>
@@ -64,6 +65,8 @@ static char kDYYYChatGlassStateKey;
         if (!view.backgroundColor || CGColorGetAlpha(view.backgroundColor.CGColor) == 0)
             view.backgroundColor = saved[@"color"] == NSNull.null ? nil : saved[@"color"];
         if (!view.opaque) view.opaque = [saved[@"opaque"] boolValue];
+        if ([view isKindOfClass:UIVisualEffectView.class] && !((UIVisualEffectView *)view).effect && saved[@"effect"])
+            ((UIVisualEffectView *)view).effect = saved[@"effect"];
     }
     [state.backgrounds removeAllObjects];
     state.active = NO;
@@ -100,6 +103,24 @@ static char kDYYYChatGlassStateKey;
             fabs(CGRectGetWidth(rect) - CGRectGetWidth(root.bounds)) <= 1 &&
             CGRectGetHeight(rect) > 0 && CGRectGetHeight(rect) <= 64)
             [self clearBackground:view state:state];
+    }
+}
+// 参考 DYKiller DKChatInputGlass.xm，许可同 DYYYChatInputList.m。
+// 仅移除输入行以下已确认的原生动态模糊底板，不能把键盘/附件面板清成透明。
++ (void)clearNativeBottomBlur:(IESIMInputViewController *)controller state:(DYYYChatGlassState *)state {
+    UIView *root = controller.viewIfLoaded;
+    for (UIView *view in root.superview.subviews) {
+        if (![view isKindOfClass:UIVisualEffectView.class] || CGRectGetMinY(view.frame) < CGRectGetMinY(root.frame) ||
+            CGRectGetHeight(view.bounds) > 128 || fabs(CGRectGetWidth(view.bounds) - CGRectGetWidth(root.bounds)) > 1) continue;
+        UIVisualEffectView *blur = (id)view;
+        UIVisualEffect *effect = blur.effect;
+        UIVisualEffect *native = effect ?: [state.backgrounds objectForKey:view][@"effect"];
+        if (![NSStringFromClass(native.class) isEqualToString:@"AWEUIDynamicBlurEffect"]) continue;
+        [self clearBackground:view state:state];
+        NSMutableDictionary *saved = [[state.backgrounds objectForKey:view] mutableCopy];
+        saved[@"effect"] = native;
+        [state.backgrounds setObject:saved forKey:view];
+        if (effect) blur.effect = nil;
     }
 }
 + (BOOL)isChatController:(UIViewController *)controller {
@@ -192,6 +213,7 @@ static char kDYYYChatGlassStateKey;
         state.appliedRadius = radius;
         if (state.glass.layer.cornerRadius != radius) state.glass.layer.cornerRadius = radius;
         [self clearInputSurroundings:controller state:state];
+        [self clearNativeBottomBlur:controller state:state];
         // 只屏蔽已确认背景槽内的绘制；不改 native hidden/alpha/命中或任何输入内容。
         for (UIView *paint in slot.subviews) {
             if (paint == state.glass) continue;
@@ -217,6 +239,7 @@ static char kDYYYChatGlassStateKey;
     if (!NSThread.isMainThread || !controller) return;
     DYYYChatGlassState *state = [self state:controller create:[NSUserDefaults.standardUserDefaults boolForKey:@"DYYYEnableFloatingChatInput"]];
     [UIView performWithoutAnimation:^{ [self applyState:state]; }];
+    if (!state.depth && !state.busy) [DYYYChatInputList synchronizeInputController:controller active:state.active];
 }
 + (void)beginUpdate:(UIViewController *)controller {
     if (!NSThread.isMainThread) return;
@@ -239,6 +262,7 @@ static char kDYYYChatGlassStateKey;
     if (!state || state.busy) return;
     state.busy = YES;
     @try { [self restoreState:state]; } @finally { state.busy = NO; }
+    [DYYYChatInputList synchronizeInputController:controller active:NO];
 }
 + (NSDictionary *)diagnostics {
     if (!NSThread.isMainThread) return @{};
