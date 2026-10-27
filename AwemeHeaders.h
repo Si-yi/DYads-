@@ -538,6 +538,10 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 - (void)setHasBackgroundImage:(BOOL)hasImage;
 @end
 
+@interface IESIMGrowingTextView : UIView
+@property (nonatomic, strong) UITextView *internalTextView;
+@end
+
 // 参照 DYKiller 最新 ChatInput 原生组件入口；列表快照计算前必须撤回悬浮延伸。
 @interface AWEIMComponentContext : NSObject
 @property (nonatomic, weak) UIViewController *hostViewController;

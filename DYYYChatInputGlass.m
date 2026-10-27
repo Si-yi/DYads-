@@ -95,6 +95,12 @@ static char kDYYYChatGlassStateKey;
         if (view != text && view.class != UIView.class) break;
         [self clearBackground:view state:state];
     }
+    // DYK 同时清理 growing 的内部 UITextView；58476BAB 中它透明但 opaque 仍为 YES。
+    if ([text isKindOfClass:NSClassFromString(@"IESIMGrowingTextView")] && [text respondsToSelector:@selector(internalTextView)]) {
+        UITextView *internal = ((IESIMGrowingTextView *)text).internalTextView;
+        if ([internal isKindOfClass:UITextView.class] && [internal isDescendantOfView:text])
+            [self clearBackground:internal state:state];
+    }
     // 原生无交互安全区底板伸出 root；不能把同起点的 355pt panelsContainer 一起清掉。
     for (UIView *view in root.subviews) {
         if (view.class != UIView.class || view.userInteractionEnabled || view.subviews.count || view.layer.sublayers.count) continue;
