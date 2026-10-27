@@ -12123,11 +12123,13 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
 #endif
             objc_setAssociatedObject(self, &kDYYYCompactInputChromeKey, chrome, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         }
-        chrome.overrideUserInterfaceStyle = dark ? UIUserInterfaceStyleDark : UIUserInterfaceStyleLight;
-        chrome.frame = self.bounds;
-        chrome.layer.cornerRadius = CGRectGetHeight(self.bounds) / 2;
-        self.backgroundColor = UIColor.clearColor;
-        self.opaque = NO;
+        UIUserInterfaceStyle style = dark ? UIUserInterfaceStyleDark : UIUserInterfaceStyleLight;
+        if (chrome.overrideUserInterfaceStyle != style) chrome.overrideUserInterfaceStyle = style;
+        if (!CGRectEqualToRect(chrome.frame, self.bounds)) chrome.frame = self.bounds;
+        CGFloat radius = CGRectGetHeight(self.bounds) / 2;
+        if (chrome.layer.cornerRadius != radius) chrome.layer.cornerRadius = radius;
+        if (self.backgroundColor && CGColorGetAlpha(self.backgroundColor.CGColor) > 0) self.backgroundColor = UIColor.clearColor;
+        if (self.opaque) self.opaque = NO;
         if (chrome.superview != self) [self insertSubview:chrome atIndex:0];
         else if (self.subviews.firstObject != chrome) [self sendSubviewToBack:chrome];
     } @finally {
@@ -12154,7 +12156,7 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
     if (depth == 1) {
         objc_setAssociatedObject(self, &kDYYYCompactInputBusyKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         if (synchronize) [self dyyy_syncFloatingBackground];
-        else [self setNeedsLayout];
+        // setFrame 自身负责实际尺寸变化的布局失效，禁止无条件追加下一轮布局。
     }
 }
 - (void)setFrame:(CGRect)frame {
@@ -12198,7 +12200,8 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
 - (void)updateWithAweme:(id)model {
     BOOL managed = [self dyyy_beginFloatingNativeUpdate];
     @try {
-        if (managed) [self dyyy_restoreFloatingBackground];
+        // 保留同一个玻璃实例；原生写回的底色由同步入口保存并清理。
+        // 离窗、关闭和无效尺寸仍完整恢复，不能在每次模型通知时重建效果视图。
         %orig(model);
     } @finally {
         if (managed) [self dyyy_endFloatingNativeUpdate:YES];
