@@ -15,6 +15,7 @@
 #include <string.h>
 #include <math.h>
 #import <mach-o/dyld.h>
+#import <mach/mach.h>
 
 static char kDYYYDebugButtonKey;
 static char kDYYYDebugDragKey;
@@ -108,7 +109,7 @@ static void DYYYDebugRecordEvent(NSString *name, NSDictionary *details, BOOL sta
     }
 }
 
-static void DYYYDebugObserveMethod(NSString *className, NSString *methodName, BOOL objectArgument) {
+static void DYYYDebugObserveMethod(NSString *className, NSString *methodName, BOOL objectArgument, BOOL captureStack) {
     Class cls = NSClassFromString(className);
     SEL selector = NSSelectorFromString(methodName);
     NSString *key = [NSString stringWithFormat:@"%@.%@", className, methodName];
@@ -129,12 +130,12 @@ static void DYYYDebugObserveMethod(NSString *className, NSString *methodName, BO
         replacement = imp_implementationWithBlock(^(id receiver, id model) {
             DYYYDebugRecordEvent(key, @{ @"receiver": [NSString stringWithFormat:@"%p", receiver],
                 @"modelClass": model ? NSStringFromClass([model class]) : @"nil",
-                @"modelAddress": [NSString stringWithFormat:@"%p", model] }, YES);
+                @"modelAddress": [NSString stringWithFormat:@"%p", model] }, captureStack);
             ((void (*)(id, SEL, id))original)(receiver, selector, model);
         });
     } else {
         replacement = imp_implementationWithBlock(^(id receiver) {
-            DYYYDebugRecordEvent(key, @{ @"receiver": [NSString stringWithFormat:@"%p", receiver] }, YES);
+            DYYYDebugRecordEvent(key, @{ @"receiver": [NSString stringWithFormat:@"%p", receiver] }, captureStack);
             ((void (*)(id, SEL))original)(receiver, selector);
         });
     }
@@ -147,10 +148,22 @@ static void DYYYDebugObserveMethod(NSString *className, NSString *methodName, BO
 
 static void DYYYDebugPrepareRecordingHooks(void) {
     for (NSString *name in @[@"beginRefresh", @"_refreshWithoutAnimation", @"awe_refreshForceRequestWithoutAnimation", @"_triggerToRefreshIfNeeded", @"cancelAutoPlay"]) {
-        DYYYDebugObserveMethod(@"AWEFeedTableViewController", name, NO);
+        DYYYDebugObserveMethod(@"AWEFeedTableViewController", name, NO, YES);
     }
     for (NSString *cls in @[@"AWEFeedCellViewController", @"AWEDPlayerViewController_Merge", @"AWEPlayVideoViewController"]) {
-        DYYYDebugObserveMethod(cls, @"setAwemeModel:", YES);
+        DYYYDebugObserveMethod(cls, @"setAwemeModel:", YES, YES);
+    }
+    // 仅用户主动录制后安装；沿已确认原生取数/首帧回调记时，不修改请求或播放器。
+    // 子类可能覆盖完成回调，分别安装后以 receiver 关联；不把该调用等同于网络成功。
+    for (NSString *cls in @[@"AWEAwemeDetailTableViewController", @"AFDMentionFeedTableViewController"]) {
+        for (NSString *name in @[@"viewDidLoad", @"beginInitialFetch", @"initialFetch", @"initialFetchFromIM",
+            @"initialDataSourceFetchDidFinished", @"onDataSourceDataDidChange", @"showLoadingView", @"hideLoadingView"]) {
+            DYYYDebugObserveMethod(cls, name, NO, NO);
+        }
+        for (NSString *name in @[@"initialFetchWithIDs:", @"videoPlayerDidReadyForDisplay:",
+            @"detailCellViewControllerFirstImageLoadFinished:", @"videoBufferLoadEnough:", @"videoBufferLoadNotEnough:"]) {
+            DYYYDebugObserveMethod(cls, name, YES, NO);
+        }
     }
     Class feedClass = NSClassFromString(@"AWEFeedTableViewController");
     SEL refreshSelector = NSSelectorFromString(@"_refresh:refreshType:");
@@ -195,6 +208,16 @@ static void DYYYDebugSamplePage(void) {
                     @"dragging": @(table.dragging), @"decelerating": @(table.decelerating),
                     @"visibleRows": table.indexPathsForVisibleRows.description ?: @"" }];
             }
+            if ([NSStringFromClass(view.class) isEqualToString:@"AWEUILoadingView"] && !view.hidden && view.alpha > 0.01) {
+                BOOL visible = YES;
+                for (UIView *parent = view.superview; parent && visible; parent = parent.superview)
+                    visible = !parent.hidden && parent.alpha > 0.01;
+                CGRect rect = [view convertRect:view.bounds toView:window];
+                if (visible && CGRectIntersectsRect(rect, window.bounds) && !CGRectIsEmpty(rect)) {
+                    [state addObject:@{ @"loadingView": NSStringFromClass(view.class),
+                        @"address": [NSString stringWithFormat:@"%p", view], @"windowFrame": NSStringFromCGRect(rect) }];
+                }
+            }
             NSString *className = NSStringFromClass(view.class);
             if ([className containsString:@"CommentInputContainerView"] || [className containsString:@"CommentInputViewMiddleContainer"] ||
                 [view.accessibilityIdentifier hasPrefix:@"DYYY.AdaptiveCommentInput"]) {
@@ -229,8 +252,14 @@ static void DYYYDebugStartRecording(UIWindow *window, DKDebugExportContext *cont
     __block NSTimeInterval previousTick = NSProcessInfo.processInfo.systemUptime;
     DYYYDebugRecordTimer = [NSTimer timerWithTimeInterval:0.75 repeats:YES block:^(__unused NSTimer *timer) {
         NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
-        DYYYDebugRecordEvent(@"mainQueuePulse", @{ @"intervalSeconds":@(now - previousTick),
-            @"floatingTabBar":DKGlassGeometryStatus() ?: @"" }, NO);
+        NSMutableDictionary *pulse = [@{ @"intervalSeconds": @(now - previousTick),
+            @"floatingTabBar": DKGlassGeometryStatus() ?: @"" } mutableCopy];
+        // 复用现有 0.75 秒脉冲，无额外定时器；只记录进程内存数字，不抓正文或网络内容。
+        task_vm_info_data_t memory = {0};
+        mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
+        if (task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&memory, &count) == KERN_SUCCESS)
+            pulse[@"physicalFootprintBytes"] = @(memory.phys_footprint);
+        DYYYDebugRecordEvent(@"mainQueuePulse", pulse, NO);
         previousTick = now;
         DYYYDebugSamplePage();
     }];
@@ -308,7 +337,7 @@ static NSDictionary *DYYYDebugMetadata(void) {
         @"systemName": UIDevice.currentDevice.systemName ?: @"",
         @"systemVersion": UIDevice.currentDevice.systemVersion ?: @"",
         @"deviceModel": UIDevice.currentDevice.model ?: @"",
-        @"debugImplementation": @"global-overlay-r5-layout-pulse",
+        @"debugImplementation": @"global-overlay-r6-detail-load-timing",
         @"floatingTabBar": DKGlassGeometryStatus() ?: @"",
         @"panelBlur": [DYYYPanelBlur diagnostics],
         @"avatarRing": [DYYYAvatarRing diagnostics],
@@ -515,7 +544,7 @@ static void DYYYDebugShowActions(UIWindow *window) {
     NSData *metadataData = DYYYDebugJSONData(snapshotMetadata);
     NSDictionary *capturedMetadata = metadataData ? [NSJSONSerialization JSONObjectWithData:metadataData options:0 error:nil] : nil;
     if (!context || !capturedMetadata) { DYYYDebugPresentAlert(presenter, @"调试导出失败", @"未能保存当前页面，请重试"); return; }
-    NSString *message = DYYYDebugRecording ? @"正在记录首页刷新、模型切换和页面状态。出现问题后停止并导出。" : @"手动开始记录，复现问题后停止并导出。每段最多保存 12000 个事件，超出数量会写入报告。";
+    NSString *message = DYYYDebugRecording ? @"正在记录页面切换、详情取数、首帧与加载提示时序。出现问题后停止并导出。" : @"手动开始记录，复现问题后停止并导出。每段最多保存 12000 个事件，超出数量会写入报告。";
     NSMutableArray<DYYYDebugMenuItem *> *items = [NSMutableArray array];
     if (DYYYDebugRecording) {
         [items addObject:[DYYYDebugMenuItem itemWithTitle:@"停止记录并导出（轻量）" handler:^{

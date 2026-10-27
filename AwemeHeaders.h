@@ -1438,6 +1438,19 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 - (BOOL)prefersStatusBarHidden;
 @end
 @interface AWEAwemeDetailTableViewController : UIViewController
+// 调试录制仅观测这些已确认原生回调，实际 ABI 仍在安装前校验。
+- (void)beginInitialFetch;
+- (void)initialFetch;
+- (void)initialFetchFromIM;
+- (void)initialFetchWithIDs:(id)identifiers;
+- (void)initialDataSourceFetchDidFinished;
+- (void)onDataSourceDataDidChange;
+- (void)showLoadingView;
+- (void)hideLoadingView;
+- (void)videoPlayerDidReadyForDisplay:(id)player;
+- (void)detailCellViewControllerFirstImageLoadFinished:(id)cell;
+- (void)videoBufferLoadEnough:(id)player;
+- (void)videoBufferLoadNotEnough:(id)player;
 @property(nonatomic, strong) UITableView *tableView;
 - (void)tableView:(UITableView *)tableView willDisplayCell:(UITableViewCell *)cell forRowAtIndexPath:(NSIndexPath *)indexPath;
 - (void)setupDetailTableView;
@@ -1446,6 +1459,8 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 - (double)tableView:(UITableView *)table heightForRowAtIndexPath:(NSIndexPath *)indexPath;
 - (double)contentOffsetYForCellAtIndex:(long long)index;
 - (BOOL)prefersStatusBarHidden;
+@end
+@interface AFDMentionFeedTableViewController : AWEAwemeDetailTableViewController
 @end
 @interface AWEAwemeIMDetailTableViewController : AWEAwemeDetailTableViewController
 @end
