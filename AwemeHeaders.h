@@ -2323,3 +2323,9 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 - (void)propsDidUpdate;
 - (BOOL)shouldHitTest:(CGPoint)point withEvent:(UIEvent *)event;
 @end
+
+@interface AFDMentionFeedIMBottomBarView : UIView
+- (void)updateWithAweme:(id)model;
+- (void)dyyy_restoreFloatingBackground;
+- (void)dyyy_syncFloatingBackground;
+@end

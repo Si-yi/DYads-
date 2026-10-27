@@ -11827,6 +11827,10 @@ static void DYYYSyncCompactInputsInView(UIView *view) {
         UIView *candidate = pending.lastObject;
         [pending removeLastObject];
         NSString *name = NSStringFromClass(candidate.class);
+        if ([candidate isKindOfClass:NSClassFromString(@"AFDMentionFeedIMBottomBarView")]) {
+            [(AFDMentionFeedIMBottomBarView *)candidate dyyy_syncFloatingBackground];
+            continue;
+        }
         BOOL panel = ([name hasPrefix:@"AWEComment"] || [name hasPrefix:@"AWEIM"]) &&
             ([name containsString:@"Emoticon"] || [name containsString:@"Emoji"] || [name containsString:@"Sticker"]) &&
             ([name containsString:@"Panel"] || [name containsString:@"Keyboard"]);
@@ -12016,6 +12020,92 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
 %end
 %end
 
+
+// 评论提及详情的原生底栏也使用悬浮输入材质；只替换背景，不改变提示与按钮行为。
+%hook AFDMentionFeedIMBottomBarView
+%new
+- (void)dyyy_restoreFloatingBackground {
+    if (!NSThread.isMainThread) return;
+    UIView *chrome = objc_getAssociatedObject(self, &kDYYYCompactInputChromeKey);
+    [chrome removeFromSuperview];
+    objc_setAssociatedObject(self, &kDYYYCompactInputChromeKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    NSDictionary *saved = objc_getAssociatedObject(self, &kDYYYCompactInputAppearanceKey);
+    if (!saved) return;
+    if (!self.backgroundColor || CGColorGetAlpha(self.backgroundColor.CGColor) == 0)
+        self.backgroundColor = saved[@"color"] == NSNull.null ? nil : saved[@"color"];
+    if (!self.opaque) self.opaque = [saved[@"opaque"] boolValue];
+    objc_setAssociatedObject(self, &kDYYYCompactInputAppearanceKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+%new
+- (void)dyyy_syncFloatingBackground {
+    if (!NSThread.isMainThread || objc_getAssociatedObject(self, &kDYYYCompactInputBusyKey)) return;
+    if (!self.window || !DYYYGetBool(@"DYYYEnableFloatingCommentInput") ||
+        CGRectGetWidth(self.bounds) < 160 || CGRectGetHeight(self.bounds) <= 0 || CGRectGetHeight(self.bounds) > 80) {
+        [self dyyy_restoreFloatingBackground];
+        return;
+    }
+    objc_setAssociatedObject(self, &kDYYYCompactInputBusyKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    @try {
+        NSDictionary *saved = objc_getAssociatedObject(self, &kDYYYCompactInputAppearanceKey);
+        if (!saved || (self.backgroundColor && CGColorGetAlpha(self.backgroundColor.CGColor) > 0)) {
+            saved = @{ @"color": self.backgroundColor ?: NSNull.null,
+                       @"opaque": saved ? @([saved[@"opaque"] boolValue] || self.opaque) : @(self.opaque) };
+            objc_setAssociatedObject(self, &kDYYYCompactInputAppearanceKey, saved, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+        BOOL dark = [DYYYUtils isDarkMode] || self.window.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark;
+        UIVisualEffectView *chrome = objc_getAssociatedObject(self, &kDYYYCompactInputChromeKey);
+        if (!chrome) {
+            UIVisualEffect *material = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterialDark];
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 260000
+            if (@available(iOS 26.0, *)) {
+                UIGlassEffect *glass = [UIGlassEffect effectWithStyle:UIGlassEffectStyleRegular];
+                glass.interactive = NO;
+                material = glass;
+            }
+#endif
+            chrome = [[UIVisualEffectView alloc] initWithEffect:material];
+            chrome.accessibilityIdentifier = @"DYYY.MentionFeedInputGlass";
+            chrome.userInteractionEnabled = NO;
+            chrome.accessibilityElementsHidden = YES;
+            chrome.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+            chrome.clipsToBounds = YES;
+            chrome.layer.cornerCurve = kCACornerCurveContinuous;
+            chrome.layer.borderWidth = 0.5;
+            chrome.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.18].CGColor;
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 260000
+            if (@available(iOS 26.0, *)) chrome.cornerConfiguration = [UICornerConfiguration capsuleConfiguration];
+#endif
+            objc_setAssociatedObject(self, &kDYYYCompactInputChromeKey, chrome, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+        chrome.overrideUserInterfaceStyle = dark ? UIUserInterfaceStyleDark : UIUserInterfaceStyleLight;
+        chrome.frame = self.bounds;
+        chrome.layer.cornerRadius = CGRectGetHeight(self.bounds) / 2;
+        self.backgroundColor = UIColor.clearColor;
+        self.opaque = NO;
+        if (chrome.superview != self) [self insertSubview:chrome atIndex:0];
+        else if (self.subviews.firstObject != chrome) [self sendSubviewToBack:chrome];
+    } @finally {
+        objc_setAssociatedObject(self, &kDYYYCompactInputBusyKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+}
+- (void)layoutSubviews {
+    %orig;
+    [self dyyy_syncFloatingBackground];
+}
+- (void)didMoveToWindow {
+    %orig;
+    [self dyyy_syncFloatingBackground];
+}
+- (void)traitCollectionDidChange:(UITraitCollection *)previous {
+    %orig(previous);
+    [self dyyy_syncFloatingBackground];
+}
+- (void)updateWithAweme:(id)model {
+    [self dyyy_restoreFloatingBackground];
+    %orig(model);
+    [self dyyy_syncFloatingBackground];
+}
+%end
 
 // @ 好友头像栏：只管理悬浮评论输入容器内的原生候选列表背景。
 %hook AWECommentSearchViewController
