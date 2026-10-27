@@ -12021,11 +12021,22 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
 %end
 
 
-// 评论提及详情的原生底栏也使用悬浮输入材质；只替换背景，不改变提示与按钮行为。
+// 评论提及详情的原生底栏使用悬浮输入材质，并单独对齐位置；保留提示与按钮行为。
 %hook AFDMentionFeedIMBottomBarView
+%new
+- (void)dyyy_restoreFloatingPosition {
+    if (!NSThread.isMainThread) return;
+    NSDictionary *state = objc_getAssociatedObject(self, &kDYYYCompactInputLiftKey);
+    if (!state) return;
+    objc_setAssociatedObject(self, &kDYYYCompactInputLiftKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if (CGAffineTransformEqualToTransform(self.transform, [state[@"applied"] CGAffineTransformValue])) {
+        [UIView performWithoutAnimation:^{ self.transform = [state[@"base"] CGAffineTransformValue]; }];
+    }
+}
 %new
 - (void)dyyy_restoreFloatingBackground {
     if (!NSThread.isMainThread) return;
+    [self dyyy_restoreFloatingPosition];
     UIView *chrome = objc_getAssociatedObject(self, &kDYYYCompactInputChromeKey);
     [chrome removeFromSuperview];
     objc_setAssociatedObject(self, &kDYYYCompactInputChromeKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -12051,6 +12062,34 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
             saved = @{ @"color": self.backgroundColor ?: NSNull.null,
                        @"opaque": saved ? @([saved[@"opaque"] boolValue] || self.opaque) : @(self.opaque) };
             objc_setAssociatedObject(self, &kDYYYCompactInputAppearanceKey, saved, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+        // 6EB8A649：提及底栏中心为 909pt，普通悬浮输入为 915pt。
+        // 只移动该页面的整个原生底栏，玻璃、文字及命中范围保持一致。
+        UIView *host = self.superview;
+        UIViewController *owner = [DYYYUtils firstAvailableViewControllerFromView:self];
+        CGRect hostRect = host ? [host convertRect:host.bounds toView:self.window] : CGRectZero;
+        BOOL mentionPage = [owner isKindOfClass:NSClassFromString(@"AFDMentionFeedTableViewController")];
+        BOOL bottomHost = host && CGRectGetHeight(hostRect) > 0 && CGRectGetHeight(hostRect) <= 120 &&
+            fabs(CGRectGetMaxY(hostRect) - CGRectGetMaxY(self.window.bounds)) <= 1 &&
+            CGRectGetWidth(hostRect) > CGRectGetWidth(self.window.bounds) * 0.9 &&
+            CGRectGetHeight(self.window.bounds) > CGRectGetWidth(self.window.bounds);
+        if (mentionPage && bottomHost) {
+            NSDictionary *position = objc_getAssociatedObject(self, &kDYYYCompactInputLiftKey);
+            CGAffineTransform base = position && CGAffineTransformEqualToTransform(self.transform, [position[@"applied"] CGAffineTransformValue])
+                ? [position[@"base"] CGAffineTransformValue] : self.transform;
+            // 原生缩放/旋转状态不接管；偏移不参与下一次布局计算。
+            if (CGAffineTransformIsIdentity(base) && CGRectGetHeight(self.bounds) <= 64) {
+                CGAffineTransform applied = CGAffineTransformMakeTranslation(0, 6);
+                objc_setAssociatedObject(self, &kDYYYCompactInputLiftKey,
+                    @{ @"base": [NSValue valueWithCGAffineTransform:base], @"applied": [NSValue valueWithCGAffineTransform:applied] },
+                    OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                if (!CGAffineTransformEqualToTransform(self.transform, applied))
+                    [UIView performWithoutAnimation:^{ self.transform = applied; }];
+            } else {
+                [self dyyy_restoreFloatingPosition];
+            }
+        } else {
+            [self dyyy_restoreFloatingPosition];
         }
         BOOL dark = [DYYYUtils isDarkMode] || self.window.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark;
         UIVisualEffectView *chrome = objc_getAssociatedObject(self, &kDYYYCompactInputChromeKey);
@@ -12088,7 +12127,21 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
         objc_setAssociatedObject(self, &kDYYYCompactInputBusyKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
 }
+- (void)setFrame:(CGRect)frame {
+    if (NSThread.isMainThread && !objc_getAssociatedObject(self, &kDYYYCompactInputBusyKey)) {
+        CGRect previous = self.frame;
+        [self dyyy_restoreFloatingPosition];
+        // 兼容原生读取已显示的 frame 再改尺寸，避免把平移量写回原始坐标。
+        if (CGPointEqualToPoint(frame.origin, previous.origin)) {
+            frame.origin.x += self.frame.origin.x - previous.origin.x;
+            frame.origin.y += self.frame.origin.y - previous.origin.y;
+        }
+    }
+    %orig(frame);
+    [self dyyy_syncFloatingBackground];
+}
 - (void)layoutSubviews {
+    [self dyyy_restoreFloatingPosition];
     %orig;
     [self dyyy_syncFloatingBackground];
 }
