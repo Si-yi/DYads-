@@ -11,10 +11,12 @@
         [DYYYChatChrome endTopUpdate:token];
     }
     if (!token) [DYYYChatChrome synchronizeBar:self];
+    [DYYYChatChrome scheduleTopSynchronization:self];
 }
 - (void)didMoveToWindow {
     %orig;
     [DYYYChatChrome synchronizeBar:self];
+    [DYYYChatChrome scheduleTopSynchronization:self];
 }
 %end
 %end
@@ -88,6 +90,10 @@
 %end
 %group DYYYChatChromeHostHooks
 %hook AWEIMMessageBaseViewController
+- (void)viewDidLayoutSubviews {
+    %orig;
+    [DYYYChatChrome synchronizeHost:self];
+}
 - (void)viewDidAppear:(BOOL)animated {
     %orig(animated);
     [DYYYChatChrome synchronizeHost:self];
@@ -105,6 +111,7 @@
         dispatch_async(dispatch_get_main_queue(), ^{ [self installHooks]; });
         return;
     }
+    [self preparePreferences];
     static BOOL nav, unread, unreadSubclass, title, panel, theme, host;
     if (!nav && NSClassFromString(@"AWENavigationBar")) { %init(DYYYChatChromeNavigationHooks); nav = YES; }
     Class unreadClass = NSClassFromString(@"AWEIMNavigationUnreadView");

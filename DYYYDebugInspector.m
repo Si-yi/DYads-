@@ -353,6 +353,7 @@ static NSDictionary *DYYYDebugMetadata(void) {
         @"commentVideoLayout": [DYYYCommentVideoLayout diagnostics],
         @"loadedPluginImages": pluginImages,
         @"inputSettings": @{
+            @"DYYYEnableChatTopGlass": [defaults objectForKey:@"DYYYEnableChatTopGlass"] ?: NSNull.null,
             @"DYYYEnableFloatingChatInput": [defaults objectForKey:@"DYYYEnableFloatingChatInput"] ?: NSNull.null,
             @"DYYYEnableFloatingCommentInput": [defaults objectForKey:@"DYYYEnableFloatingCommentInput"] ?: NSNull.null,
             @"DYYYEnableFullScreen": [defaults objectForKey:@"DYYYEnableFullScreen"] ?: NSNull.null,

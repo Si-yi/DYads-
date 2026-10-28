@@ -42,6 +42,9 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey;
 @property (nonatomic, strong) NSMapTable<UIView *, NSDictionary *> *fills;
 @property (nonatomic, strong) NSMapTable<UIView *, NSDictionary *> *moves;
 @property (nonatomic, strong) NSMapTable<UIView *, NSNumber *> *clips;
+@property (nonatomic) BOOL pending;
+@property (nonatomic) BOOL suspended;
+@property (nonatomic, copy) NSString *lastDecision;
 @property (nonatomic) CGRect backFrame;
 @property (nonatomic) CGRect rightFrame;
 @property (nonatomic) NSUInteger depth;
@@ -68,6 +71,14 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey;
 
 @implementation DYYYChatChrome
 + (BOOL)enabled { return [NSUserDefaults.standardUserDefaults boolForKey:@"DYYYEnableFloatingChatInput"]; }
++ (void)preparePreferences { (void)[self topEnabled]; }
++ (BOOL)topEnabled {
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    // 拆分旧联动开关时只迁移一次，之后输入框和顶栏互不控制。
+    if (![defaults objectForKey:@"DYYYEnableChatTopGlass"])
+        [defaults setBool:[self enabled] forKey:@"DYYYEnableChatTopGlass"];
+    return [defaults boolForKey:@"DYYYEnableChatTopGlass"];
+}
 + (NSHashTable *)topStates {
     static NSHashTable *states; static dispatch_once_t once;
     dispatch_once(&once, ^{ states = [NSHashTable weakObjectsHashTable]; });
@@ -153,9 +164,12 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey;
 + (void)move:(UIView *)view from:(CGPoint)source to:(CGPoint)target bar:(UIView *)bar state:(DYYYChatTopState *)state {
     if (!view.superview) return;
     CGPoint a = [view.superview convertPoint:source fromView:bar], b = [view.superview convertPoint:target fromView:bar];
-    CGAffineTransform base = view.transform, applied = base;
+    NSDictionary *saved = [state.moves objectForKey:view];
+    CGAffineTransform current = view.transform, base = current, applied = current;
+    if (saved && CGAffineTransformEqualToTransform(current, [saved[@"applied"] CGAffineTransformValue]))
+        base = [saved[@"base"] CGAffineTransformValue];
     applied.tx += b.x - a.x; applied.ty += b.y - a.y;
-    if (CGAffineTransformEqualToTransform(base, applied)) return;
+    if (CGAffineTransformEqualToTransform(current, applied)) return;
     [state.moves setObject:@{ @"base": [NSValue valueWithCGAffineTransform:base], @"applied": [NSValue valueWithCGAffineTransform:applied] } forKey:view];
     view.transform = applied;
 }
@@ -208,7 +222,26 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey;
     if (glass.overrideUserInterfaceStyle != style) glass.overrideUserInterfaceStyle = style;
     if (glass.superview != carrier) [carrier insertSubview:glass atIndex:0];
 }
-+ (void)synchronizeTopForView:(UIView *)view { [self synchronizeBar:[self barForView:view]]; }
++ (void)synchronizeTopForView:(UIView *)view {
+    AWENavigationBar *bar = [self barForView:view];
+    [self synchronizeBar:bar];
+    [self scheduleTopSynchronization:bar];
+}
+// 子控件回调可能发生在父 StackView 尚未完成排版时。只合并一次当轮结束后的复核，不能轮询。
++ (void)scheduleTopSynchronization:(UIView *)view {
+    if (!NSThread.isMainThread) return;
+    AWENavigationBar *bar = [self barForView:view];
+    DYYYChatTopState *state = [self topState:bar create:NO];
+    if (!state || state.pending || state.suspended || !bar.window) return;
+    state.pending = YES;
+    __weak DYYYChatTopState *weakState = state;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        DYYYChatTopState *current = weakState;
+        if (!current) return;
+        current.pending = NO;
+        if (!current.suspended) [self synchronizeBar:current.bar];
+    });
+}
 + (void)synchronizeBar:(UIView *)candidate {
     if (!NSThread.isMainThread) return;
     [UIView performWithoutAnimation:^{ [self applyBar:candidate]; }];
@@ -219,14 +252,16 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey;
     DYYYChatTopState *state = [self topState:bar create:NO];
     if (state.busy || state.depth) return;
     UIViewController *host = [self chatForController:[self controllerForView:bar]];
-    if (![self enabled] || !host || !bar.window || ![self visible:bar inRoot:host.viewIfLoaded]) { [self restoreTop:state]; return; }
+    if (![self topEnabled] || state.suspended || !host || !bar.window || ![self visible:bar inRoot:host.viewIfLoaded]) {
+        state.lastDecision = @"disabled_or_outside_visible_chat";
+        [self restoreTop:state]; return;
+    }
     if (![bar respondsToSelector:@selector(contentView)] || ![bar respondsToSelector:@selector(leftBtnsContainerView)] ||
         ![bar respondsToSelector:@selector(rightBtnsContainerView)]) return;
     UIView *carrier = bar.contentView, *left = bar.leftBtnsContainerView, *right = bar.rightBtnsContainerView;
     if (![self validRect:carrier.bounds] || CGRectGetHeight(carrier.bounds) < 28 || CGRectGetHeight(carrier.bounds) > 72) return;
     state = [self topState:bar create:YES]; state.host = host; state.busy = YES;
     @try {
-        [self restoreMoves:state];
         AWEIMNavigationUnreadView *unread = nil; UIView *title = nil;
         for (UIView *view in left.subviews) {
             if ([view isKindOfClass:NSClassFromString(@"AWEIMNavigationUnreadView")]) unread = (id)view;
@@ -234,11 +269,11 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey;
         }
         if (!title && [bar respondsToSelector:@selector(titleView)]) title = bar.titleView;
         UIButton *back = [unread respondsToSelector:@selector(backButton)] ? unread.backButton : nil;
-        if (!back || !title || ![self visible:back inRoot:bar] || ![self visible:title inRoot:bar]) { [self restoreTop:state]; return; }
+        if (!back || !title || ![self visible:back inRoot:bar] || ![self visible:title inRoot:bar]) { state.lastDecision = @"native_controls_not_ready"; [self restoreTop:state]; return; }
         CGRect titleRect = [title convertRect:title.bounds toView:bar];
         CGRect row = [carrier convertRect:carrier.bounds toView:bar];
         CGFloat diameter = MIN(44, MIN(CGRectGetHeight(row), CGRectGetMinX(titleRect) - 12));
-        if (diameter < 28) { [self restoreTop:state]; return; }
+        if (diameter < 28) { state.lastDecision = @"title_geometry_not_ready"; [self restoreTop:state]; return; }
         CGFloat x = MAX(8, MIN(16, CGRectGetMinX(titleRect) - 4 - diameter));
         CGRect backRect = CGRectMake(x, CGRectGetMidY(row) - diameter / 2, diameter, diameter);
         CGRect controls = CGRectNull;
@@ -248,11 +283,11 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey;
             CGRect rect = [view convertRect:view.bounds toView:bar];
             if ([self validRect:rect]) controls = CGRectIsNull(controls) ? rect : CGRectUnion(controls, rect);
         }
-        if (CGRectIsNull(controls)) { [self restoreTop:state]; return; }
+        if (CGRectIsNull(controls)) { state.lastDecision = @"actions_not_ready"; [self restoreTop:state]; return; }
         CGFloat h = MIN(44, CGRectGetHeight(row));
         CGFloat start = MAX(CGRectGetMinX(controls) - 10, CGRectGetMaxX(titleRect) + 4);
         CGFloat end = MIN(CGRectGetMaxX(controls) + 10, CGRectGetMaxX(bar.bounds) - 8);
-        if (start > CGRectGetMinX(controls) || end < CGRectGetMaxX(controls) || end - start < h) { [self restoreTop:state]; return; }
+        if (start > CGRectGetMinX(controls) + 0.5 || end + 0.5 < CGRectGetMaxX(controls) || end - start < h) { state.lastDecision = @"actions_geometry_not_ready"; [self restoreTop:state]; return; }
         CGRect rightRect = CGRectMake(start, CGRectGetMidY(row) - h / 2, end - start, h);
         [self allowOverflow:carrier state:state]; [self allowOverflow:left state:state]; [self allowOverflow:unread state:state];
         [self move:back from:[self backIconCenter:back inBar:bar] to:CGPointMake(CGRectGetMidX(backRect), CGRectGetMidY(backRect)) bar:bar state:state];
@@ -269,6 +304,7 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey;
         UIUserInterfaceStyle style = [DYYYUtils isDarkMode] || bar.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark ? UIUserInterfaceStyleDark : UIUserInterfaceStyleLight;
         [self placeGlass:state.backGlass frame:[carrier convertRect:backRect fromView:bar] carrier:carrier style:style];
         [self placeGlass:state.rightGlass frame:[carrier convertRect:rightRect fromView:bar] carrier:carrier style:style];
+        state.lastDecision = @"applied";
         state.backFrame = backRect; state.rightFrame = rightRect; state.active = YES;
     } @finally { state.busy = NO; }
 }
@@ -277,7 +313,7 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey;
     AWENavigationBar *bar = [self barForView:view];
     if (!bar) return nil;
     DYYYChatTopState *state = [self topState:bar create:NO];
-    if (!state && [self enabled] && [self chatForController:[self controllerForView:bar]]) state = [self topState:bar create:YES];
+    if (!state && [self topEnabled] && [self chatForController:[self controllerForView:bar]]) state = [self topState:bar create:YES];
     if (!state || state.busy) return nil;
     if (state.depth++ == 0) {
         state.busy = YES;
@@ -289,7 +325,10 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey;
     if (!NSThread.isMainThread || ![token isKindOfClass:DYYYChatTopState.class]) return;
     DYYYChatTopState *state = token;
     if (state.depth) state.depth--;
-    if (!state.depth) [self synchronizeBar:state.bar];
+    if (!state.depth) {
+        [self synchronizeBar:state.bar];
+        [self scheduleTopSynchronization:state.bar];
+    }
 }
 // 原生动态模糊底板与面板是兄弟，不能只圆角前景、在角外留下矩形底板。
 + (void)restoreBackdrop:(UIView *)view saved:(NSDictionary *)saved radius:(CGFloat)radius {
@@ -434,13 +473,18 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey;
 + (void)synchronizeHost:(UIViewController *)host {
     if (!NSThread.isMainThread || [self chatForController:host] != host) return;
     for (UIView *view in host.viewIfLoaded.subviews)
-        if ([view isKindOfClass:NSClassFromString(@"AWENavigationBar")]) [self synchronizeBar:view];
+        if ([view isKindOfClass:NSClassFromString(@"AWENavigationBar")]) {
+            DYYYChatTopState *state = [self topState:(id)view create:[self topEnabled]];
+            state.suspended = NO;
+            [self synchronizeBar:view];
+            [self scheduleTopSynchronization:view];
+        }
     for (UIViewController *child in host.childViewControllers)
         if ([child isKindOfClass:NSClassFromString(@"IESIMInputViewController")]) [self synchronizeInput:child];
 }
 + (void)restoreHost:(UIViewController *)host {
     if (!NSThread.isMainThread) return;
-    for (DYYYChatTopState *state in [self topStates].allObjects) if (state.host == host && !state.busy) [self restoreTop:state];
+    for (DYYYChatTopState *state in [self topStates].allObjects) if (state.host == host && !state.busy) { state.suspended = YES; state.lastDecision = @"host_disappeared"; [self restoreTop:state]; }
     for (DYYYChatPanelState *state in [self panelStates].allObjects) if (state.host == host && !state.busy) [self restorePanel:state];
 }
 + (void)refreshVisibleViews {
@@ -452,11 +496,11 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey;
     if (!NSThread.isMainThread) return @{};
     NSMutableArray *tops = [NSMutableArray array], *panels = [NSMutableArray array];
     for (DYYYChatTopState *state in [self topStates].allObjects) if (state.bar.window)
-        [tops addObject:@{ @"active": @(state.active), @"back": NSStringFromCGRect(state.backFrame), @"actions": NSStringFromCGRect(state.rightFrame) }];
+        [tops addObject:@{ @"active": @(state.active), @"lastDecision": state.lastDecision ?: @"", @"pending": @(state.pending), @"back": NSStringFromCGRect(state.backFrame), @"actions": NSStringFromCGRect(state.rightFrame) }];
     for (DYYYChatPanelState *state in [self panelStates].allObjects) if (state.panel.window)
         [panels addObject:@{ @"active": @(state.active), @"radius": @(state.radius), @"frame": NSStringFromCGRect(state.carrier.frame),
             @"inputType": @([state.input respondsToSelector:@selector(currentInputType)] ? ((IESIMInputViewController *)state.input).currentInputType : -1),
             @"roundedNativeBackdrops": @(state.backdrops.count) }];
-    return @{ @"enabled": @([self enabled]), @"topBars": tops, @"emojiPanels": panels };
+    return @{ @"enabled": @([self enabled]), @"topEnabled": @([self topEnabled]), @"topBars": tops, @"emojiPanels": panels };
 }
 @end

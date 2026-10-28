@@ -1,9 +1,11 @@
 #import <UIKit/UIKit.h>
 
 @interface DYYYChatChrome : NSObject
++ (void)preparePreferences;
 + (id)beginTopUpdate:(UIView *)view;
 + (void)endTopUpdate:(id)token;
 + (void)synchronizeTopForView:(UIView *)view;
++ (void)scheduleTopSynchronization:(UIView *)view;
 + (void)synchronizeBar:(UIView *)bar;
 + (void)synchronizePanel:(UIView *)panel;
 + (void)synchronizeInput:(UIViewController *)input;

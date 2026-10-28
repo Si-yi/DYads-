@@ -1616,38 +1616,6 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
             @"detail" : @"0-1小数",
             @"cellType" : @26,
             @"imageName" : @"ic_user_outlined_20"},
-          @{@"identifier" : @"DYYYEnableCommentBlur",
-            @"title" : @"评论区毛玻璃",
-            @"detail" : @"",
-            @"cellType" : @6,
-            @"imageName" : @"ic_comment_outlined_20"},
-          @{@"identifier" : @"DYYYEnableSharePanelBlur",
-            @"title" : @"分享面板毛玻璃",
-            @"subTitle" : @"与评论区共用下方的毛玻璃透明度",
-            @"detail" : @"",
-            @"cellType" : @6,
-            @"imageName" : @"ic_share_outlined"},
-          @{@"identifier" : @"DYYYEnableCommentMenuBlur",
-            @"title" : @"评论长按菜单毛玻璃",
-            @"subTitle" : @"与评论区共用下方的毛玻璃透明度",
-            @"detail" : @"",
-            @"cellType" : @6,
-            @"imageName" : @"ic_comment_outlined_20"},
-          @{@"identifier" : @"DYYYEnableNotificationTransparency",
-            @"title" : @"通知栏毛玻璃",
-            @"detail" : @"",
-            @"cellType" : @6,
-            @"imageName" : @"ic_comment_outlined_20"},
-          @{@"identifier" : @"DYYYNotificationCornerRadius",
-            @"title" : @"通知圆角半径",
-            @"detail" : @"默认12",
-            @"cellType" : @26,
-            @"imageName" : @"ic_comment_outlined_20"},
-          @{@"identifier" : @"DYYYCommentBlurTransparent",
-            @"title" : @"毛玻璃透明度",
-            @"detail" : @"0-1小数",
-            @"cellType" : @26,
-            @"imageName" : @"ic_eye_outlined_20"},
       ];
 
       for (NSDictionary *dict in transparencySettings) {
@@ -1795,9 +1763,41 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
           [iconItems addObject:plusIconItem];
       }
 
-      // 【底栏自定义】分类：悬浮底栏（iOS 26 液态玻璃）与玻璃材质，移植自 DYKiller
+      // 【毛玻璃设置】分类：悬浮底栏（iOS 26 液态玻璃）与玻璃材质，移植自 DYKiller
       NSMutableArray<AWESettingItemModel *> *glassTabBarItems = [NSMutableArray array];
       NSArray *glassTabBarSettings = @[
+          @{@"identifier" : @"DYYYEnableCommentBlur",
+            @"title" : @"评论区毛玻璃",
+            @"detail" : @"",
+            @"cellType" : @6,
+            @"imageName" : @"ic_comment_outlined_20"},
+          @{@"identifier" : @"DYYYEnableSharePanelBlur",
+            @"title" : @"分享面板毛玻璃",
+            @"subTitle" : @"与评论区共用下方的毛玻璃透明度",
+            @"detail" : @"",
+            @"cellType" : @6,
+            @"imageName" : @"ic_share_outlined"},
+          @{@"identifier" : @"DYYYEnableCommentMenuBlur",
+            @"title" : @"评论长按菜单毛玻璃",
+            @"subTitle" : @"与评论区共用下方的毛玻璃透明度",
+            @"detail" : @"",
+            @"cellType" : @6,
+            @"imageName" : @"ic_comment_outlined_20"},
+          @{@"identifier" : @"DYYYEnableNotificationTransparency",
+            @"title" : @"通知栏毛玻璃",
+            @"detail" : @"",
+            @"cellType" : @6,
+            @"imageName" : @"ic_comment_outlined_20"},
+          @{@"identifier" : @"DYYYNotificationCornerRadius",
+            @"title" : @"通知圆角半径",
+            @"detail" : @"默认12",
+            @"cellType" : @26,
+            @"imageName" : @"ic_comment_outlined_20"},
+          @{@"identifier" : @"DYYYCommentBlurTransparent",
+            @"title" : @"毛玻璃透明度",
+            @"detail" : @"0-1小数",
+            @"cellType" : @26,
+            @"imageName" : @"ic_eye_outlined_20"},
           @{@"identifier" : @"DYYYGlassTabBar",
             @"title" : @"悬浮底栏",
             @"detail" : @"",
@@ -1833,13 +1833,15 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
 
       [glassTabBarItems addObject:[DYYYSettingsHelper createSettingItem:@{ @"identifier": @"DYYYEnableFloatingCommentInput", @"title": @"悬浮评论输入栏", @"subTitle": @"评论区及作品详情页使用紧凑玻璃输入胶囊", @"detail": @"", @"cellType": @6, @"imageName": @"ic_comment_outlined_20" }]];
 
-      [glassTabBarItems addObject:[DYYYSettingsHelper createSettingItem:@{ @"identifier": @"DYYYEnableFloatingChatInput", @"title": @"悬浮输入框", @"subTitle": @"聊天输入框、顶栏按钮使用玻璃样式，表情面板顶部圆角", @"detail": @"", @"cellType": @37, @"imageName": @"ic_comment_outlined_20" }]];
+      [glassTabBarItems addObject:[DYYYSettingsHelper createSettingItem:@{ @"identifier": @"DYYYEnableFloatingChatInput", @"title": @"悬浮输入框", @"subTitle": @"聊天输入框使用玻璃样式，表情面板顶部圆角", @"detail": @"", @"cellType": @37, @"imageName": @"ic_comment_outlined_20" }]];
+
+      [glassTabBarItems addObject:[DYYYSettingsHelper createSettingItem:@{ @"identifier": @"DYYYEnableChatTopGlass", @"title": @"消息页顶栏玻璃", @"subTitle": @"聊天返回键与右侧按钮使用玻璃样式", @"detail": @"", @"cellType": @37, @"imageName": @"ic_module_outlined_20" }]];
 
       NSMutableArray *sections = [NSMutableArray array];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"透明度设置" items:transparencyItems]];
+      [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"毛玻璃设置" items:glassTabBarItems]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"缩放与大小" items:scaleItems]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"标题自定义" items:titleItems]];
-      [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"底栏自定义" items:glassTabBarItems]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"图标自定义" items:iconItems]];
       DYYYRegisterSearchSections(@"界面设置", sections);
       if (DYYYBuildingSettingsSearchIndex) {

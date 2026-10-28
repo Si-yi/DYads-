@@ -26,7 +26,7 @@
     [[NSUserDefaults standardUserDefaults] setObject:object forKey:key];
     if ([key isEqualToString:@"DYYYHideAvatarColorRing"]) [DYYYAvatarRing refreshVisibleRings];
     if ([key isEqualToString:@"DYYYHideSameStyleButton"]) [DYYYSameStyleVisibility refreshVisibleViews];
-    if ([key isEqualToString:@"DYYYEnableFloatingChatInput"]) [DYYYChatChrome refreshVisibleViews];
+    if ([key isEqualToString:@"DYYYEnableFloatingChatInput"] || [key isEqualToString:@"DYYYEnableChatTopGlass"]) [DYYYChatChrome refreshVisibleViews];
     if ([key isEqualToString:@"DYYYDisableCommentVideoShrink"]) [DYYYCommentVideoLayout refreshVisiblePlayers];
     if ([key isEqualToString:@"DYYYHideCaptionFollow"]) [DYYYCollectionRows refreshVisibleStacks];
     if ([@[ @"DYYYEnableSharePanelBlur", @"DYYYEnableCommentMenuBlur", @"DYYYCommentBlurTransparent" ] containsObject:key]) {
