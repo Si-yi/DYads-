@@ -27,6 +27,7 @@ SOFTWARE.
 */
 #import "DYYYChatChrome.h"
 #import "DYYYUtils.h"
+#import "DYYYChatInputList.h"
 #import "AwemeHeaders.h"
 #import <objc/runtime.h>
 #import <QuartzCore/QuartzCore.h>
@@ -134,6 +135,7 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey;
     [state.moves removeAllObjects];
 }
 + (void)restoreTop:(DYYYChatTopState *)state {
+    [DYYYChatInputList synchronizeHost:(id)state.host topActive:NO];
     [self restoreMoves:state];
     [state.backGlass removeFromSuperview]; [state.rightGlass removeFromSuperview];
     for (UIView *view in state.fills.keyEnumerator.allObjects) {
@@ -173,30 +175,30 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey;
     [state.moves setObject:@{ @"base": [NSValue valueWithCGAffineTransform:base], @"applied": [NSValue valueWithCGAffineTransform:applied] } forKey:view];
     view.transform = applied;
 }
-// 原生返回图片带横向透明留白。只缓存图标非透明像素的横向中心，避免圆钮里的箭头偏心。
+// 原生返回图片带横向透明留白。只缓存图标非透明像素的二维中心，避免圆钮里的箭头偏心。
 + (CGPoint)backIconCenter:(UIButton *)button inBar:(UIView *)bar {
     UIImageView *icon = button.imageView; UIImage *image = icon.image;
     CGRect rect = icon && [self validRect:icon.bounds] ? [icon convertRect:icon.bounds toView:bar] : [button convertRect:button.bounds toView:bar];
     if (!image.CGImage || image.imageOrientation != UIImageOrientationUp) return CGPointMake(CGRectGetMidX(rect), CGRectGetMidY(rect));
     static NSMapTable *centers; static dispatch_once_t once;
     dispatch_once(&once, ^{ centers = [NSMapTable weakToStrongObjectsMapTable]; });
-    NSNumber *center = [centers objectForKey:image];
+    NSValue *center = [centers objectForKey:image];
     if (!center) {
         unsigned char pixels[32 * 32 * 4] = {0};
         CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
         CGContextRef context = CGBitmapContextCreate(pixels, 32, 32, 8, 32 * 4, space, kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
-        CGFloat fraction = 0.5;
+        CGPoint fraction = CGPointMake(0.5, 0.5);
         if (context) {
             CGContextDrawImage(context, CGRectMake(0, 0, 32, 32), image.CGImage);
-            NSInteger left = 32, right = -1;
+            NSInteger left = 32, right = -1, top = 32, bottom = -1;
             for (NSInteger y = 0; y < 32; y++) for (NSInteger x = 0; x < 32; x++)
-                if (pixels[(y * 32 + x) * 4 + 3] > 16) { left = MIN(left, x); right = MAX(right, x); }
-            if (right >= left) fraction = (left + right + 1) / 64.0;
+                if (pixels[(y * 32 + x) * 4 + 3] > 16) { left = MIN(left, x); right = MAX(right, x); top = MIN(top, y); bottom = MAX(bottom, y); }
+            if (right >= left) fraction = CGPointMake((left + right + 1) / 64.0, 1 - (top + bottom + 1) / 64.0);
             CGContextRelease(context);
         }
-        CGColorSpaceRelease(space); center = @(fraction); [centers setObject:center forKey:image];
+        CGColorSpaceRelease(space); center = [NSValue valueWithCGPoint:fraction]; [centers setObject:center forKey:image];
     }
-    return CGPointMake(CGRectGetMinX(rect) + center.doubleValue * CGRectGetWidth(rect), CGRectGetMidY(rect));
+    return CGPointMake(CGRectGetMinX(rect) + center.CGPointValue.x * CGRectGetWidth(rect), CGRectGetMinY(rect) + center.CGPointValue.y * CGRectGetHeight(rect));
 }
 + (UIVisualEffectView *)glass:(NSString *)identifier {
     UIVisualEffect *effect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterialDark];
@@ -271,6 +273,11 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey;
         UIButton *back = [unread respondsToSelector:@selector(backButton)] ? unread.backButton : nil;
         if (!back || !title || ![self visible:back inRoot:bar] || ![self visible:title inRoot:bar]) { state.lastDecision = @"native_controls_not_ready"; [self restoreTop:state]; return; }
         CGRect titleRect = [title convertRect:title.bounds toView:bar];
+        NSDictionary *titleMove = [state.moves objectForKey:title];
+        if (titleMove && CGAffineTransformEqualToTransform(title.transform, [titleMove[@"applied"] CGAffineTransformValue])) {
+            CGAffineTransform applied = [titleMove[@"applied"] CGAffineTransformValue], base = [titleMove[@"base"] CGAffineTransformValue];
+            titleRect.origin.x -= applied.tx - base.tx;
+        }
         CGRect row = [carrier convertRect:carrier.bounds toView:bar];
         CGFloat diameter = MIN(44, MIN(CGRectGetHeight(row), CGRectGetMinX(titleRect) - 12));
         if (diameter < 28) { state.lastDecision = @"title_geometry_not_ready"; [self restoreTop:state]; return; }
@@ -285,12 +292,17 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey;
         }
         if (CGRectIsNull(controls)) { state.lastDecision = @"actions_not_ready"; [self restoreTop:state]; return; }
         CGFloat h = MIN(44, CGRectGetHeight(row));
-        CGFloat start = MAX(CGRectGetMinX(controls) - 10, CGRectGetMaxX(titleRect) + 4);
+        CGFloat titleShift = MIN(10, MAX(0, CGRectGetMinX(controls) - 24 - CGRectGetMaxX(titleRect)));
+        CGRect shiftedTitle = CGRectOffset(titleRect, titleShift, 0);
+        CGFloat start = MAX(CGRectGetMinX(controls) - 10, CGRectGetMaxX(shiftedTitle) + 4);
         CGFloat end = MIN(CGRectGetMaxX(controls) + 10, CGRectGetMaxX(bar.bounds) - 8);
         if (start > CGRectGetMinX(controls) + 0.5 || end + 0.5 < CGRectGetMaxX(controls) || end - start < h) { state.lastDecision = @"actions_geometry_not_ready"; [self restoreTop:state]; return; }
         CGRect rightRect = CGRectMake(start, CGRectGetMidY(row) - h / 2, end - start, h);
         [self allowOverflow:carrier state:state]; [self allowOverflow:left state:state]; [self allowOverflow:unread state:state];
         [self move:back from:[self backIconCenter:back inBar:bar] to:CGPointMake(CGRectGetMidX(backRect), CGRectGetMidY(backRect)) bar:bar state:state];
+        CGRect currentTitle = [title convertRect:title.bounds toView:bar];
+        [self move:title from:CGPointMake(CGRectGetMidX(currentTitle), CGRectGetMidY(currentTitle))
+            to:CGPointMake(CGRectGetMidX(shiftedTitle), CGRectGetMidY(shiftedTitle)) bar:bar state:state];
         UIView *badge = [unread respondsToSelector:@selector(unreadCountView)] ? unread.unreadCountView : nil;
         if (badge && [self visible:badge inRoot:bar]) {
             CGRect rect = [badge convertRect:badge.bounds toView:bar];
@@ -306,6 +318,7 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey;
         [self placeGlass:state.rightGlass frame:[carrier convertRect:rightRect fromView:bar] carrier:carrier style:style];
         state.lastDecision = @"applied";
         state.backFrame = backRect; state.rightFrame = rightRect; state.active = YES;
+        [DYYYChatInputList synchronizeHost:(id)host topActive:YES];
     } @finally { state.busy = NO; }
 }
 + (id)beginTopUpdate:(UIView *)view {

@@ -63,8 +63,13 @@
 %group DYYYChatChromeTitleHooks
 %hook AWEIMMessageListNaviBarTitleView
 - (void)layoutSubviews {
-    %orig;
-    [DYYYChatChrome synchronizeTopForView:self];
+    id token = [DYYYChatChrome beginTopUpdate:self];
+    @try {
+        %orig;
+    } @finally {
+        [DYYYChatChrome endTopUpdate:token];
+    }
+    if (!token) [DYYYChatChrome synchronizeTopForView:self];
 }
 %end
 %end
