@@ -251,6 +251,10 @@ jobs:
             echo "Chat message viewport extension is missing from the release dylib." >&2
             exit 1
           fi
+          if ! grep -Fq '_OBJC_CLASS_$_DYYYChatChrome' "$symbols_file"; then
+            echo "Chat navigation and emoji panel styling is missing from the release dylib." >&2
+            exit 1
+          fi
           if ! grep -Fq '_OBJC_CLASS_$_DYYYChatInputGlass' "$symbols_file"; then
             echo "Chat input glass implementation is missing from the release dylib." >&2
             exit 1

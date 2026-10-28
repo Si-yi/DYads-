@@ -9,6 +9,7 @@
 #import "DYYYDetailCaptionLayout.h"
 #import "DYYYChatInputGlass.h"
 #import "DYYYChatInputList.h"
+#import "DYYYChatChrome.h"
 #import "DYYYCommentVideoLayout.h"
 #import "DKDebugCapture.h"
 #import "DKClassDump.h"
@@ -348,6 +349,7 @@ static NSDictionary *DYYYDebugMetadata(void) {
         @"detailCaption": [DYYYDetailCaptionLayout diagnostics],
         @"chatInputGlass": [DYYYChatInputGlass diagnostics],
         @"chatInputList": [DYYYChatInputList diagnostics],
+        @"chatChrome": [DYYYChatChrome diagnostics],
         @"commentVideoLayout": [DYYYCommentVideoLayout diagnostics],
         @"loadedPluginImages": pluginImages,
         @"inputSettings": @{

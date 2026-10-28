@@ -1,5 +1,6 @@
 #import "DYYYChatInputGlass.h"
 #import "DYYYChatInputList.h"
+#import "DYYYChatChrome.h"
 #import "DYYYUtils.h"
 #import "AwemeHeaders.h"
 #import <objc/runtime.h>
@@ -245,7 +246,10 @@ static char kDYYYChatGlassStateKey;
     if (!NSThread.isMainThread || !controller) return;
     DYYYChatGlassState *state = [self state:controller create:[NSUserDefaults.standardUserDefaults boolForKey:@"DYYYEnableFloatingChatInput"]];
     [UIView performWithoutAnimation:^{ [self applyState:state]; }];
-    if (!state.depth && !state.busy) [DYYYChatInputList synchronizeInputController:controller active:state.active];
+    if (!state.depth && !state.busy) {
+        [DYYYChatInputList synchronizeInputController:controller active:state.active];
+        [DYYYChatChrome synchronizeInput:controller];
+    }
 }
 + (void)beginUpdate:(UIViewController *)controller {
     if (!NSThread.isMainThread) return;

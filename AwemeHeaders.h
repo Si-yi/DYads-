@@ -561,6 +561,21 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 - (void)p_layoutWithAnimation:(BOOL)animated coordinate:(id)coordinate;
 - (void)updatePageLayout:(id)layoutInfo;
 @end
+@interface AWEIMNavigationUnreadView : UIView
+@property(nonatomic, strong) UIButton *backButton;
+@property(nonatomic, strong) UIView *unreadCountView;
+- (void)p_updateUI;
+- (void)updateWithCount:(long long)count;
+@end
+@interface AWEIMMessageVCNavigationUnreadView : AWEIMNavigationUnreadView
+- (void)updateWithCount:(long long)count;
+@end
+@interface AWEIMMessageListNaviBarTitleView : UIStackView
+@end
+@interface AWEIMEmoticonPanelContainerView : UIView
+- (void)refreshBackgroundColorWhileHasBackground:(BOOL)hasBackground;
+@end
+
 @interface AWEIMBottomNewMessageTipsImageView : UIView
 @end
 
@@ -1140,6 +1155,11 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @end
 
 @interface AWENavigationBar : UIView
+@property(nonatomic, strong) UIView *contentView;
+@property(nonatomic, strong) UIView *leftBtnsContainerView;
+@property(nonatomic, strong) UIView *rightBtnsContainerView;
+@property(nonatomic, strong) UIView *titleView;
+@property(nonatomic, strong) UIView *bottomLineView;
 @property(nonatomic, strong) UILabel *titleLabel;
 @end
 

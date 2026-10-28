@@ -49,6 +49,7 @@ DYads-_FILES += DYYYCommentHeaderLayout.m DYYYCommentHeaderLayoutHooks.xm
 DYads-_FILES += DYYYSearchClean.m DYYYSearchCleanHooks.xm
 DYads-_FILES += DYYYArticleBackdrop.m DYYYArticleBackdropHooks.xm
 DYads-_FILES += DYYYPanelBlur.m DYYYPanelBlurHooks.xm
+DYads-_FILES += DYYYChatChrome.m DYYYChatChromeHooks.xm
 DYads-_FILES += DYYYCommentVideoLayout.m DYYYCommentVideoHooks.xm
 DYads-_FILES += DYYYChatInputGlass.m DYYYChatInputGlassHooks.xm DYYYChatInputList.m DYYYChatInputMetrics.m
 DYads-_FILES += DYYYFeedTagGlass.m DYYYAvatarRing.m DYYYSameStyleVisibility.m DYYYFeedDecorationsHooks.xm
