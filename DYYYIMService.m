@@ -2,6 +2,7 @@
 #import "AwemeHeaders.h"
 #import "DYYYIMHistoryReader.h"
 #import "DYYYIMShareParser.h"
+#import "DYYYIMConversationStore.h"
 
 @interface DYYYIMService ()
 @property (nonatomic, strong) NSMapTable *services;
@@ -36,28 +37,12 @@
                             diagnostics:(NSMutableDictionary *)diagnostics {
     Class cls = NSClassFromString(@"TIMXOConversation");
     if (!root || !cid.length || [self value:manager key:@"r"] != root) return nil;
-    // 复用 SDK 当前缓存；缺失时由当前账户的 manager 读取本地会话，不自行构造会话模型。
-    @try {
-        if ([cls respondsToSelector:@selector(cachedInstanceWithRootObject:identifier:)]) {
-            TIMXOConversation *cached = [(id)cls cachedInstanceWithRootObject:root identifier:cid];
-            if ([cached isKindOfClass:cls] && [cached.identifier isEqual:cid]) {
-                diagnostics[@"conversationSource"] = @"native_cache";
-                return cached;
-            }
-        }
-        if ([manager respondsToSelector:@selector(fetchConversationsWithIdentifiers:)]) {
-            id result = [manager fetchConversationsWithIdentifiers:@[cid]];
-            NSArray *values = [result isKindOfClass:NSArray.class] ? result :
-                ([result isKindOfClass:NSDictionary.class] ? [result allValues] : nil);
-            for (id value in values) if ([value isKindOfClass:cls] && [[value identifier] isEqual:cid]) {
-                diagnostics[@"conversationSource"] = @"native_local_fetch";
-                return value;
-            }
-        }
-    } @catch (__unused NSException *exception) {
-        diagnostics[@"conversationLookupFailed"] = @YES;
+    TIMXOConversation *observed = [DYYYIMConversationStore conversationForRoot:root identifier:cid];
+    if ([observed isKindOfClass:cls] && [observed.identifier isEqual:cid]) {
+        diagnostics[@"conversationSource"] = @"passively_observed";
+        return observed;
     }
-    diagnostics[@"conversationSource"] = @"unavailable";
+    diagnostics[@"conversationSource"] = @"awaiting_native_conversation";
     return nil;
 }
 
@@ -79,13 +64,6 @@
     if (!account.length || !manager || !messages || !root || [self value:messages key:@"r"] != root) {
         state[@"stage"] = @"services_not_ready";
         completion(@[], @[], @"本地消息服务尚未就绪，请先打开消息页再返回扫描");
-        return;
-    }
-    Class convClass = NSClassFromString(@"TIMXOConversation");
-    if (![convClass respondsToSelector:@selector(cachedInstanceWithRootObject:identifier:)] &&
-        ![manager respondsToSelector:@selector(fetchConversationsWithIdentifiers:)]) {
-        state[@"stage"] = @"conversation_api_unavailable";
-        completion(@[], @[], @"当前版本的会话读取入口不可用");
         return;
     }
     state[@"historyKind"] = @"native_unread_only_no_history_fallback";
@@ -279,6 +257,7 @@
     result[@"lastFailure"] = [self shared].lastFailure ?: @"";
     result[@"knownTextFormats"] = @([self shared].textTypes.count);
     result[@"lastHistoryResultCount"] = @([self shared].historyResultCount);
+    result[@"conversationStore"] = [DYYYIMConversationStore diagnostics];
     result[@"lastScan"] = [[self shared].scanState copy] ?: @{};
     return result;
 }

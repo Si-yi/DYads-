@@ -1,6 +1,7 @@
 #import "AwemeHeaders.h"
 #import "DYYYAutoMessage.h"
 #import "DYYYIMService.h"
+#import "DYYYIMConversationStore.h"
 #import "DYYYFriendShareService.h"
 #import "DYYYFriendShareBadgeView.h"
 #import "DYYYChatVideoLayout.h"
@@ -177,6 +178,40 @@
 %end
 
 %hook TIMXOConversation
++ (id)cachedInstanceWithRootObject:(id)root identifier:(id)identifier {
+    id result = %orig(root, identifier);
+    [DYYYIMConversationStore capture:result root:root identifier:identifier];
+    return result;
+}
++ (id)instanceWithRootObject:(id)root identifier:(id)identifier {
+    id result = %orig(root, identifier);
+    [DYYYIMConversationStore capture:result root:root identifier:identifier];
+    return result;
+}
++ (id)instanceWithRootObject:(id)root pbModel:(id)model {
+    id result = %orig(root, model);
+    [DYYYIMConversationStore capture:result root:root identifier:[result identifier]];
+    return result;
+}
++ (id)instanceWithRootObject:(id)root modelORM:(id)model {
+    id result = %orig(root, model);
+    [DYYYIMConversationStore capture:result root:root identifier:[result identifier]];
+    return result;
+}
++ (id)instanceWithRootObject:(id)root identifier:(id)identifier modelProtocol:(id)model coreInfo:(id)core settingsInfo:(id)settings {
+    id result = %orig(root, identifier, model, core, settings);
+    [DYYYIMConversationStore capture:result root:root identifier:identifier];
+    return result;
+}
+- (unsigned long long)unreadCount {
+    unsigned long long count = %orig;
+    [DYYYIMConversationStore observeCount:count conversation:self source:@"native_getter"];
+    return count;
+}
+- (void)setUnreadCount:(unsigned long long)count {
+    %orig(count);
+    [DYYYIMConversationStore observeCount:count conversation:self source:@"native_setter"];
+}
 - (id)sendMessage:(id)model error:(void *)error {
     [DYYYIMService observeConversationSend:model conversation:self];
     return %orig;

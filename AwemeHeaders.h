@@ -2293,6 +2293,10 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 
 @class TIMXOMessage;
 @interface TIMXOConversation : NSObject
++ (instancetype)instanceWithRootObject:(id)root pbModel:(id)model;
++ (instancetype)instanceWithRootObject:(id)root modelORM:(id)model;
++ (instancetype)instanceWithRootObject:(id)root identifier:(id)identifier modelProtocol:(id)model coreInfo:(id)core settingsInfo:(id)settings;
+- (void)setUnreadCount:(unsigned long long)count;
 - (id)sendMessage:(id)model error:(void *)error;
 - (id)sendMessage:(id)model isSaveDB:(BOOL)saveDB error:(void *)error;
 + (instancetype)instanceWithRootObject:(id)root identifier:(id)identifier;
