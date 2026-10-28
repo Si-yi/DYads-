@@ -147,11 +147,11 @@
     [self check:history == nil && scanHistoryCalls == 0 reason:@"专用未读失败且边界缺失时，不能盲读旧历史"];
     history = [DYYYIMHistoryReader historyForConversation:@"chat-A" latestMessage:latest firstUnreadID:@""
         nativeUnread:@[] revalidating:YES observedResult:observedQuery recentQuery:recentQuery earliestQuery:oldQuery diagnostics:window];
-    [self check:history.count == 1 && scanHistoryCalls == 1 reason:@"需撤销旧错误来源时仍保留历史反证读取"];
+    [self check:history == nil && scanHistoryCalls == 0 reason:@"旧凭据核验不能绕过隔离再次触发 SDK 历史加载"];
     scanHistoryCalls = 0;
     history = [DYYYIMHistoryReader historyForConversation:@"chat-A" latestMessage:latest firstUnreadID:[latest identifier]
         nativeUnread:nil revalidating:NO observedResult:observedQuery recentQuery:recentQuery earliestQuery:oldQuery diagnostics:window];
-    [self check:history.count == 1 && scanHistoryCalls == 1 reason:@"专用未读失败但有确切边界时仍保留有界回退"];
+    [self check:history == nil && scanHistoryCalls == 0 reason:@"专用未读失败即使有边界，也不能回退可能重算未读的历史入口"];
     NSLog(@"DYYYIMHistoryReader regression tests passed");
 }
 @end

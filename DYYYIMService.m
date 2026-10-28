@@ -88,8 +88,7 @@
         completion(@[], @[], @"当前版本的会话读取入口不可用");
         return;
     }
-    NSString *historyKind = [[[self shared].historyArguments objectForKey:messages] copy];
-    state[@"historyKind"] = historyKind ?: @"recent_with_identifier_fallback";
+    state[@"historyKind"] = @"native_unread_only_no_history_fallback";
     NSMutableArray *requests = [NSMutableArray array];
     __block NSUInteger failed = 0;
     // 在主线程校验账户及会话，后台只执行原生只读查询和消息解析。
@@ -101,24 +100,20 @@
             NSMutableDictionary *lookup = [NSMutableDictionary dictionary];
             TIMXOConversation *conv = [self localConversation:cid root:root manager:manager diagnostics:lookup];
             if (![self validateConversation:conv manager:manager account:account peer:peer identifier:cid]) { failed++; continue; }
-            BOOL revalidate = NO;
-            for (NSDictionary *row in legacyRows)
-                if ([row[@"friendID"] isEqual:peer] && ![DYYYIMShareParser isCurrentReceipt:row]) { revalidate = YES; break; }
-            if (!conv.unreadCount && !revalidate) continue;
-            id latest = conv.lastMessage;
-            if (!latest) { failed++; continue; }
-            [requests addObject:[@{ @"peer": peer, @"cid": cid, @"conversation": conv, @"latest": latest,
-                @"unread": @(conv.unreadCount), @"boundary": conv.firstUnreadMessageID ?: @"",
-                @"revalidating": @(revalidate), @"conversationSource": lookup[@"conversationSource"] ?: @"unavailable" } mutableCopy]];
+            // 已读会话不因旧分享凭据待核验而再次读历史。
+            if (!conv.unreadCount) continue;
+            [requests addObject:[@{ @"peer": peer, @"cid": cid, @"conversation": conv,
+                @"unread": @(conv.unreadCount),
+                @"conversationSource": lookup[@"conversationSource"] ?: @"unavailable" } mutableCopy]];
         } @catch (__unused NSException *exception) { failed++; }
     }
-    state[@"stage"] = @"reading_recent";
+    state[@"stage"] = @"reading_native_unread";
     NSUInteger unreadConversations = 0;
     for (NSDictionary *request in requests) if ([request[@"unread"] unsignedIntegerValue]) unreadConversations++;
     state[@"unreadConversationCount"] = @(unreadConversations);
     state[@"queriedConversationCount"] = @(requests.count);
     // 39.5 会话常有 unreadCount 却没有 firstUnreadMessageID；使用 SDK 的只读未读查询。
-    // 不阻塞主线程/SDK 回调队列；每个请求只结算一次，超时后仍尝试有凭据的边界路径。
+    // 不阻塞主线程/SDK 回调队列；每个请求只结算一次，失败或超时不回退完整历史。
     dispatch_group_t unreadGroup = dispatch_group_create();
     for (NSMutableDictionary *request in requests) {
         if (![request[@"unread"] unsignedIntegerValue]) continue;
@@ -163,36 +158,13 @@
                     if (unreadCount && request[@"nativeUnreadResult"])
                         incoming = [DYYYIMHistoryReader nativeUnreadIncomingMessages:request[@"nativeUnreadResult"]
                             conversation:cid peerID:peer.longLongValue unreadCount:unreadCount diagnostics:diagnostics];
-                    id (^observed)(void) = nil;
-                    if (historyKind.length && [messages respondsToSelector:@selector(messagesInConversation:excludeMessageTypes:limit:)]) {
-                        // 仅使用已经观察到的参数类型，不能根据 id 声明猜会话对象/字符串。
-                        id argument = [historyKind isEqual:@"identifier"] ? (id)cid : request[@"conversation"];
-                        observed = ^id { return [messages messagesInConversation:argument excludeMessageTypes:@[] limit:2000]; };
-                    }
-                    id (^recentQuery)(NSTimeInterval, NSUInteger) = nil;
-                    if ([messages respondsToSelector:@selector(messagesBeforeTime:inTypes:limit:)]) {
-                        recentQuery = ^id(NSTimeInterval before, NSUInteger limit) {
-                            return [messages messagesBeforeTime:before inTypes:nil limit:limit];
-                        };
-                    }
-                    id (^earliestQuery)(NSUInteger) = nil;
-                    if ([messages respondsToSelector:@selector(earliestMessagesInConversationWithIdentifier:limit:)]) {
-                        earliestQuery = ^id(NSUInteger limit) {
-                            return [messages earliestMessagesInConversationWithIdentifier:cid limit:(long long)limit];
-                        };
-                    }
-                    NSArray *history = [DYYYIMHistoryReader historyForConversation:cid latestMessage:request[@"latest"] firstUnreadID:request[@"boundary"]
-                        nativeUnread:incoming revalidating:[request[@"revalidating"] boolValue]
-                        observedResult:observed recentQuery:recentQuery earliestQuery:earliestQuery diagnostics:diagnostics];
-                    diagnostics[@"messageCount"] = @(history.count);
-                    if (!incoming) {
-                        incoming = [DYYYIMHistoryReader unreadIncomingMessages:history peerID:peer.longLongValue
-                            unreadCount:unreadCount firstUnreadID:request[@"boundary"] diagnostics:diagnostics];
-                        if (unreadCount && ![diagnostics[@"unreadSelection"] isEqual:@"verified_boundary"]) failed++;
-                    }
-                    // 专用未读查询不要求结果包含末条（末条可能是自己发出或系统消息）。
-                    // 历史不可读时仍交付已验证的未读，但不拿残缺历史撤销旧来源。
-                    if (!history && !unreadCount) failed++;
+                    // 原生历史加载可能更新 SDK 会话状态；分享扫描不再调用任何历史回退。
+                    // 查询失败明确保留失败，不能把按条数截取的旧消息当作未读。
+                    [DYYYIMHistoryReader historyForConversation:cid latestMessage:nil firstUnreadID:nil
+                        nativeUnread:incoming revalidating:legacyRows.count > 0 observedResult:nil
+                        recentQuery:nil earliestQuery:nil diagnostics:diagnostics];
+                    if (!incoming) { failed++; incoming = @[]; }
+                    diagnostics[@"messageCount"] = @(incoming.count);
                     diagnostics[@"incomingCount"] = @(incoming.count);
                     NSMutableArray *kinds = [NSMutableArray array];
                     for (TIMXOMessage *message in incoming) {
@@ -207,7 +179,7 @@
                         }
                     }
                     diagnostics[@"incomingMessageKinds"] = kinds;
-                    NSDictionary *reconciliation = [DYYYIMShareParser reconcileRows:legacyRows history:history unreadMessages:incoming peerID:peer accountID:account];
+                    NSDictionary *reconciliation = [DYYYIMShareParser reconcileRows:legacyRows history:incoming unreadMessages:incoming peerID:peer accountID:account];
                     [rows addObjectsFromArray:reconciliation[@"verifiedRows"]];
                     [rejectedRows addObjectsFromArray:reconciliation[@"rejectedRows"]];
                     diagnostics[@"verifiedLegacyCount"] = @([reconciliation[@"verifiedRows"] count]);

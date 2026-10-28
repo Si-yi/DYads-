@@ -86,15 +86,11 @@
                       nativeUnread:(NSArray *)incoming revalidating:(BOOL)revalidating observedResult:(id (^)(void))observed
                        recentQuery:(id (^)(NSTimeInterval, NSUInteger))recentQuery
                      earliestQuery:(id (^)(NSUInteger))earliestQuery diagnostics:(NSMutableDictionary *)diagnostics {
-    if (!revalidating && (incoming != nil || ![self normalizedBoundary:boundary].length)) {
-        diagnostics[@"query"] = incoming != nil ? @"native_unread_only" : @"no_verified_history_boundary";
-        return nil;
-    }
-    id result = nil;
-    @try { if (observed) result = observed(); }
-    @catch (__unused NSException *exception) { diagnostics[@"observedQueryFailed"] = @YES; }
-    return [self historyForConversation:identifier latestMessage:latest firstUnreadID:boundary observedResult:result
-        recentQuery:recentQuery earliestQuery:earliestQuery diagnostics:diagnostics];
+    // 分享扫描入口禁止历史读取，包括旧凭据核验和存在边界的回退。
+    // SDK 的历史加载并非纯数据数组查询，不能假定它不会重算会话未读状态。
+    diagnostics[@"query"] = incoming != nil ? @"native_unread_only" : @"native_unread_unavailable_no_history";
+    diagnostics[@"legacyRevalidationDeferred"] = @(revalidating);
+    return nil;
 }
 + (NSArray *)historyForConversation:(NSString *)identifier latestMessage:(id)latest firstUnreadID:(NSString *)rawBoundary
                     observedResult:(id)observed recentQuery:(id (^)(NSTimeInterval, NSUInteger))recentQuery
