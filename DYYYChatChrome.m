@@ -58,6 +58,7 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey;
 @property (nonatomic, weak) UIViewController *host;
 @property (nonatomic, strong) NSDictionary *native;
 @property (nonatomic, strong) UIColor *border;
+@property (nonatomic, strong) NSMapTable<UIView *, NSDictionary *> *backdrops;
 @property (nonatomic) CGFloat radius;
 @property (nonatomic) BOOL busy;
 @property (nonatomic) BOOL active;
@@ -290,6 +291,46 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey;
     if (state.depth) state.depth--;
     if (!state.depth) [self synchronizeBar:state.bar];
 }
+// 原生动态模糊底板与面板是兄弟，不能只圆角前景、在角外留下矩形底板。
++ (void)restoreBackdrop:(UIView *)view saved:(NSDictionary *)saved radius:(CGFloat)radius {
+    if (view.layer.cornerRadius == radius) view.layer.cornerRadius = [saved[@"radius"] doubleValue];
+    if (view.layer.maskedCorners == (kCALayerMinXMinYCorner | kCALayerMaxXMinYCorner)) view.layer.maskedCorners = [saved[@"corners"] unsignedIntegerValue];
+    if ([view.layer.cornerCurve isEqualToString:kCACornerCurveContinuous]) view.layer.cornerCurve = saved[@"curve"];
+    if (view.clipsToBounds) view.clipsToBounds = [saved[@"clips"] boolValue];
+}
++ (void)synchronizePanelBackdrops:(DYYYChatPanelState *)state {
+    UIView *page = state.input.viewIfLoaded.superview;
+    if (!page) return;
+    CGRect reference = [state.carrier convertRect:state.carrier.bounds toView:page];
+    NSMutableArray *wanted = [NSMutableArray array];
+    for (UIView *view in page.subviews) {
+        if (![view isKindOfClass:UIVisualEffectView.class]) continue;
+        UIVisualEffect *effect = ((UIVisualEffectView *)view).effect;
+        if (![NSStringFromClass(effect.class) isEqualToString:@"AWEUIDynamicBlurEffect"]) continue;
+        CGRect rect = [view convertRect:view.bounds toView:page];
+        if (fabs(rect.origin.x - reference.origin.x) > 1 || fabs(rect.origin.y - reference.origin.y) > 1 ||
+            fabs(rect.size.width - reference.size.width) > 1 || rect.size.height < reference.size.height - 1 ||
+            rect.size.height - reference.size.height > 80) continue;
+        [wanted addObject:view];
+    }
+    for (UIView *view in state.backdrops.keyEnumerator.allObjects) if (![wanted containsObject:view]) {
+        [self restoreBackdrop:view saved:[state.backdrops objectForKey:view] radius:state.radius];
+        [state.backdrops removeObjectForKey:view];
+    }
+    for (UIView *view in wanted) {
+        NSDictionary *original = [state.backdrops objectForKey:view];
+        NSMutableDictionary *saved = original ? [original mutableCopy] : [NSMutableDictionary dictionary];
+        if (!original || view.layer.cornerRadius != state.radius) saved[@"radius"] = @(view.layer.cornerRadius);
+        if (!original || view.layer.maskedCorners != (kCALayerMinXMinYCorner | kCALayerMaxXMinYCorner)) saved[@"corners"] = @(view.layer.maskedCorners);
+        if (!original || ![view.layer.cornerCurve isEqualToString:kCACornerCurveContinuous]) saved[@"curve"] = view.layer.cornerCurve ?: kCACornerCurveCircular;
+        if (!original || !view.clipsToBounds) saved[@"clips"] = @(view.clipsToBounds);
+        [state.backdrops setObject:saved forKey:view];
+        if (view.layer.cornerRadius != state.radius) view.layer.cornerRadius = state.radius;
+        if (view.layer.maskedCorners != (kCALayerMinXMinYCorner | kCALayerMaxXMinYCorner)) view.layer.maskedCorners = kCALayerMinXMinYCorner | kCALayerMaxXMinYCorner;
+        if (![view.layer.cornerCurve isEqualToString:kCACornerCurveContinuous]) view.layer.cornerCurve = kCACornerCurveContinuous;
+        if (!view.clipsToBounds) view.clipsToBounds = YES;
+    }
+}
 + (void)restorePanel:(DYYYChatPanelState *)state {
     if (!state.active) return;
     UIView *view = state.carrier; NSDictionary *saved = state.native;
@@ -300,6 +341,9 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey;
     if (view.layer.borderColor && CGColorEqualToColor(view.layer.borderColor, state.border.CGColor))
         view.layer.borderColor = saved[@"border"] == NSNull.null ? NULL : ((UIColor *)saved[@"border"]).CGColor;
     if (view.clipsToBounds) view.clipsToBounds = [saved[@"clips"] boolValue];
+    for (UIView *backdrop in state.backdrops.keyEnumerator.allObjects)
+        [self restoreBackdrop:backdrop saved:[state.backdrops objectForKey:backdrop] radius:state.radius];
+    [state.backdrops removeAllObjects];
     state.active = NO; state.native = nil;
 }
 + (void)synchronizePanel:(UIView *)panel {
@@ -329,6 +373,7 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey;
     }
     if (!state) {
         state = [DYYYChatPanelState new]; state.panel = panel;
+        state.backdrops = [NSMapTable weakToStrongObjectsMapTable];
         objc_setAssociatedObject(panel, &kDYYYChatPanelKey, state, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         [[self panelStates] addObject:state];
     }
@@ -359,6 +404,7 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey;
         if (carrier.layer.borderWidth != 0.5) carrier.layer.borderWidth = 0.5;
         if (!carrier.layer.borderColor || !CGColorEqualToColor(carrier.layer.borderColor, state.border.CGColor)) carrier.layer.borderColor = state.border.CGColor;
         if (!carrier.clipsToBounds) carrier.clipsToBounds = YES;
+        [self synchronizePanelBackdrops:state];
         state.active = YES;
     } @finally { state.busy = NO; }
 }
@@ -409,7 +455,8 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey;
         [tops addObject:@{ @"active": @(state.active), @"back": NSStringFromCGRect(state.backFrame), @"actions": NSStringFromCGRect(state.rightFrame) }];
     for (DYYYChatPanelState *state in [self panelStates].allObjects) if (state.panel.window)
         [panels addObject:@{ @"active": @(state.active), @"radius": @(state.radius), @"frame": NSStringFromCGRect(state.carrier.frame),
-            @"inputType": @([state.input respondsToSelector:@selector(currentInputType)] ? ((IESIMInputViewController *)state.input).currentInputType : -1) }];
+            @"inputType": @([state.input respondsToSelector:@selector(currentInputType)] ? ((IESIMInputViewController *)state.input).currentInputType : -1),
+            @"roundedNativeBackdrops": @(state.backdrops.count) }];
     return @{ @"enabled": @([self enabled]), @"topBars": tops, @"emojiPanels": panels };
 }
 @end
