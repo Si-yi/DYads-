@@ -1616,6 +1616,11 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
             @"detail" : @"0-1小数",
             @"cellType" : @26,
             @"imageName" : @"ic_user_outlined_20"},
+          @{@"identifier" : @"DYYYNotificationCornerRadius",
+            @"title" : @"通知圆角半径",
+            @"detail" : @"默认12",
+            @"cellType" : @26,
+            @"imageName" : @"ic_comment_outlined_20"},
       ];
 
       for (NSDictionary *dict in transparencySettings) {
@@ -1763,7 +1768,35 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
           [iconItems addObject:plusIconItem];
       }
 
-      // 【毛玻璃设置】分类：悬浮底栏（iOS 26 液态玻璃）与玻璃材质，移植自 DYKiller
+      NSMutableArray *sections = [NSMutableArray array];
+      [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"透明度设置" items:transparencyItems]];
+      [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"缩放与大小" items:scaleItems]];
+      [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"标题自定义" items:titleItems]];
+      [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"图标自定义" items:iconItems]];
+      DYYYRegisterSearchSections(@"界面设置", sections);
+      if (DYYYBuildingSettingsSearchIndex) {
+          return;
+      }
+
+      // 创建并推入二级设置页面
+      AWESettingBaseViewController *subVC = [DYYYSettingsHelper createSubSettingsViewController:@"界面设置" sections:sections];
+      [rootVC.navigationController pushViewController:(UIViewController *)subVC animated:YES];
+    };
+
+    [mainItems addObject:uiSettingItem];
+
+    // 液态玻璃为设置首页独立入口，位于界面设置之后。
+    AWESettingItemModel *liquidGlassItem = [[%c(AWESettingItemModel) alloc] init];
+    liquidGlassItem.identifier = @"DYYYLiquidGlassSettings";
+    liquidGlassItem.title = @"液态玻璃";
+    liquidGlassItem.type = 0;
+    liquidGlassItem.svgIconImageName = @"ic_eye_outlined_20";
+    liquidGlassItem.cellType = 26;
+    liquidGlassItem.colorStyle = 0;
+    liquidGlassItem.isEnable = YES;
+    liquidGlassItem.cellTappedBlock = ^{
+      NSMutableDictionary *cellTapHandlers = [NSMutableDictionary dictionary];
+      // 【液态玻璃】分类：悬浮底栏（iOS 26 液态玻璃）与玻璃材质，移植自 DYKiller
       NSMutableArray<AWESettingItemModel *> *glassTabBarItems = [NSMutableArray array];
       NSArray *glassTabBarSettings = @[
           @{@"identifier" : @"DYYYEnableCommentBlur",
@@ -1788,11 +1821,6 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
             @"detail" : @"",
             @"cellType" : @6,
             @"imageName" : @"ic_comment_outlined_20"},
-          @{@"identifier" : @"DYYYNotificationCornerRadius",
-            @"title" : @"通知圆角半径",
-            @"detail" : @"默认12",
-            @"cellType" : @26,
-            @"imageName" : @"ic_comment_outlined_20"},
           @{@"identifier" : @"DYYYCommentBlurTransparent",
             @"title" : @"毛玻璃透明度",
             @"detail" : @"0-1小数",
@@ -1808,6 +1836,21 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
             @"detail" : @"模糊玻璃",
             @"cellType" : @26,
             @"imageName" : @"ic_eye_outlined_20"},
+          @{@"identifier" : @"DYYYEnableSheetBlur",
+            @"title" : @"保存面板玻璃效果",
+            @"detail" : @"",
+            @"cellType" : @6,
+            @"imageName" : @"ic_list_outlined"},
+          @{@"identifier" : @"DYYYSheetBlurTransparent",
+            @"title" : @"面板毛玻璃透明度",
+            @"detail" : @"0-1小数",
+            @"cellType" : @26,
+            @"imageName" : @"ic_eye_outlined_20"},
+          @{@"identifier" : @"DYYYLongPressPanelBlur",
+            @"title" : @"长按面板玻璃效果",
+            @"detail" : @"",
+            @"cellType" : @6,
+            @"imageName" : @"ic_squaresplit_outlined_20"},
       ];
 
       for (NSDictionary *dict in glassTabBarSettings) {
@@ -1837,23 +1880,14 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
 
       [glassTabBarItems addObject:[DYYYSettingsHelper createSettingItem:@{ @"identifier": @"DYYYEnableChatTopGlass", @"title": @"消息页顶栏玻璃", @"subTitle": @"聊天返回键与右侧按钮使用玻璃样式", @"detail": @"", @"cellType": @37, @"imageName": @"ic_module_outlined_20" }]];
 
-      NSMutableArray *sections = [NSMutableArray array];
-      [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"透明度设置" items:transparencyItems]];
-      [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"毛玻璃设置" items:glassTabBarItems]];
-      [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"缩放与大小" items:scaleItems]];
-      [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"标题自定义" items:titleItems]];
-      [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"图标自定义" items:iconItems]];
-      DYYYRegisterSearchSections(@"界面设置", sections);
-      if (DYYYBuildingSettingsSearchIndex) {
-          return;
-      }
 
-      // 创建并推入二级设置页面
-      AWESettingBaseViewController *subVC = [DYYYSettingsHelper createSubSettingsViewController:@"界面设置" sections:sections];
+      NSArray *sections = @[[DYYYSettingsHelper createSectionWithTitle:@"液态玻璃" items:glassTabBarItems]];
+      DYYYRegisterSearchSections(@"液态玻璃", sections);
+      if (DYYYBuildingSettingsSearchIndex) return;
+      AWESettingBaseViewController *subVC = [DYYYSettingsHelper createSubSettingsViewController:@"液态玻璃" sections:sections];
       [rootVC.navigationController pushViewController:(UIViewController *)subVC animated:YES];
     };
-
-    [mainItems addObject:uiSettingItem];
+    [mainItems addObject:liquidGlassItem];
 
     // 顶栏移除恢复为独立的原 DYYY 分类。
 
@@ -2960,16 +2994,6 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
             @"detail" : @"",
             @"cellType" : @6,
             @"imageName" : @"ic_hamburgernut_outlined_20"},
-          @{@"identifier" : @"DYYYEnableSheetBlur",
-            @"title" : @"保存面板玻璃效果",
-            @"detail" : @"",
-            @"cellType" : @6,
-            @"imageName" : @"ic_list_outlined"},
-          @{@"identifier" : @"DYYYSheetBlurTransparent",
-            @"title" : @"面板毛玻璃透明度",
-            @"detail" : @"0-1小数",
-            @"cellType" : @26,
-            @"imageName" : @"ic_eye_outlined_20"},
           @{@"identifier" : @"DYYYCommentLivePhotoNotWaterMark",
             @"title" : @"移除评论实况水印",
             @"detail" : @"",
@@ -3699,11 +3723,6 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
               @"cellType" : @37,
               @"imageName" : @"ic_squaresplit_outlined_20"
           },
-          @{@"identifier" : @"DYYYLongPressPanelBlur",
-            @"title" : @"长按面板玻璃效果",
-            @"detail" : @"",
-            @"cellType" : @6,
-            @"imageName" : @"ic_squaresplit_outlined_20"},
           @{@"identifier" : @"DYYYLongPressPanelDark",
             @"title" : @"长按面板深色模式",
             @"detail" : @"",
@@ -3950,7 +3969,7 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
     [aboutItems addObject:licenseItem];
     // 保留原 DYYY 分类，移除已停用的悬浮按钮分区。
     NSMutableArray<AWESettingItemModel *> *orderedMainItems = [NSMutableArray arrayWithArray:@[
-        basicSettingItem, uiSettingItem, hideSettingItem, removeSettingItem, enhanceSettingItem
+        basicSettingItem, uiSettingItem, liquidGlassItem, hideSettingItem, removeSettingItem, enhanceSettingItem
     ]];
     mainSection.itemArray = orderedMainItems;
     aboutSection.itemArray = aboutItems;
