@@ -3,18 +3,27 @@
 @implementation DYYYIMConversationStore
 + (NSMapTable *)roots {
     static NSMapTable *map; static dispatch_once_t once;
-    dispatch_once(&once, ^{ map = [NSMapTable weakToStrongObjectsMapTable]; });
+    dispatch_once(&once, ^{ map = [NSMapTable mapTableWithKeyOptions:NSPointerFunctionsWeakMemory | NSPointerFunctionsOpaquePersonality
+            valueOptions:NSPointerFunctionsStrongMemory]; });
     return map;
 }
-+ (NSMapTable *)counts {
-    static NSMapTable *map; static dispatch_once_t once;
-    dispatch_once(&once, ^{ map = [NSMapTable weakToStrongObjectsMapTable]; });
-    return map;
-}
-+ (NSMutableArray *)events {
-    static NSMutableArray *events; static dispatch_once_t once;
-    dispatch_once(&once, ^{ events = [NSMutableArray array]; });
-    return events;
++ (void)observeNativeConversation:(id)conversation root:(id)root identifier:(NSString *)identifier {
+    if (!conversation || !root) return;
+    static dispatch_queue_t queue; static dispatch_once_t once;
+    dispatch_once(&once, ^{ queue = dispatch_queue_create("com.dyyy.observed-conversations", DISPATCH_QUEUE_SERIAL); });
+    __weak id weakConversation = conversation, weakRoot = root;
+    NSString *key = [identifier isKindOfClass:NSString.class] ? [identifier copy] : nil;
+    // 原生工厂/SDK 锁内不访问模型、不取栈、不争用插件缓存锁；返回后异步补充弱缓存。
+    dispatch_async(queue, ^{
+        id model = weakConversation, owner = weakRoot;
+        if (!model || !owner) return;
+        NSString *resolved = key;
+        if (!resolved) {
+            @try { resolved = [model valueForKey:@"identifier"]; }
+            @catch (__unused NSException *exception) { return; }
+        }
+        [self capture:model root:owner identifier:resolved];
+    });
 }
 + (void)capture:(id)conversation root:(id)root identifier:(NSString *)identifier {
     if (!conversation || !root || ![identifier isKindOfClass:NSString.class] || !identifier.length) return;
@@ -36,29 +45,12 @@
     if (!root || !identifier.length) return nil;
     @synchronized(self) { return [[[self roots] objectForKey:root] objectForKey:identifier]; }
 }
-+ (void)observeCount:(unsigned long long)count conversation:(id)conversation source:(NSString *)source {
-    if (!conversation) return;
-    @synchronized(self) {
-        NSNumber *previous = [[self counts] objectForKey:conversation];
-        if (previous && previous.unsignedLongLongValue == count) return;
-        [[self counts] setObject:@(count) forKey:conversation];
-        BOOL rise = previous && count > previous.unsignedLongLongValue && count - previous.unsignedLongLongValue >= 32;
-        if (!rise && (previous || count < 32)) return;
-        // 仅异常上涨/首次看到大计数才取栈。只记计数、SDK 调用位置，不记聊天内容或账户 ID。
-        NSArray *stack = NSThread.callStackSymbols;
-        NSMutableArray *events = [self events];
-        [events addObject:@{ @"kind": rise ? @"observed_rise" : @"first_observed_large_count",
-            @"previous": previous ?: NSNull.null, @"count": @(count), @"source": source ?: @"",
-            @"uptime": @(NSProcessInfo.processInfo.systemUptime),
-            @"stack": [stack subarrayWithRange:NSMakeRange(0, MIN(stack.count, 14))] }];
-        if (events.count > 32) [events removeObjectsInRange:NSMakeRange(0, events.count - 32)];
-    }
-}
 + (NSDictionary *)diagnostics {
     @synchronized(self) {
         NSUInteger count = 0;
-        for (NSMapTable *map in [self roots].objectEnumerator) count += map.objectEnumerator.allObjects.count;
-        return @{ @"lookup": @"passively_observed_only", @"liveConversations": @(count), @"unreadEvents": [[self events] copy] };
+        for (NSMapTable *map in [self roots].objectEnumerator) count += map.count;
+        return @{ @"lookup": @"passively_observed_async", @"cachedSlots": @(count),
+            @"unreadObserverEnabled": @NO };
     }
 }
 @end

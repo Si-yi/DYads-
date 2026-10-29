@@ -4,6 +4,6 @@
 @interface DYYYIMConversationStore : NSObject
 + (void)capture:(id)conversation root:(id)root identifier:(NSString *)identifier;
 + (id)conversationForRoot:(id)root identifier:(NSString *)identifier;
-+ (void)observeCount:(unsigned long long)count conversation:(id)conversation source:(NSString *)source;
++ (void)observeNativeConversation:(id)conversation root:(id)root identifier:(NSString *)identifier;
 + (NSDictionary *)diagnostics;
 @end
