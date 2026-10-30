@@ -310,6 +310,23 @@ static char kDYYYGroupToolbarKey, kDYYYGroupToggleKey, kDYYYGroupComponentStateK
         native.decision = @"native_detail_setup_exception"; return original;
     } @finally { native.busy = NO; }
 }
+// 轻量录制也保留少量原生UI组件声明；只读 Class，不读取聊天内容或执行私有消息方法。
++ (NSArray *)nativeInterfaceForClass:(Class)cls {
+    NSMutableArray *rows = [NSMutableArray array];
+    for (NSUInteger depth = 0; cls && depth < 3 && [NSStringFromClass(cls) hasPrefix:@"AWEIM"]; depth++, cls = class_getSuperclass(cls)) {
+        unsigned int count = 0;
+        Method *methods = class_copyMethodList(cls, &count);
+        NSMutableArray *signatures = [NSMutableArray array];
+        for (unsigned int i = 0; i < MIN(count, 64); i++) {
+            const char *encoding = method_getTypeEncoding(methods[i]);
+            [signatures addObject:@{ @"selector": NSStringFromSelector(method_getName(methods[i])),
+                @"encoding": encoding ? [NSString stringWithUTF8String:encoding] : @"" }];
+        }
+        free(methods);
+        [rows addObject:@{ @"class": NSStringFromClass(cls), @"methods": signatures }];
+    }
+    return rows;
+}
 + (NSDictionary *)diagnostics {
     NSMutableArray *rows = [NSMutableArray array];
     for (DYYYGroupToolbarState *state in [self states].allObjects) {
@@ -322,6 +339,8 @@ static char kDYYYGroupToolbarKey, kDYYYGroupToggleKey, kDYYYGroupComponentStateK
             @"replacementClass": detail.component ? NSStringFromClass(detail.component.class) : @"", @"refreshAttempted": @(state.refreshAttempted) }];
     }
     return @{ @"hidden": @([self enabled]), @"observedGroups": @(rows.count), @"states": rows,
+        @"nativeDetailInterface": [self nativeInterfaceForClass:NSClassFromString(@"AWEIMMessageListNaviBarChatDetailComponent")],
+        @"nativeToggleInterface": [self nativeInterfaceForClass:NSClassFromString(@"AWEIMMessageListNaviBarGroupZoneToggleComponent")],
         @"nativeDetailClassAvailable": @(NSClassFromString(@"AWEIMMessageListNaviBarChatDetailComponent") != nil),
         @"observedDetailClass": NSStringFromClass(objc_getAssociatedObject(self, &kDYYYObservedDetailClassKey)) ?: @"",
         @"settingsRoute": @"native_group_toggle_provider_replacement" };
