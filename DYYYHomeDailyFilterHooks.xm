@@ -24,6 +24,7 @@
 }
 - (void)calculateFilteredDataSource {
     %orig;
+    if (![DYYYHomeDailyFilter isEnabledForController:self]) return;
     // 兼容原生直接写 ivar 的版本。只在原生计算结束处理一次，绝不在 getter / 每帧布局中删数据。
     NSMutableArray *source = self.filteredDataSource;
     NSArray *filtered = [DYYYHomeDailyFilter filterArray:source controller:self];

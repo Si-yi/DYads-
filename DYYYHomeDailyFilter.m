@@ -68,9 +68,13 @@ static char kDYYYHomeDailyScopeKey;
     return shouldRecalculate;
 }
 
-+ (NSArray *)filterArray:(id)array controller:(id)controller {
++ (BOOL)isEnabledForController:(id)controller {
     DYYYHomeDailyScope *scope = objc_getAssociatedObject(controller, &kDYYYHomeDailyScopeKey);
-    return [self filterArray:array enabled:scope.enabled home:scope.home && scope.feed != nil];
+    return scope.enabled && scope.home && scope.feed != nil;
+}
+
++ (NSArray *)filterArray:(id)array controller:(id)controller {
+    return [self filterArray:array enabled:[self isEnabledForController:controller] home:YES];
 }
 
 + (NSDictionary *)diagnostics {
