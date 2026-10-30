@@ -52,6 +52,8 @@ static char kDYYYChatListStateKey;
 @property (nonatomic) NSUInteger depth;
 @property (nonatomic) NSUInteger tableDepth;
 @property (nonatomic) BOOL pending;
+@property (nonatomic) BOOL appliedTopWanted;
+@property (nonatomic) BOOL appliedBottomWanted;
 @property (nonatomic) CGRect hostBounds;
 @property (nonatomic) CGRect inputFrame;
 @property (nonatomic) BOOL busy;
@@ -153,7 +155,9 @@ static char kDYYYChatListStateKey;
             CGRectEqualToRect(container.frame, state.appliedContainerFrame) && CGRectEqualToRect(table.frame, state.appliedTableFrame) &&
             UIEdgeInsetsEqualToEdgeInsets(table.contentInset, state.appliedInset) &&
             UIEdgeInsetsEqualToEdgeInsets(table.verticalScrollIndicatorInsets, state.appliedIndicator) &&
-            (topWanted == (state.topExtension > 0)) && (bottomWanted == (state.extension > 0))) return;
+            CGRectEqualToRect(state.hostBounds, root.bounds) && CGRectEqualToRect(state.inputFrame, input.viewIfLoaded.frame) &&
+            [DYYYChatInputMetrics canReuseTopExtension:state.topExtension bottomExtension:state.extension
+                topWanted:topWanted bottomWanted:bottomWanted previousTopWanted:state.appliedTopWanted previousBottomWanted:state.appliedBottomWanted]) return;
         [self restoreState:state];
         CGRect frame = container.frame;
         CGRect tableFrame = table.frame;
@@ -189,6 +193,8 @@ static char kDYYYChatListStateKey;
         state.appliedTableFrame = tableFrame;
         state.appliedInset = inset;
         state.appliedIndicator = indicator;
+        state.appliedTopWanted = topWanted;
+        state.appliedBottomWanted = bottomWanted;
         state.hostBounds = root.bounds;
         state.inputFrame = input.viewIfLoaded.frame;
         state.extension = extension;

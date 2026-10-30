@@ -22,6 +22,14 @@ int main(void) {
             inputTop:858 inputBottom:922 folded:YES] == 0, @"Transient partial lists do not become a full-screen viewport");
         NSCAssert([DYYYChatInputMetrics bottomExtensionForHostBottom:NAN listTop:106 listBottom:858
             inputTop:858 inputBottom:922 folded:YES] == 0, @"Invalid geometry cannot enter a frame or inset write");
+        NSCAssert([DYYYChatInputMetrics canReuseTopExtension:106 bottomExtension:0 topWanted:YES bottomWanted:YES
+            previousTopWanted:YES previousBottomWanted:YES], @"底侧由原生占满时，零底部扩展不能让顶部每轮撤回重加");
+        NSCAssert([DYYYChatInputMetrics canReuseTopExtension:0 bottomExtension:98 topWanted:YES bottomWanted:YES
+            previousTopWanted:YES previousBottomWanted:YES], @"原生顶部已满时，零顶部扩展不能让底部每轮撤回重加");
+        NSCAssert(![DYYYChatInputMetrics canReuseTopExtension:106 bottomExtension:98 topWanted:NO bottomWanted:YES
+            previousTopWanted:YES previousBottomWanted:YES], @"关闭顶部必须退出旧配置并恢复自有扩展");
+        NSCAssert(![DYYYChatInputMetrics canReuseTopExtension:NAN bottomExtension:98 topWanted:YES bottomWanted:YES
+            previousTopWanted:YES previousBottomWanted:YES], @"非法扩展不可复用");
         NSLog(@"DYYYChatInputMetrics regression tests passed");
     }
     return 0;

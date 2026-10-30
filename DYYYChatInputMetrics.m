@@ -12,4 +12,10 @@
     double extension = hostBottom - listBottom;
     return extension >= 1 && extension <= 128 ? extension : 0;
 }
++ (BOOL)canReuseTopExtension:(double)top bottomExtension:(double)bottom topWanted:(BOOL)topWanted
+               bottomWanted:(BOOL)bottomWanted previousTopWanted:(BOOL)oldTop previousBottomWanted:(BOOL)oldBottom {
+    // 扩展是否需要由原生几何决定，不能把零扩展误当关闭开关、每轮拆建另一端。
+    return isfinite(top) && isfinite(bottom) && top >= 0 && bottom >= 0 && (top > 0 || bottom > 0) &&
+        topWanted == oldTop && bottomWanted == oldBottom;
+}
 @end
