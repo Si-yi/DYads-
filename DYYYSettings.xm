@@ -2216,6 +2216,12 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
       // 【提示与位置信息】分类
       NSMutableArray<AWESettingItemModel *> *infoItems = [NSMutableArray array];
       NSArray *infoSettings = @[
+          @{@"identifier" : @"DYYYHideHomeDaily",
+            @"title" : @"隐藏限时日常",
+            @"subTitle" : @"过滤首页的限时日常作品，修改后重启抖音生效",
+            @"detail" : @"",
+            @"cellType" : @37,
+            @"imageName" : @"ic_eyeslash_outlined_16"},
           @{@"identifier" : @"DYYYHideLiveView",
             @"title" : @"隐藏关注顶端",
             @"subTitle" : @"隐藏关注页顶端的直播列表",

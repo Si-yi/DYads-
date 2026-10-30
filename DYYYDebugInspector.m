@@ -6,6 +6,7 @@
 #import "DYYYIMService.h"
 #import "DYYYFriendShareService.h"
 #import "DYYYAvatarRing.h"
+#import "DYYYHomeDailyFilter.h"
 #import "DYYYDetailCaptionLayout.h"
 #import "DYYYChatInputGlass.h"
 #import "DYYYChatInputList.h"
@@ -347,6 +348,7 @@ static NSDictionary *DYYYDebugMetadata(void) {
         @"floatingTabBar": DKGlassGeometryStatus() ?: @"",
         @"panelBlur": [DYYYPanelBlur diagnostics],
         @"avatarRing": [DYYYAvatarRing diagnostics],
+        @"homeDailyFilter": [DYYYHomeDailyFilter diagnostics],
         @"detailCaption": [DYYYDetailCaptionLayout diagnostics],
         @"chatInputGlass": [DYYYChatInputGlass diagnostics],
         @"chatInputList": [DYYYChatInputList diagnostics],

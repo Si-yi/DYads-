@@ -39,3 +39,6 @@ xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
 xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
     DYYYIMSendLedger.m Tests/DYYYIMSendLedgerTests.m -o "$test_dir/im-send-ledger-tests"
 "$test_dir/im-send-ledger-tests"
+xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
+    DYYYHomeDailyFilter.m Tests/DYYYHomeDailyFilterTests.m -o "$test_dir/home-daily-filter-tests"
+"$test_dir/home-daily-filter-tests"

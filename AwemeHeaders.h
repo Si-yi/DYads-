@@ -142,6 +142,11 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @property(nonatomic, assign) BOOL isLive;
 @property(nonatomic, assign) BOOL isLivePhoto;
 @property(nonatomic, assign) BOOL isNewTextMode;  // 文字图文专有属性
+// 39.5 完整导出：限时日常的原生模型标记，仅用于首页过滤。
+@property(nonatomic, assign) BOOL is24Story;
+@property(nonatomic, assign) BOOL is25Story;
+@property(nonatomic, assign) BOOL isStory;
+@property(nonatomic, assign) long long isMomentStory;
 @property(nonatomic, strong) NSString *shareURL;
 @property(nonatomic, strong) id hotSpotLynxCardModel;
 @property(nonatomic, strong) AWELiveFollowFeedCellModel *cellRoom;
