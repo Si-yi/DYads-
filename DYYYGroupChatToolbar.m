@@ -114,12 +114,15 @@ static char kDYYYGroupToolbarKey, kDYYYGroupToggleKey;
     @try {
         BOOL enabled = [self enabled];
         if (state.wanted != enabled) {
+            if (enabled) for (UIView *bar in host.viewIfLoaded.subviews)
+                if ([NSStringFromClass(bar.class) isEqual:@"AWEIMGroupImpl.GroupZoneEntryBarView"] && ![state.bars objectForKey:bar])
+                    [state.bars setObject:@(bar.hidden) forKey:bar];
             state.wanted = enabled;
             AWEIMGroupZoneConversationComponent *zone = state.zone;
             if (zone && [zone respondsToSelector:@selector(isGroupZoneExpanded)] && [zone respondsToSelector:@selector(toggleGroupZoneExpanded:)]) {
                 BOOL expanded = zone.isGroupZoneExpanded;
                 if (enabled) { state.restoreExpanded = expanded; if (expanded) [zone toggleGroupZoneExpanded:NO]; }
-                else if (state.restoreExpanded && !expanded) [zone toggleGroupZoneExpanded:NO];
+                else if (state.restoreExpanded != expanded) [zone toggleGroupZoneExpanded:NO];
             }
             [host.viewIfLoaded setNeedsLayout];
         }
