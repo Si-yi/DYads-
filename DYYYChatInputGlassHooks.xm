@@ -81,6 +81,60 @@
 %end
 %end
 
+// 历史插入/批量更新期间保留原生锚点。只处理聊天专用表格，不挂全局 UITableView。
+%group DYYYChatListUpdateHooks
+%hook AWEIMMessageTableView
+- (void)reloadData {
+    id token = [DYYYChatInputList beginTableUpdates:self];
+    @try {
+        %orig;
+    } @finally {
+        [DYYYChatInputList endTableUpdates:token];
+    }
+}
+- (void)beginUpdates {
+    [DYYYChatInputList beginTableUpdates:self];
+    %orig;
+}
+- (void)endUpdates {
+    @try {
+        %orig;
+    } @finally {
+        [DYYYChatInputList endTableUpdates:[DYYYChatInputList tokenForTable:self]];
+    }
+}
+- (void)performBatchUpdates:(void (^)(void))updates completion:(void (^)(BOOL))completion {
+    id token = [DYYYChatInputList beginTableUpdates:self];
+    __weak UITableView *weakTable = self;
+    void (^wrappedCompletion)(BOOL) = ^(BOOL finished) {
+        if (completion) completion(finished);
+        [DYYYChatInputList synchronizeTable:weakTable];
+    };
+    @try {
+        %orig(updates, wrappedCompletion);
+    } @finally {
+        [DYYYChatInputList endTableUpdates:token];
+    }
+}
+- (void)layoutSubviews {
+    %orig;
+    [DYYYChatInputList synchronizeTable:self];
+}
+%end
+%end
+%group DYYYChatListScrollEndHooks
+%hook AWEIMMessageListViewController
+- (void)scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate {
+    %orig(scrollView, decelerate);
+    if (!decelerate && [scrollView isKindOfClass:UITableView.class]) [DYYYChatInputList synchronizeTable:(id)scrollView];
+}
+- (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView {
+    %orig(scrollView);
+    if ([scrollView isKindOfClass:UITableView.class]) [DYYYChatInputList synchronizeTable:(id)scrollView];
+}
+%end
+%end
+
 @implementation DYYYChatInputGlass (Hooks)
 + (void)installHooks {
     if (!NSThread.isMainThread) {
@@ -92,7 +146,17 @@
         %init(DYYYChatInputGlassHooks);
         installed = YES;
     }
-    static BOOL snapshotInstalled, pageInstalled, tipsInstalled;
+    static BOOL snapshotInstalled, pageInstalled, tipsInstalled, updatesInstalled, scrollInstalled;
+    if (!updatesInstalled && NSClassFromString(@"AWEIMMessageTableView")) {
+        %init(DYYYChatListUpdateHooks);
+        updatesInstalled = YES;
+    }
+    Class listClass = NSClassFromString(@"AWEIMMessageListViewController");
+    if (!scrollInstalled && [listClass instancesRespondToSelector:@selector(scrollViewDidEndDragging:willDecelerate:)] &&
+        [listClass instancesRespondToSelector:@selector(scrollViewDidEndDecelerating:)]) {
+        %init(DYYYChatListScrollEndHooks);
+        scrollInstalled = YES;
+    }
     Class layout = NSClassFromString(@"AWEIMMessageListLayoutComponent");
     if (!snapshotInstalled && [layout instancesRespondToSelector:@selector(p_layoutWithAnimation:coordinate:)]) {
         %init(DYYYChatListSnapshotHooks);

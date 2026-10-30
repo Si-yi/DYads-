@@ -3,6 +3,8 @@
 本项目是基于 Theos/Logos 的抖音 UI 调整 Tweak。当前仓库 README 标注仅在 **抖音 36.5.0** 版本测试；回答需求时请以仓库现状为准，不要沿用旧版本描述。
 
 ## 工程关键点
+- **聊天双玻璃关闭对照与上拉历史布局**：用户反馈关闭悬浮输入框+消息页顶栏玻璃并重启后未再卡死，支持范围在玻璃路径，尚不能区分两个开关或唯一根因，不沿用新增未读观察导致旧卡死的结论。DYYYChatInputList 不再在每个原生历史内容布局前无条件撤回视口；只有宿主bounds/输入框frame变化才撤回。拖动、减速、hasUncommittedUpdates、聊天专用表格reload/begin-end/performBatch更新期间禁止写frame/inset/offset，原生调用与completion照常转发。原生布局结束、批更新完成、滚动结束或table布局后合并一个弱引用主队列同步，不自调度/轮询。仅Hook AWEIMMessageTableView（39.5实际类）、可用原生list delegate，非全局 UITableView；批量更新嵌套depth与原有busy/nativeDepth独立。保留玻璃绘制与独立开关，诊断增tableUpdateDepth/pending。必须装机验证好友与群聊连续上拉，CI不能证明卡死已根除。
+
 - **2.1.2 聊天历史卡死风险回退**：41763176 是2.1.1存活快照，lastScan空、无录制或线程采样，不能证明唯一卡死栈。用户澄清翻动/上拉好友或群聊天历史就卡，卡住时一切点击（含导出）无响应；不得再要求在卡死现场导出或称该包为卡死线程日志。彻底移除 TIMXOConversation unreadCount/setUnreadCount 钩子与 observeCount/计数map/同步取栈，避免SDK访问器内插件锁、模型hash与调用栈符号解析引入锁环。会话工厂只原样透传，返回后将弱模型/弱root投递到独立串行观察队列；无标识参数的工厂也不在SDK回调栈内读identifier。root缓存改WeakMemory|OpaquePersonality，不调用SDK hash/isEqual；diagnostics不强取活模型枚举，只报缓存槽与observerEnabled=false。保留弱缓存/原账户校验、不重新主动创建或拉历史；回归新增会hash/equality抛异常的模拟SDK root与并发读写/诊断，不能替代真机卡死验证。未读回涨仍未解决，不恢复热路径计数观察来继续诊断。
 
 - **AA452BEF 再次未读异常**：2.1.0 已确认 historyKind=native_unread_only_no_history_fallback，五会话计数9/1/1/159/1，扫描前后完全相同；异常159会话专用未读只返回1。不能继续宣称历史回退是本次根因，也不能把首次看到大数当记录到上涨。DYYYIMConversationStore 配对 h/m 以 SDK root 弱键、会话弱值被动保留抖音自然创建的模型；五种已导出工厂 Hook 只透传后捕获，IMService 不再主动调用 cachedInstance/fetchConversations 来刷新会话，缺失等待原生就绪；账户根与原有参与者校验保留。getter/setter 原数透传，仅观察差值，首次大数/上涨>=32才取有限原生调用栈，内存最多32条、无内容或账户ID，诊断 conversationStore；不修改 count、游标、不标已读或强清badge。Foundation 回归验证同ID跨root、弱生命周期、缺失不创建、重复读取/首次大数与有界记录。此版是减少主动SDK接触与定位计数源，不能声称已找出或彻底修复未读回涨唯一原因。

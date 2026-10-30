@@ -50,6 +50,10 @@ static char kDYYYChatListStateKey;
 @property (nonatomic) CGFloat topExtension;
 @property (nonatomic) BOOL topActive;
 @property (nonatomic) NSUInteger depth;
+@property (nonatomic) NSUInteger tableDepth;
+@property (nonatomic) BOOL pending;
+@property (nonatomic) CGRect hostBounds;
+@property (nonatomic) CGRect inputFrame;
 @property (nonatomic) BOOL busy;
 @property (nonatomic) BOOL glassActive;
 @end
@@ -117,7 +121,8 @@ static char kDYYYChatListStateKey;
     if (!CGPointEqualToPoint(table.contentOffset, offset)) table.contentOffset = offset;
 }
 + (void)applyState:(DYYYChatListState *)state {
-    if (!state || state.busy || state.depth) return;
+    if (!state || state.busy || state.depth || state.tableDepth || state.table.dragging ||
+        state.table.decelerating || state.table.hasUncommittedUpdates) return;
     state.busy = YES;
     @try {
         AWEIMMessageBaseViewController *host = state.host;
@@ -184,6 +189,8 @@ static char kDYYYChatListStateKey;
         state.appliedTableFrame = tableFrame;
         state.appliedInset = inset;
         state.appliedIndicator = indicator;
+        state.hostBounds = root.bounds;
+        state.inputFrame = input.viewIfLoaded.frame;
         state.extension = extension;
         state.topExtension = top;
         container.frame = frame;
@@ -200,14 +207,14 @@ static char kDYYYChatListStateKey;
     if (!state) return;
     state.input = (id)input;
     state.glassActive = active;
-    [UIView performWithoutAnimation:^{ [self applyState:state]; }];
+    [self scheduleState:state];
 }
 + (void)synchronizeHost:(UIViewController *)host topActive:(BOOL)active {
     if (!NSThread.isMainThread) return;
     DYYYChatListState *state = [self stateForHost:(id)host create:active];
     if (!state) return;
     state.topActive = active;
-    [UIView performWithoutAnimation:^{ [self applyState:state]; }];
+    [self scheduleState:state];
 }
 + (id)beginNativeLayoutForComponent:(id)component {
     if (!NSThread.isMainThread || ![component respondsToSelector:@selector(context)]) return nil;
@@ -216,10 +223,15 @@ static char kDYYYChatListStateKey;
     if (!host || ![host isKindOfClass:NSClassFromString(@"AWEIMMessageBaseViewController")]) return nil;
     DYYYChatListState *state = [self stateForHost:(id)host create:[NSUserDefaults.standardUserDefaults boolForKey:@"DYYYEnableFloatingChatInput"]];
     if (!state || state.busy) return nil;
-    if (state.depth++ == 0) {
-        state.busy = YES;
-        @try { [UIView performWithoutAnimation:^{ [self restoreState:state]; }]; }
-        @finally { state.busy = NO; }
+    if (state.depth++ == 0 && !state.tableDepth && !state.table.dragging && !state.table.decelerating && !state.table.hasUncommittedUpdates) {
+        // 只有键盘/旋转等真实宿主几何改变才撤销扩展。历史内容刷新不来回缩放视口。
+        BOOL changed = !CGRectEqualToRect(state.hostBounds, host.viewIfLoaded.bounds) ||
+            !CGRectEqualToRect(state.inputFrame, state.input.viewIfLoaded.frame);
+        if (changed) {
+            state.busy = YES;
+            @try { [UIView performWithoutAnimation:^{ [self restoreState:state]; }]; }
+            @finally { state.busy = NO; }
+        }
     }
     return state;
 }
@@ -227,7 +239,43 @@ static char kDYYYChatListStateKey;
     if (!NSThread.isMainThread || ![token isKindOfClass:DYYYChatListState.class]) return;
     DYYYChatListState *state = token;
     if (state.depth) state.depth--;
-    if (!state.depth) [UIView performWithoutAnimation:^{ [self applyState:state]; }];
+    if (!state.depth) [self scheduleState:state];
+}
++ (void)scheduleState:(DYYYChatListState *)state {
+    if (!state || state.pending || state.busy || state.depth || state.tableDepth || state.table.dragging ||
+        state.table.decelerating || state.table.hasUncommittedUpdates) return;
+    state.pending = YES;
+    __weak DYYYChatListState *weakState = state;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        DYYYChatListState *current = weakState;
+        if (!current) return;
+        current.pending = NO;
+        [UIView performWithoutAnimation:^{ [self applyState:current]; }];
+    });
+}
++ (DYYYChatListState *)stateForTable:(UITableView *)table {
+    UIViewController *list = (id)table.superview.nextResponder;
+    if (![list isKindOfClass:NSClassFromString(@"AWEIMMessageListViewController")]) return nil;
+    DYYYChatListState *state = [self stateForHost:[self hostForInput:list] create:NO];
+    return state.table == table ? state : nil;
+}
++ (id)tokenForTable:(UITableView *)table {
+    return NSThread.isMainThread ? [self stateForTable:table] : nil;
+}
++ (id)beginTableUpdates:(UITableView *)table {
+    if (!NSThread.isMainThread) return nil;
+    DYYYChatListState *state = [self stateForTable:table];
+    if (state) state.tableDepth++;
+    return state;
+}
++ (void)endTableUpdates:(id)token {
+    if (!NSThread.isMainThread || ![token isKindOfClass:DYYYChatListState.class]) return;
+    DYYYChatListState *state = token;
+    if (state.tableDepth) state.tableDepth--;
+    [self scheduleState:state];
+}
++ (void)synchronizeTable:(UITableView *)table {
+    if (NSThread.isMainThread) [self scheduleState:[self stateForTable:table]];
 }
 + (CGRect)frameForBottomTips:(UIView *)tips proposedFrame:(CGRect)frame {
     if (!NSThread.isMainThread || fabs(frame.origin.y - tips.frame.origin.y) < 0.5) return frame;
@@ -242,7 +290,7 @@ static char kDYYYChatListStateKey;
     NSMutableArray *result = [NSMutableArray array];
     for (DYYYChatListState *state in [self states].allObjects) {
         if (!state.host.viewIfLoaded.window) continue;
-        [result addObject:@{ @"extension": @(state.extension), @"topExtension": @(state.topExtension), @"listFrame": NSStringFromCGRect(state.container.frame),
+        [result addObject:@{ @"extension": @(state.extension), @"topExtension": @(state.topExtension), @"tableUpdateDepth": @(state.tableDepth), @"pending": @(state.pending), @"listFrame": NSStringFromCGRect(state.container.frame),
             @"tableFrame": NSStringFromCGRect(state.table.frame), @"bottomInset": @(state.table.contentInset.bottom),
             @"inputType": @([state.input respondsToSelector:@selector(currentInputType)] ? state.input.currentInputType : -1) }];
     }

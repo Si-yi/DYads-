@@ -554,6 +554,9 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @interface AWEIMMessageBaseViewController : AWEIMConversationViewController
 @property (nonatomic, strong) UIViewController *messageListVC;
 @end
+@interface AWEIMMessageTableView : UITableView
+@end
+
 @interface AWEIMMessageListViewController : UIViewController
 @property (nonatomic, strong) UITableView *tableView;
 @end
