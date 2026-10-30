@@ -20,6 +20,22 @@
 }
 %end
 %end
+%group DYYYChatChromeConfigurationHooks
+%hook AWENavigationBar
+- (void)addRightNaviBarBtnView:(UIView *)view {
+    %orig(view);
+    [DYYYChatChrome scheduleTopSynchronization:self];
+}
+- (void)setRightBtnsContainerView:(UIView *)view {
+    %orig(view);
+    [DYYYChatChrome scheduleTopSynchronization:self];
+}
+- (void)setContentView:(UIView *)view {
+    %orig(view);
+    [DYYYChatChrome scheduleTopSynchronization:self];
+}
+%end
+%end
 %group DYYYChatChromeUnreadHooks
 %hook AWEIMNavigationUnreadView
 - (void)layoutSubviews {
@@ -117,8 +133,14 @@
         return;
     }
     [self preparePreferences];
-    static BOOL nav, unread, unreadSubclass, title, panel, theme, host;
+    static BOOL nav, configuration, unread, unreadSubclass, title, panel, theme, host;
     if (!nav && NSClassFromString(@"AWENavigationBar")) { %init(DYYYChatChromeNavigationHooks); nav = YES; }
+    Class navClass = NSClassFromString(@"AWENavigationBar");
+    if (!configuration && [navClass instancesRespondToSelector:@selector(addRightNaviBarBtnView:)] &&
+        [navClass instancesRespondToSelector:@selector(setRightBtnsContainerView:)] && [navClass instancesRespondToSelector:@selector(setContentView:)]) {
+        %init(DYYYChatChromeConfigurationHooks);
+        configuration = YES;
+    }
     Class unreadClass = NSClassFromString(@"AWEIMNavigationUnreadView");
     if (!unread && [unreadClass instancesRespondToSelector:@selector(p_updateUI)]) { %init(DYYYChatChromeUnreadHooks); unread = YES; }
     Class unreadSubclassClass = NSClassFromString(@"AWEIMMessageVCNavigationUnreadView");

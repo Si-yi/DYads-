@@ -28,12 +28,14 @@ SOFTWARE.
 #import "DYYYChatChrome.h"
 #import "DYYYUtils.h"
 #import "DYYYChatInputList.h"
+#import "DYYYChatInputGlass.h"
+#import "DYYYGroupChatToolbar.h"
 #import "AwemeHeaders.h"
 #import <objc/runtime.h>
 #import <QuartzCore/QuartzCore.h>
 #import <math.h>
 
-static char kDYYYChatTopKey, kDYYYChatPanelKey;
+static char kDYYYChatTopKey, kDYYYChatPanelKey, kDYYYChatMaterialKey;
 
 @interface DYYYChatTopState : NSObject
 @property (nonatomic, weak) AWENavigationBar *bar;
@@ -144,7 +146,7 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey;
     [state.iconMasks removeAllObjects];
 }
 + (void)restoreTop:(DYYYChatTopState *)state {
-    [DYYYChatInputList synchronizeHost:(id)state.host topActive:NO];
+    if (state.active) [DYYYChatInputList synchronizeHost:(id)state.host topActive:NO];
     [self restoreMoves:state];
     [state.backGlass removeFromSuperview]; [state.rightGlass removeFromSuperview];
     for (UIView *view in state.fills.keyEnumerator.allObjects) {
@@ -224,6 +226,7 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey;
     }
 #endif
     UIVisualEffectView *glass = [[UIVisualEffectView alloc] initWithEffect:effect];
+    objc_setAssociatedObject(glass, &kDYYYChatMaterialKey, effect, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     glass.userInteractionEnabled = NO; glass.accessibilityElementsHidden = YES;
     glass.accessibilityIdentifier = identifier; glass.clipsToBounds = YES;
     glass.layer.cornerCurve = kCACornerCurveContinuous;
@@ -234,6 +237,7 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey;
     return glass;
 }
 + (void)placeGlass:(UIVisualEffectView *)glass frame:(CGRect)frame carrier:(UIView *)carrier style:(UIUserInterfaceStyle)style {
+    if (!glass.effect) glass.effect = objc_getAssociatedObject(glass, &kDYYYChatMaterialKey);
     if (!CGRectEqualToRect(glass.frame, frame)) glass.frame = frame;
     CGFloat radius = CGRectGetHeight(frame) / 2;
     if (glass.layer.cornerRadius != radius) glass.layer.cornerRadius = radius;
@@ -279,6 +283,7 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey;
     UIView *carrier = bar.contentView, *left = bar.leftBtnsContainerView, *right = bar.rightBtnsContainerView;
     if (![self validRect:carrier.bounds] || CGRectGetHeight(carrier.bounds) < 28 || CGRectGetHeight(carrier.bounds) > 72) return;
     state = [self topState:bar create:YES]; state.host = host; state.busy = YES;
+    BOOL notifyList = !state.active;
     @try {
         AWEIMNavigationUnreadView *unread = nil; UIView *title = nil;
         for (UIView *view in left.subviews) {
@@ -300,21 +305,40 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey;
         CGFloat x = 16;
         CGRect backRect = CGRectMake(x, CGRectGetMidY(row) - diameter / 2, diameter, diameter);
         CGRect controls = CGRectNull;
+        UIView *singleAction = nil; NSUInteger actionCount = 0;
         for (UIView *view in right.subviews) {
             if (![self visible:view inRoot:bar]) continue;
-            if (![view isKindOfClass:UIControl.class] && ![view isKindOfClass:NSClassFromString(@"AWEIMMessageVoipEntranceView")]) continue;
+            BOOL known = [view isKindOfClass:UIControl.class] || [view isKindOfClass:NSClassFromString(@"AWEIMMessageVoipEntranceView")];
+            // 96865BE2：群聊下拉为右侧栈直接子项 plain UIView，内含一个 UIImageView。
+            BOOL groupAction = [DYYYGroupChatToolbar isToggleView:view] || (view.class == UIView.class && view.userInteractionEnabled && view.subviews.count == 1 &&
+                [view.subviews.firstObject isKindOfClass:UIImageView.class] && CGRectGetWidth(view.bounds) <= 48 && CGRectGetHeight(view.bounds) <= 48);
+            if (!known && !groupAction) continue;
             CGRect rect = [view convertRect:view.bounds toView:bar];
-            if ([self validRect:rect]) controls = CGRectIsNull(controls) ? rect : CGRectUnion(controls, rect);
+            NSDictionary *move = [state.moves objectForKey:view];
+            if (move && CGAffineTransformEqualToTransform(view.transform, [move[@"applied"] CGAffineTransformValue]))
+                rect.origin.x -= [move[@"applied"] CGAffineTransformValue].tx - [move[@"base"] CGAffineTransformValue].tx;
+            if ([self validRect:rect]) { controls = CGRectIsNull(controls) ? rect : CGRectUnion(controls, rect); singleAction = view; actionCount++; }
+            if (groupAction) [self clearFill:view state:state];
         }
-        if (CGRectIsNull(controls)) { state.lastDecision = @"actions_not_ready"; [self restoreTop:state]; return; }
+        BOOL hasActions = !CGRectIsNull(controls);
+        if (!hasActions) controls = CGRectMake(CGRectGetWidth(bar.bounds) - 8, CGRectGetMidY(row), 0, 0);
         CGFloat h = MIN(44, CGRectGetHeight(row));
         CGFloat wantedShift = MAX(10, CGRectGetMaxX(backRect) + 12 - CGRectGetMinX(titleRect));
         CGFloat titleShift = MIN(wantedShift, MAX(0, CGRectGetMinX(controls) - 24 - CGRectGetMaxX(titleRect)));
         CGRect shiftedTitle = CGRectOffset(titleRect, titleShift, 0);
         CGFloat start = MAX(CGRectGetMinX(controls) - 10, CGRectGetMaxX(shiftedTitle) + 4);
         CGFloat end = MIN(CGRectGetMaxX(controls) + 10, CGRectGetMaxX(bar.bounds) - 8);
-        if (start > CGRectGetMinX(controls) + 0.5 || end + 0.5 < CGRectGetMaxX(controls) || end - start < h) { state.lastDecision = @"actions_geometry_not_ready"; [self restoreTop:state]; return; }
-        CGRect rightRect = CGRectMake(start, CGRectGetMidY(row) - h / 2, end - start, h);
+        if (actionCount == 1) {
+            start = MAX(CGRectGetMaxX(shiftedTitle) + 4, MIN(CGRectGetMidX(controls) - h / 2, CGRectGetWidth(bar.bounds) - 8 - h));
+            end = start + h;
+        }
+        if (end > CGRectGetWidth(bar.bounds) - 4 || start < CGRectGetMaxX(shiftedTitle) + 4) hasActions = NO;
+        CGRect rightRect = hasActions ? CGRectMake(start, CGRectGetMidY(row) - h / 2, end - start, h) : CGRectZero;
+        if (hasActions && actionCount == 1) {
+            CGRect current = [singleAction convertRect:singleAction.bounds toView:bar];
+            [self move:singleAction from:CGPointMake(CGRectGetMidX(current), CGRectGetMidY(current))
+                to:CGPointMake(CGRectGetMidX(rightRect), CGRectGetMidY(rightRect)) bar:bar state:state];
+        }
         [self allowOverflow:carrier state:state]; [self allowOverflow:left state:state]; [self allowOverflow:unread state:state];
         CGRect currentTitle = [title convertRect:title.bounds toView:bar];
         [self move:title from:CGPointMake(CGRectGetMidX(currentTitle), CGRectGetMidY(currentTitle))
@@ -331,11 +355,12 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey;
         if (!state.rightGlass) state.rightGlass = [self glass:@"DYads.ChatActionsGlass"];
         UIUserInterfaceStyle style = [DYYYUtils isDarkMode] || bar.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark ? UIUserInterfaceStyleDark : UIUserInterfaceStyleLight;
         [self placeGlass:state.backGlass frame:[carrier convertRect:backRect fromView:bar] carrier:carrier style:style];
-        [self placeGlass:state.rightGlass frame:[carrier convertRect:rightRect fromView:bar] carrier:carrier style:style];
+        if (hasActions) [self placeGlass:state.rightGlass frame:[carrier convertRect:rightRect fromView:bar] carrier:carrier style:style];
+        else [state.rightGlass removeFromSuperview];
         [self centerBackGlyph:back state:state style:style];
-        state.lastDecision = @"applied";
+        state.lastDecision = hasActions ? @"applied" : @"applied_waiting_actions";
         state.backFrame = backRect; state.rightFrame = rightRect; state.active = YES;
-        [DYYYChatInputList synchronizeHost:(id)host topActive:YES];
+        if (notifyList) [DYYYChatInputList synchronizeHost:(id)host topActive:YES];
     } @finally { state.busy = NO; }
 }
 + (id)beginTopUpdate:(UIView *)view {
@@ -502,6 +527,9 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey;
 }
 + (void)synchronizeHost:(UIViewController *)host {
     if (!NSThread.isMainThread || [self chatForController:host] != host) return;
+    UIViewController *visible = host.navigationController.visibleViewController;
+    if (visible && visible != host) return;
+    [DYYYGroupChatToolbar synchronizeHost:host];
     for (UIView *view in host.viewIfLoaded.subviews)
         if ([view isKindOfClass:NSClassFromString(@"AWENavigationBar")]) {
             DYYYChatTopState *state = [self topState:(id)view create:[self topEnabled]];
@@ -510,7 +538,10 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey;
             [self scheduleTopSynchronization:view];
         }
     for (UIViewController *child in host.childViewControllers)
-        if ([child isKindOfClass:NSClassFromString(@"IESIMInputViewController")]) [self synchronizeInput:child];
+        if ([child isKindOfClass:NSClassFromString(@"IESIMInputViewController")]) {
+            [DYYYChatInputGlass repairController:child];
+            [self synchronizeInput:child];
+        }
 }
 + (void)restoreHost:(UIViewController *)host {
     if (!NSThread.isMainThread) return;

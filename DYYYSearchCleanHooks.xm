@@ -28,6 +28,7 @@ SOFTWARE.
 #import "DYYYFeedTagGlass.h"
 #import "DYYYChatInputGlass.h"
 #import "DYYYChatChrome.h"
+#import "DYYYGroupChatToolbar.h"
 #import "DYYYCommentVideoLayout.h"
 #import "DYYYArticleBackdrop.h"
 #import "DYYYPanelBlur.h"
@@ -154,6 +155,7 @@ SOFTWARE.
     [DYYYFeedTagGlass installHooks];
     [DYYYChatInputGlass installHooks];
     [DYYYChatChrome installHooks];
+    [DYYYGroupChatToolbar installHooks];
     [DYYYCommentVideoLayout installHooks];
     static BOOL ranksInstalled, propsInstalled, voiceInstalled, permissionInstalled, legacyInstalled, topBarInstalled, footerInstalled;
     Class ranks = NSClassFromString(@"AWESearchMiddleNATabViewComponent");

@@ -9,6 +9,7 @@
 #import "DYYYCollectionRows.h"
 #import "DYYYCommentVideoLayout.h"
 #import "DYYYChatChrome.h"
+#import "DYYYGroupChatToolbar.h"
 
 #import "DYYYAboutDialogView.h"
 #import "DYYYCustomInputView.h"
@@ -27,6 +28,7 @@
     if ([key isEqualToString:@"DYYYHideAvatarColorRing"]) [DYYYAvatarRing refreshVisibleRings];
     if ([key isEqualToString:@"DYYYHideSameStyleButton"]) [DYYYSameStyleVisibility refreshVisibleViews];
     if ([key isEqualToString:@"DYYYEnableFloatingChatInput"] || [key isEqualToString:@"DYYYEnableChatTopGlass"]) [DYYYChatChrome refreshVisibleViews];
+    if ([key isEqualToString:@"DYYYHideGroupToolbar"]) [DYYYGroupChatToolbar refreshVisible];
     if ([key isEqualToString:@"DYYYDisableCommentVideoShrink"]) [DYYYCommentVideoLayout refreshVisiblePlayers];
     if ([key isEqualToString:@"DYYYHideCaptionFollow"]) [DYYYCollectionRows refreshVisibleStacks];
     if ([@[ @"DYYYEnableSharePanelBlur", @"DYYYEnableCommentMenuBlur", @"DYYYCommentBlurTransparent" ] containsObject:key]) {

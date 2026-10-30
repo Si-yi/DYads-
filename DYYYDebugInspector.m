@@ -10,6 +10,7 @@
 #import "DYYYChatInputGlass.h"
 #import "DYYYChatInputList.h"
 #import "DYYYChatChrome.h"
+#import "DYYYGroupChatToolbar.h"
 #import "DYYYCommentVideoLayout.h"
 #import "DKDebugCapture.h"
 #import "DKClassDump.h"
@@ -350,10 +351,14 @@ static NSDictionary *DYYYDebugMetadata(void) {
         @"chatInputGlass": [DYYYChatInputGlass diagnostics],
         @"chatInputList": [DYYYChatInputList diagnostics],
         @"chatChrome": [DYYYChatChrome diagnostics],
+            @"groupChatToolbar": [DYYYGroupChatToolbar diagnostics],
         @"commentVideoLayout": [DYYYCommentVideoLayout diagnostics],
         @"loadedPluginImages": pluginImages,
         @"inputSettings": @{
             @"DYYYEnableChatTopGlass": [defaults objectForKey:@"DYYYEnableChatTopGlass"] ?: NSNull.null,
+            @"DYYYFriendShareFeedEnabled": @([defaults boolForKey:@"DYYYFriendShareFeedEnabled"]),
+            @"DYYYAutoMessageEnabled": @([defaults boolForKey:@"DYYYAutoMessageEnabled"]),
+            @"DYYYHideGroupToolbar": @([defaults boolForKey:@"DYYYHideGroupToolbar"]),
             @"DYYYEnableFloatingChatInput": [defaults objectForKey:@"DYYYEnableFloatingChatInput"] ?: NSNull.null,
             @"DYYYEnableFloatingCommentInput": [defaults objectForKey:@"DYYYEnableFloatingCommentInput"] ?: NSNull.null,
             @"DYYYEnableFullScreen": [defaults objectForKey:@"DYYYEnableFullScreen"] ?: NSNull.null,

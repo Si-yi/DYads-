@@ -13,6 +13,8 @@ static char kDYYYChatGlassStateKey;
 @property (nonatomic, weak) UIViewController *controller;
 @property (nonatomic, weak) UIView *slot;
 @property (nonatomic, strong) UIVisualEffectView *glass;
+@property (nonatomic, strong) UIVisualEffect *material;
+@property (nonatomic) BOOL pendingRepair;
 @property (nonatomic, strong) UIColor *color;
 @property (nonatomic, assign) BOOL opaque;
 @property (nonatomic, assign) BOOL clips;
@@ -199,6 +201,7 @@ static char kDYYYChatGlassStateKey;
                 material = glass;
             }
 #endif
+            state.material = material;
             state.glass = [[UIVisualEffectView alloc] initWithEffect:material];
             state.glass.userInteractionEnabled = NO;
             state.glass.accessibilityElementsHidden = YES;
@@ -212,6 +215,7 @@ static char kDYYYChatGlassStateKey;
             if (@available(iOS 26.0, *)) state.glass.cornerConfiguration = [UICornerConfiguration capsuleConfiguration];
 #endif
         }
+        if (!state.glass.effect) state.glass.effect = state.material;
         UIUserInterfaceStyle style = [DYYYUtils isDarkMode] || root.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark
             ? UIUserInterfaceStyleDark : UIUserInterfaceStyleLight;
         if (state.glass.overrideUserInterfaceStyle != style) state.glass.overrideUserInterfaceStyle = style;
@@ -265,6 +269,29 @@ static char kDYYYChatGlassStateKey;
     DYYYChatGlassState *state = [self state:controller create:NO];
     if (state.depth) state.depth--;
     [self synchronizeController:controller];
+    if (!state || state.pendingRepair || state.depth) return;
+    state.pendingRepair = YES;
+    __weak DYYYChatGlassState *weakState = state;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        DYYYChatGlassState *current = weakState;
+        if (!current) return;
+        current.pendingRepair = NO;
+        [self repairController:current.controller];
+    });
+}
++ (void)repairController:(UIViewController *)controller {
+    if (!NSThread.isMainThread || !controller.viewIfLoaded.window || controller.viewIfLoaded.hidden) return;
+    UIViewController *host = controller;
+    Class chat = NSClassFromString(@"AWEIMMessageBaseViewController");
+    for (NSUInteger i = 0; host && i < 12 && ![host isKindOfClass:chat]; i++) host = host.parentViewController;
+    if (!host || ![host isKindOfClass:chat]) return;
+    UIViewController *visible = host.navigationController.visibleViewController;
+    if (visible && visible != host) return;
+    DYYYChatGlassState *state = [self state:controller create:[NSUserDefaults.standardUserDefaults boolForKey:@"DYYYEnableFloatingChatInput"]];
+    BOOL oldActive = state.active;
+    [UIView performWithoutAnimation:^{ [self applyState:state]; }];
+    // 仅状态切换通知几何模块；修复绘制不自调度新的布局循环。
+    if (oldActive != state.active) [DYYYChatInputList synchronizeInputController:controller active:state.active];
 }
 + (void)restoreController:(UIViewController *)controller {
     if (!NSThread.isMainThread) return;

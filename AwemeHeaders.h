@@ -560,6 +560,19 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @interface AWEIMMessageListViewController : UIViewController
 @property (nonatomic, strong) UITableView *tableView;
 @end
+// 群功能栏原生组件入口；运行时按方法可用性安装，Swift view 仅作为别名。
+@interface AWEIMGroupZoneConversationComponent : AWEIMComponentBase
+- (BOOL)isGroupZoneExpanded;
+- (void)toggleGroupZoneExpanded:(BOOL)animated;
+- (double)desiredGroupZoneHeight;
+- (void)hostVC_viewDidLoad;
+@end
+@interface AWEIMMessageListNaviBarGroupZoneToggleComponent : AWEIMComponentBase
+- (UIView *)naviBarView;
+@end
+@interface DYYYNativeGroupEntryBar : UIView
+@end
+
 @interface AWEIMMessageListLayoutComponent : AWEIMComponentBase
 - (void)p_layoutWithAnimation:(BOOL)animated coordinate:(id)coordinate;
 - (void)updatePageLayout:(id)layoutInfo;
@@ -1158,6 +1171,7 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @end
 
 @interface AWENavigationBar : UIView
+- (void)addRightNaviBarBtnView:(UIView *)view;
 @property(nonatomic, strong) UIView *contentView;
 @property(nonatomic, strong) UIView *leftBtnsContainerView;
 @property(nonatomic, strong) UIView *rightBtnsContainerView;

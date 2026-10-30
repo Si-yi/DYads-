@@ -27,6 +27,8 @@ SOFTWARE.
 */
 #import "DYYYChatInputList.h"
 #import "DYYYChatInputMetrics.h"
+#import "DYYYChatInputGlass.h"
+#import "DYYYChatChrome.h"
 #import "AwemeHeaders.h"
 #import <objc/runtime.h>
 #import <math.h>
@@ -55,6 +57,7 @@ static char kDYYYChatListStateKey;
 @property (nonatomic) BOOL appliedTopWanted;
 @property (nonatomic) BOOL appliedBottomWanted;
 @property (nonatomic) CGRect hostBounds;
+@property (nonatomic) CGFloat headerBottom;
 @property (nonatomic) CGRect inputFrame;
 @property (nonatomic) BOOL busy;
 @property (nonatomic) BOOL glassActive;
@@ -122,6 +125,16 @@ static char kDYYYChatListStateKey;
     if (!UIEdgeInsetsEqualToEdgeInsets(table.verticalScrollIndicatorInsets, indicator)) table.verticalScrollIndicatorInsets = indicator;
     if (!CGPointEqualToPoint(table.contentOffset, offset)) table.contentOffset = offset;
 }
++ (CGFloat)headerBottomForHost:(UIViewController *)host {
+    CGFloat bottom = 0;
+    // 群聊功能页签是原生独立兄弟，不改其frame、背景、层级或命中。
+    for (UIView *view in host.viewIfLoaded.subviews) {
+        NSString *name = NSStringFromClass(view.class);
+        if (!view.hidden && view.alpha > 0.01 && ([name isEqual:@"AWENavigationBar"] || [name isEqual:@"AWEIMGroupImpl.GroupZoneEntryBarView"]))
+            bottom = MAX(bottom, CGRectGetMaxY(view.frame));
+    }
+    return bottom;
+}
 + (void)applyState:(DYYYChatListState *)state {
     if (!state || state.busy || state.depth || state.tableDepth || state.table.dragging ||
         state.table.decelerating || state.table.hasUncommittedUpdates) return;
@@ -155,7 +168,7 @@ static char kDYYYChatListStateKey;
             CGRectEqualToRect(container.frame, state.appliedContainerFrame) && CGRectEqualToRect(table.frame, state.appliedTableFrame) &&
             UIEdgeInsetsEqualToEdgeInsets(table.contentInset, state.appliedInset) &&
             UIEdgeInsetsEqualToEdgeInsets(table.verticalScrollIndicatorInsets, state.appliedIndicator) &&
-            CGRectEqualToRect(state.hostBounds, root.bounds) && CGRectEqualToRect(state.inputFrame, input.viewIfLoaded.frame) &&
+            fabs(state.headerBottom - [self headerBottomForHost:host]) < 0.5 && CGRectEqualToRect(state.hostBounds, root.bounds) && CGRectEqualToRect(state.inputFrame, input.viewIfLoaded.frame) &&
             [DYYYChatInputMetrics canReuseTopExtension:state.topExtension bottomExtension:state.extension
                 topWanted:topWanted bottomWanted:bottomWanted previousTopWanted:state.appliedTopWanted previousBottomWanted:state.appliedBottomWanted]) return;
         [self restoreState:state];
@@ -195,6 +208,7 @@ static char kDYYYChatListStateKey;
         state.appliedIndicator = indicator;
         state.appliedTopWanted = topWanted;
         state.appliedBottomWanted = bottomWanted;
+        state.headerBottom = [self headerBottomForHost:host];
         state.hostBounds = root.bounds;
         state.inputFrame = input.viewIfLoaded.frame;
         state.extension = extension;
@@ -231,7 +245,7 @@ static char kDYYYChatListStateKey;
     if (!state || state.busy) return nil;
     if (state.depth++ == 0 && !state.tableDepth && !state.table.dragging && !state.table.decelerating && !state.table.hasUncommittedUpdates) {
         // 只有键盘/旋转等真实宿主几何改变才撤销扩展。历史内容刷新不来回缩放视口。
-        BOOL changed = !CGRectEqualToRect(state.hostBounds, host.viewIfLoaded.bounds) ||
+        BOOL changed = fabs(state.headerBottom - [self headerBottomForHost:host]) > 0.5 || !CGRectEqualToRect(state.hostBounds, host.viewIfLoaded.bounds) ||
             !CGRectEqualToRect(state.inputFrame, state.input.viewIfLoaded.frame);
         if (changed) {
             state.busy = YES;
@@ -257,6 +271,10 @@ static char kDYYYChatListStateKey;
         if (!current) return;
         current.pending = NO;
         [UIView performWithoutAnimation:^{ [self applyState:current]; }];
+        if (!current.depth && !current.tableDepth && !current.table.dragging && !current.table.decelerating && !current.table.hasUncommittedUpdates) {
+            [DYYYChatInputGlass repairController:current.input];
+            [DYYYChatChrome synchronizeHost:current.host];
+        }
     });
 }
 + (DYYYChatListState *)stateForTable:(UITableView *)table {

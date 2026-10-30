@@ -4,6 +4,7 @@
 + (void)beginUpdate:(UIViewController *)controller;
 + (void)endUpdate:(UIViewController *)controller;
 + (void)synchronizeController:(UIViewController *)controller;
++ (void)repairController:(UIViewController *)controller;
 + (void)restoreController:(UIViewController *)controller;
 + (NSDictionary *)diagnostics;
 @end
