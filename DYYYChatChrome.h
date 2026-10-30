@@ -1,6 +1,8 @@
 #import <UIKit/UIKit.h>
 
 @interface DYYYChatChrome : NSObject
++ (UIColor *)nativeBackgroundColor:(UIColor *)color forBar:(UIView *)bar;
++ (BOOL)nativeOpaque:(BOOL)opaque forBar:(UIView *)bar;
 + (void)preparePreferences;
 + (id)beginTopUpdate:(UIView *)view;
 + (void)endTopUpdate:(id)token;

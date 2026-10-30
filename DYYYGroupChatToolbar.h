@@ -1,5 +1,6 @@
 #import <UIKit/UIKit.h>
 @interface DYYYGroupChatToolbar : NSObject
++ (id)nativeNavigationComponents:(id)components host:(UIViewController *)host;
 + (void)captureToggle:(UIView *)view component:(id)component;
 + (void)captureZone:(id)component;
 + (BOOL)hiddenForComponent:(id)component;

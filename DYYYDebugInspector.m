@@ -413,6 +413,8 @@ static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *wi
         // 仅导出抖音自身的运行时声明，不执行联系人查询、消息读取或发送方法。
         // 接口声明合并进完整导出，轻量导出仅保留运行状态摘要。
         NSArray<NSString *> *priority = @[
+            @"AWEIMMessageListNaviBarChatDetailComponent", @"AWEIMMessageListNaviBarGroupZoneToggleComponent",
+            @"AWEIMGroupZoneConversationComponent", @"AWEIMComponentManager",
             @"AWEIMFeedVideoCachePool", @"AWEIMUserDBManager", @"AWEIMUserManager", @"AWEIMSDKManager", @"AWEIMService",
             @"TIMXOSendMessage", @"TIMXSenderMessageTemplate", @"TIMXOMessageManager",
             @"TIMXOConversationManager", @"TIMXOConversation", @"TIMXOMessage", @"TIMXOUser",

@@ -55,6 +55,8 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey, kDYYYChatMaterialKey;
 @property (nonatomic) NSUInteger depth;
 @property (nonatomic) BOOL busy;
 @property (nonatomic) BOOL active;
+@property (nonatomic) NSUInteger nativePaintWrites;
+@property (nonatomic) NSUInteger deferredLayouts;
 @end
 @implementation DYYYChatTopState
 @end
@@ -147,6 +149,7 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey, kDYYYChatMaterialKey;
 }
 + (void)restoreTop:(DYYYChatTopState *)state {
     if (state.active) [DYYYChatInputList synchronizeHost:(id)state.host topActive:NO];
+    state.active = NO;
     [self restoreMoves:state];
     [state.backGlass removeFromSuperview]; [state.rightGlass removeFromSuperview];
     for (UIView *view in state.fills.keyEnumerator.allObjects) {
@@ -238,6 +241,8 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey, kDYYYChatMaterialKey;
 }
 + (void)placeGlass:(UIVisualEffectView *)glass frame:(CGRect)frame carrier:(UIView *)carrier style:(UIUserInterfaceStyle)style {
     if (!glass.effect) glass.effect = objc_getAssociatedObject(glass, &kDYYYChatMaterialKey);
+    if (glass.hidden) glass.hidden = NO;
+    if (glass.alpha != 1) glass.alpha = 1;
     if (!CGRectEqualToRect(glass.frame, frame)) glass.frame = frame;
     CGFloat radius = CGRectGetHeight(frame) / 2;
     if (glass.layer.cornerRadius != radius) glass.layer.cornerRadius = radius;
@@ -268,6 +273,41 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey, kDYYYChatMaterialKey;
     if (!NSThread.isMainThread) return;
     [UIView performWithoutAnimation:^{ [self applyBar:candidate]; }];
 }
+// 原生子控件在同轮重排中短暂未就绪时保留已应用样式，不拆掉列表的顶部延伸。
++ (void)deferBar:(AWENavigationBar *)bar state:(DYYYChatTopState *)state back:(UIButton *)back {
+    if (!state.active) return;
+    state.deferredLayouts++;
+    BOOL wasBusy = state.busy; state.busy = YES;
+    @try {
+        [self clearFill:bar state:state];
+        [self clearFill:bar.contentView state:state];
+        [self clearFill:bar.bottomLineView state:state];
+        UIUserInterfaceStyle style = [DYYYUtils isDarkMode] || bar.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark ? UIUserInterfaceStyleDark : UIUserInterfaceStyleLight;
+        if (state.backGlass.superview == bar.contentView) {
+            [self placeGlass:state.backGlass frame:state.backGlass.frame carrier:bar.contentView style:style];
+            if (back && [self visible:back inRoot:bar]) [self centerBackGlyph:back state:state style:style];
+        }
+    } @finally { state.busy = wasBusy; }
+    // 不在这里排队；外层原生 layout 已安排一次复核，避免未就绪状态自调度循环。
+}
++ (BOOL)interceptsNativePaint:(DYYYChatTopState *)state bar:(UIView *)bar {
+    return NSThread.isMainThread && state.active && !state.busy && !state.suspended && bar.window && [self topEnabled];
+}
++ (UIColor *)nativeBackgroundColor:(UIColor *)color forBar:(UIView *)bar {
+    DYYYChatTopState *state = [self topState:(id)bar create:NO];
+    if (![self interceptsNativePaint:state bar:bar]) return color;
+    NSDictionary *saved = [state.fills objectForKey:bar];
+    [state.fills setObject:@{ @"color": color ?: NSNull.null, @"opaque": saved[@"opaque"] ?: @(bar.opaque) } forKey:bar];
+    state.nativePaintWrites++;
+    return UIColor.clearColor;
+}
++ (BOOL)nativeOpaque:(BOOL)opaque forBar:(UIView *)bar {
+    DYYYChatTopState *state = [self topState:(id)bar create:NO];
+    if (![self interceptsNativePaint:state bar:bar]) return opaque;
+    NSDictionary *saved = [state.fills objectForKey:bar];
+    [state.fills setObject:@{ @"color": saved[@"color"] ?: bar.backgroundColor ?: NSNull.null, @"opaque": @(opaque) } forKey:bar];
+    return NO;
+}
 + (void)applyBar:(UIView *)candidate {
     if (!NSThread.isMainThread || ![candidate isKindOfClass:NSClassFromString(@"AWENavigationBar")]) return;
     AWENavigationBar *bar = (id)candidate;
@@ -281,7 +321,10 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey, kDYYYChatMaterialKey;
     if (![bar respondsToSelector:@selector(contentView)] || ![bar respondsToSelector:@selector(leftBtnsContainerView)] ||
         ![bar respondsToSelector:@selector(rightBtnsContainerView)]) return;
     UIView *carrier = bar.contentView, *left = bar.leftBtnsContainerView, *right = bar.rightBtnsContainerView;
-    if (![self validRect:carrier.bounds] || CGRectGetHeight(carrier.bounds) < 28 || CGRectGetHeight(carrier.bounds) > 72) return;
+    if (![self validRect:carrier.bounds] || CGRectGetHeight(carrier.bounds) < 28 || CGRectGetHeight(carrier.bounds) > 72) {
+        state.lastDecision = @"waiting_row_geometry";
+        [self deferBar:bar state:state back:nil]; return;
+    }
     state = [self topState:bar create:YES]; state.host = host; state.busy = YES;
     BOOL notifyList = !state.active;
     @try {
@@ -292,7 +335,7 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey, kDYYYChatMaterialKey;
         }
         if (!title && [bar respondsToSelector:@selector(titleView)]) title = bar.titleView;
         UIButton *back = [unread respondsToSelector:@selector(backButton)] ? unread.backButton : nil;
-        if (!back || !title || ![self visible:back inRoot:bar] || ![self visible:title inRoot:bar]) { state.lastDecision = @"native_controls_not_ready"; [self restoreTop:state]; return; }
+        if (!back || !title || ![self visible:back inRoot:bar] || ![self visible:title inRoot:bar]) { state.lastDecision = @"waiting_native_controls"; [self deferBar:bar state:state back:back]; return; }
         CGRect titleRect = [title convertRect:title.bounds toView:bar];
         NSDictionary *titleMove = [state.moves objectForKey:title];
         if (titleMove && CGAffineTransformEqualToTransform(title.transform, [titleMove[@"applied"] CGAffineTransformValue])) {
@@ -301,7 +344,7 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey, kDYYYChatMaterialKey;
         }
         CGRect row = [carrier convertRect:carrier.bounds toView:bar];
         CGFloat diameter = 44;
-        if (CGRectGetHeight(row) < 44) { state.lastDecision = @"title_geometry_not_ready"; [self restoreTop:state]; return; }
+        if (CGRectGetHeight(row) < 44) { state.lastDecision = @"waiting_title_geometry"; [self deferBar:bar state:state back:back]; return; }
         CGFloat x = 16;
         CGRect backRect = CGRectMake(x, CGRectGetMidY(row) - diameter / 2, diameter, diameter);
         CGRect controls = CGRectNull;
@@ -557,7 +600,7 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey, kDYYYChatMaterialKey;
     if (!NSThread.isMainThread) return @{};
     NSMutableArray *tops = [NSMutableArray array], *panels = [NSMutableArray array];
     for (DYYYChatTopState *state in [self topStates].allObjects) if (state.bar.window)
-        [tops addObject:@{ @"active": @(state.active), @"lastDecision": state.lastDecision ?: @"", @"pending": @(state.pending), @"back": NSStringFromCGRect(state.backFrame), @"actions": NSStringFromCGRect(state.rightFrame) }];
+        [tops addObject:@{ @"active": @(state.active), @"lastDecision": state.lastDecision ?: @"", @"nativePaintWrites": @(state.nativePaintWrites), @"deferredLayouts": @(state.deferredLayouts), @"pending": @(state.pending), @"back": NSStringFromCGRect(state.backFrame), @"actions": NSStringFromCGRect(state.rightFrame) }];
     for (DYYYChatPanelState *state in [self panelStates].allObjects) if (state.panel.window)
         [panels addObject:@{ @"active": @(state.active), @"radius": @(state.radius), @"frame": NSStringFromCGRect(state.carrier.frame),
             @"inputType": @([state.input respondsToSelector:@selector(currentInputType)] ? ((IESIMInputViewController *)state.input).currentInputType : -1),

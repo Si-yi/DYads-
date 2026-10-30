@@ -554,6 +554,10 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @property (nonatomic, weak) AWEIMComponentContext *context;
 @end
 @interface AWEIMConversationViewController : AWEIMComponentViewController
+- (id)componentsNameArrayWithContext:(id)context;
+- (id)p_componentsNameArrayWithContext:(id)context;
+- (id)lazyComponentsNameWithContext:(id)context;
+- (id)p_lazyComponentsNameWithContext:(id)context;
 @end
 @interface AWEIMMessageBaseViewController : AWEIMConversationViewController
 @property (nonatomic, strong) UIViewController *messageListVC;
@@ -570,6 +574,9 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 - (void)toggleGroupZoneExpanded:(BOOL)animated;
 - (double)desiredGroupZoneHeight;
 - (void)hostVC_viewDidLoad;
+@end
+@interface AWEIMMessageListNaviBarChatDetailComponent : AWEIMComponentBase
+- (UIView *)naviBarView;
 @end
 @interface AWEIMMessageListNaviBarGroupZoneToggleComponent : AWEIMComponentBase
 - (UIView *)naviBarView;
@@ -591,8 +598,6 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 - (void)updateWithCount:(long long)count;
 @end
 @interface AWEIMMessageListNaviBarTitleView : UIStackView
-@property (nonatomic, strong) UIStackView *avatarStackView;
-- (void)p_didClickSelfWithGesture:(UITapGestureRecognizer *)gesture;
 @end
 @interface AWEIMEmoticonPanelContainerView : UIView
 - (void)refreshBackgroundColorWhileHasBackground:(BOOL)hasBackground;

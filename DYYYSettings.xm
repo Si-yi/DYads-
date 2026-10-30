@@ -2135,7 +2135,7 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
       NSMutableArray<AWESettingItemModel *> *messageAndMineItems = [NSMutableArray array];
       NSArray *messageAndMineSettings = @[
           @{@"identifier": @"DYYYHideGroupToolbar", @"title": @"隐藏群聊功能栏",
-            @"subTitle": @"收起群聊页签，右上角三个点直接进入群设置", @"detail": @"", @"cellType": @37,
+            @"subTitle": @"使用原生三个点进入群设置，重新进入聊天页生效", @"detail": @"", @"cellType": @37,
             @"imageName": @"ic_eyeslash_outlined_16"},
           @{@"identifier" : @"DYYYHidePushBanner",
             @"title" : @"隐藏通知权限提示",

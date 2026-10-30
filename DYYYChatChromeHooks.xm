@@ -3,6 +3,15 @@
 
 %group DYYYChatChromeNavigationHooks
 %hook AWENavigationBar
+// 只作用于已确认聊天导航栏实例，原生更新晚于 layout 写入底色时仍保存新原生值并保持透明。
+- (void)setBackgroundColor:(UIColor *)color {
+    UIColor *applied = [DYYYChatChrome nativeBackgroundColor:color forBar:self];
+    %orig(applied);
+}
+- (void)setOpaque:(BOOL)opaque {
+    BOOL applied = [DYYYChatChrome nativeOpaque:opaque forBar:self];
+    %orig(applied);
+}
 - (void)layoutSubviews {
     id token = [DYYYChatChrome beginTopUpdate:self];
     @try {
