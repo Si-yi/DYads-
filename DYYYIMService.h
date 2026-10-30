@@ -6,6 +6,8 @@
 + (id)contactDatabase;
 + (NSDictionary *)diagnostics;
 + (NSString *)accountID;
+/// 仅从抖音已创建的账户实例取值，自动检查不可唤起服务容器。
++ (NSString *)capturedAccountID;
 + (void)observeTextModel:(id)model sender:(id)sender;
 + (void)observeConversationSend:(id)model conversation:(id)conversation;
 + (void)observeHistoryQuery:(id)conversation manager:(id)manager;

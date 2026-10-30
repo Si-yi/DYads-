@@ -3,6 +3,7 @@
 #import "DYYYIMHistoryReader.h"
 #import "DYYYIMShareParser.h"
 #import "DYYYIMConversationStore.h"
+#import "DYYYIMSendLedger.h"
 
 @interface DYYYIMService ()
 @property (nonatomic, strong) NSMapTable *services;
@@ -15,6 +16,8 @@
 @property (nonatomic, copy) NSString *lastFailure;
 @property (nonatomic, strong) NSMutableDictionary *scanState;
 @property (nonatomic) NSUInteger historyResultCount;
+@property (nonatomic) NSUInteger sendAttempts;
+@property (nonatomic, strong) NSMutableDictionary *lastSendDiagnostics;
 @end
 
 @implementation DYYYIMService
@@ -259,6 +262,8 @@
     result[@"lastHistoryResultCount"] = @([self shared].historyResultCount);
     result[@"conversationStore"] = [DYYYIMConversationStore diagnostics];
     result[@"lastScan"] = [[self shared].scanState copy] ?: @{};
+    result[@"autoSend"] = @{ @"attempts": @([self shared].sendAttempts), @"lastAttempt": [[self shared].lastSendDiagnostics copy] ?: @{},
+        @"historyQueries": @0, @"policy": @"passive_format_and_receipts_no_history", @"passiveObserversUseCapturedAccountOnly": @YES };
     return result;
 }
 
@@ -291,6 +296,13 @@
     return [[self shared].services objectForKey:@"contacts"];
 }
 
++ (NSString *)capturedAccountID {
+    id database = [[self shared].services objectForKey:@"contacts"];
+    id uid = [database respondsToSelector:@selector(currentDataBaseUid)] ? [database currentDataBaseUid] : nil;
+    if ([uid isKindOfClass:NSNumber.class]) uid = [uid stringValue];
+    return [uid isKindOfClass:NSString.class] ? uid : @"";
+}
+
 + (NSString *)accountID {
     id database = [self contactDatabase];
     id uid = [database respondsToSelector:@selector(currentDataBaseUid)] ? [(AWEIMUserDBManager *)database currentDataBaseUid] : nil;
@@ -299,7 +311,7 @@
 }
 
 + (NSString *)stateKey:(NSString *)userID {
-    NSString *account = [self accountID];
+    NSString *account = [self capturedAccountID];
     if (!account.length || !userID.length) return nil;
     NSDateFormatter *format = [NSDateFormatter new];
     format.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
@@ -309,7 +321,10 @@
 
 + (NSString *)dailyStateForUserID:(NSString *)userID {
     NSString *key = [self stateKey:userID];
-    return key ? [NSUserDefaults.standardUserDefaults dictionaryForKey:@"DYYYIMDailySendState"][key] : nil;
+    if (!key) return nil;
+    NSString *state = [NSUserDefaults.standardUserDefaults dictionaryForKey:@"DYYYIMDailySendState"][key];
+    if ([state isKindOfClass:NSString.class] && state.length) return state;
+    return [[NSUserDefaults.standardUserDefaults dictionaryForKey:@"DYYYIMObservedOutgoingDays"][key] boolValue] ? @"native_sent" : nil;
 }
 
 + (void)setState:(NSString *)state key:(NSString *)key {
@@ -377,7 +392,7 @@
     dispatch_async(dispatch_get_main_queue(), ^{
         id manager = [self serviceForRole:@"conversations" root:root];
         if (!root || [self value:manager key:@"r"] != root) return;
-        NSString *account = [self accountID];
+        NSString *account = [self capturedAccountID];
         NSString *cid = [self value:conversation key:@"identifier"];
         if (![cid isKindOfClass:NSString.class] || !cid.length) return;
         long long peer = [manager otherUserIDFor1to1ChatWithConversationID:cid];
@@ -393,7 +408,7 @@
     NSNumber *type = [self textTypeForBody:content number:[self value:model key:@"messageType"]];
     if (!type) return;
     dispatch_async(dispatch_get_main_queue(), ^{
-        NSString *account = [self accountID];
+        NSString *account = [self capturedAccountID];
         if (account.length) [self rememberTextType:type account:account];
     });
 }
@@ -416,7 +431,7 @@
     id root = [self value:manager key:@"r"];
     dispatch_async(dispatch_get_main_queue(), ^{
         [self shared].historyResultCount = count;
-        NSString *account = [self accountID];
+        NSString *account = [self capturedAccountID];
         if (!account.length || !root || [self shared].textTypes[account]) return;
         for (id message in sample) {
             NSString *cid = [self value:message key:@"belongingConversationIdentifier"];
@@ -430,10 +445,41 @@
 }
 
 + (void)finishPending:(NSMutableDictionary *)pending success:(BOOL)success reason:(NSString *)reason confirmed:(BOOL)confirmed {
+    NSMutableDictionary *diagnostics = pending[@"diagnostics"];
+    diagnostics[@"stage"] = confirmed ? (success ? @"confirmed" : @"native_failure") : @"unconfirmed";
     if (confirmed && ![pending[@"manualTest"] boolValue]) [self setState:success ? @"sent" : nil key:pending[@"stateKey"]];
     void (^completion)(BOOL, NSString *) = pending[@"completion"];
     [pending removeObjectForKey:@"completion"];
     if (completion) completion(success, reason);
+}
+
++ (void)rememberNativeOutgoing:(id)message conversation:(id)conversation {
+    // 回执已由抖音正常产生；这里只使用已捕获的同账户服务，不唤起服务容器或补读消息。
+    id database = [[self shared].services objectForKey:@"contacts"];
+    id uid = [database respondsToSelector:@selector(currentDataBaseUid)] ? [database currentDataBaseUid] : nil;
+    NSString *account = [uid isKindOfClass:NSNumber.class] ? [uid stringValue] : ([uid isKindOfClass:NSString.class] ? uid : nil);
+    id root = [self value:message key:@"r"];
+    if (!account.length || !root) return;
+    id sender = [self value:message key:@"sender"];
+    NSString *senderID = [sender respondsToSelector:@selector(stringValue)] ? [sender stringValue] : nil;
+    if (![senderID isEqual:account]) return;
+    TIMXOConversationManager *manager = [self serviceForRole:@"conversations" root:root];
+    if (!manager || [self value:manager key:@"r"] != root || ![manager respondsToSelector:@selector(otherUserIDFor1to1ChatWithConversationID:)]) return;
+    NSString *cid = [conversation isKindOfClass:NSString.class] ? conversation : [self value:conversation key:@"identifier"];
+    if (![cid isKindOfClass:NSString.class]) return;
+    long long other = [manager otherUserIDFor1to1ChatWithConversationID:cid];
+    NSString *peer = [NSString stringWithFormat:@"%lld", other];
+    NSArray *parts = [cid componentsSeparatedByCharactersInSet:NSCharacterSet.decimalDigitCharacterSet.invertedSet];
+    if (other <= 0 || ![parts containsObject:account] || ![parts containsObject:peer]) return;
+    NSString *messageID = [self value:message key:@"identifier"];
+    NSArray *manualIDs = [NSUserDefaults.standardUserDefaults arrayForKey:[self manualIDsKey:account]] ?: @[];
+    NSCalendar *calendar = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+    calendar.timeZone = NSTimeZone.localTimeZone;
+    NSDictionary *records = [NSUserDefaults.standardUserDefaults dictionaryForKey:@"DYYYIMObservedOutgoingDays"] ?: @{};
+    NSDictionary *updated = [DYYYIMSendLedger recordsByObservingOutgoing:@{ @"senderID": senderID ?: @"", @"sentAt": [self value:message key:@"createdAt"] ?: NSNull.null,
+        @"confirmed": @YES, @"manualTest": @([manualIDs containsObject:messageID ?: @""]) }
+        account:account peer:peer now:NSDate.date calendar:calendar records:records];
+    if (updated != records && ![updated isEqual:records]) [NSUserDefaults.standardUserDefaults setObject:updated forKey:@"DYYYIMObservedOutgoingDays"];
 }
 
 + (void)observeMessage:(id)message conversation:(id)conversation error:(id)error {
@@ -441,7 +487,7 @@
     if (![identifier isKindOfClass:NSString.class]) return;
     dispatch_async(dispatch_get_main_queue(), ^{
         NSMutableDictionary *pending = [self shared].pending[identifier];
-        if (!pending) return;
+        if (!pending) { if (!error) [self rememberNativeOutgoing:message conversation:conversation]; return; }
         NSString *cid = [conversation isKindOfClass:NSString.class] ? conversation : [self value:conversation key:@"identifier"];
         if (![cid isEqual:pending[@"conversationID"]]) return;
         [self finishPending:pending success:error == nil reason:error ? @"抖音返回发送失败" : @"抖音已确认发送成功" confirmed:YES];
@@ -458,8 +504,11 @@
         dispatch_async(dispatch_get_main_queue(), ^{ [self sendText:text toUserID:userID manualTest:manualTest completion:completion]; });
         return;
     }
-    void (^fail)(NSString *) = ^(NSString *reason) { [self shared].lastFailure = reason; if (completion) completion(NO, reason); };
-    NSString *account = [self accountID];
+    [self shared].sendAttempts++;
+    NSMutableDictionary *diagnostics = [@{ @"stage": @"validating", @"manualTest": @(manualTest), @"historyQueries": @0 } mutableCopy];
+    [self shared].lastSendDiagnostics = diagnostics;
+    void (^fail)(NSString *) = ^(NSString *reason) { [self shared].lastFailure = reason; diagnostics[@"stage"] = @"stopped"; if (completion) completion(NO, reason); };
+    NSString *account = manualTest ? [self accountID] : [self capturedAccountID];
     if (!account.length || !text.length || !userID.length || userID.longLongValue <= 0) { fail(@"账户、用户 ID 或消息内容未就绪"); return; }
     NSString *stateKey = [self stateKey:userID];
     if (!manualTest && [self dailyStateForUserID:userID].length) { fail(@"该好友今天已有发送或待确认记录，不重复发送"); return; }
@@ -473,51 +522,13 @@
     if (!root || root != senderRoot) { fail(@"消息服务账户尚未同步，请重新进入好友聊天"); return; }
     TIMXOConversation *conversation = [self localConversation:cid root:root manager:manager diagnostics:nil];
     if (![self validateConversation:conversation manager:manager account:account peer:userID identifier:cid]) { fail(@"会话账户或接收人不匹配，已停止发送"); return; }
-    TIMXOMessage *last = conversation.lastMessage;
-    NSDictionary *content = last.content;
+    // 格式只从正常原生发送/原生返回中学习。自动发送不读取历史或触发 lastMessage 懒加载。
     NSNumber *type = [self shared].textTypes[account];
     if (!type) type = [NSUserDefaults.standardUserDefaults dictionaryForKey:[self textTypeCacheKey]][account];
-    if (![type isKindOfClass:NSNumber.class] || type.longLongValue <= 0) type = nil;
-    // 参数是 ID 还是会话对象，必须先观察抖音自己的调用，不能根据 id 类型猜测。
-    TIMXOMessageManager *messages = [self serviceForRole:@"messages" root:root];
-    NSString *historyKind = messages ? [[self shared].historyArguments objectForKey:messages] : nil;
-    NSSet *manualIDs = [NSSet setWithArray:[NSUserDefaults.standardUserDefaults arrayForKey:[self manualIDsKey:account]] ?: @[]];
-    if (messages && [self value:messages key:@"r"] == root && historyKind.length && (!manualTest || !type)) {
-        id argument = [historyKind isEqual:@"identifier"] ? (id)cid : conversation;
-        @try {
-            id history = [messages messagesInConversation:argument excludeMessageTypes:@[] limit:manualTest ? 200 : 1000];
-            if ([history isKindOfClass:NSArray.class]) {
-                for (TIMXOMessage *message in history) {
-                    if (![message respondsToSelector:@selector(sender)] || ![message respondsToSelector:@selector(createdAt)]) continue;
-                    if (!manualTest && ![manualIDs containsObject:message.identifier ?: @""] && message.sender == account.longLongValue && [message.createdAt isKindOfClass:NSDate.class] && [NSCalendar.currentCalendar isDateInToday:message.createdAt]) {
-                        [self setState:@"sent" key:stateKey];
-                        fail(@"本地历史记录显示你今天已经发送，不再重复发送"); return;
-                    }
-                    NSDictionary *body = message.content;
-                    if (!type) type = [self textTypeForBody:body number:@(message.messageType)];
-                }
-            }
-        } @catch (__unused NSException *exception) {
-            if (!manualTest) { fail(@"本地消息历史暂不可读，已停止本次发送"); return; }
-        }
+    if (![type isKindOfClass:NSNumber.class] || type.longLongValue <= 0) {
+        fail(@"尚未观察到原生文字格式，请先正常发送一条文字消息后再试"); return;
     }
-    if (!type) type = [self textTypeForBody:content number:@(last.messageType)];
-    if (!type && [messages respondsToSelector:@selector(earliestMessagesInConversationWithIdentifier:limit:)]) {
-        // 同样使用参数明确的会话 ID 入口识别文字类型，避免时间查询的非列表返回。
-        @try {
-            NSArray *recent = [self messageArray:[messages earliestMessagesInConversationWithIdentifier:cid limit:200]];
-            for (TIMXOMessage *message in recent) {
-                type = [self textTypeForBody:message.content number:@(message.messageType)];
-                if (type) break;
-            }
-        } @catch (__unused NSException *exception) {}
-    }
-    if (!type) { fail(@"当前消息服务没有可识别的文字格式，尚未请求发送；请导出消息接口记录"); return; }
     [self rememberTextType:type account:account];
-    if (!manualTest && ![manualIDs containsObject:last.identifier ?: @""] && last.sender == account.longLongValue && [last.createdAt isKindOfClass:NSDate.class] && [NSCalendar.currentCalendar isDateInToday:last.createdAt]) {
-        [self setState:@"sent" key:stateKey];
-        fail(@"会话末条消息显示你今天已发送，不再重复发送"); return;
-    }
     Class modelClass = NSClassFromString(@"IESIMSendMessageModel");
     if (![modelClass instancesRespondToSelector:@selector(initWithConversationId:)]) { fail(@"文字消息模型不可用"); return; }
     IESIMSendMessageModel *model = [[modelClass alloc] initWithConversationId:cid];
@@ -525,11 +536,12 @@
     model.messageType = type.longLongValue;
     model.messageContentDict = @{@"text":text};
     model.preferMessageId = requestID;
-    NSMutableDictionary *pending = [@{@"stateKey":stateKey, @"conversationID":cid, @"manualTest":@(manualTest)} mutableCopy];
+    NSMutableDictionary *pending = [@{@"stateKey":stateKey, @"conversationID":cid, @"manualTest":@(manualTest), @"diagnostics":diagnostics} mutableCopy];
     if (completion) pending[@"completion"] = [completion copy];
     [self shared].pending[requestID] = pending;
     if (manualTest) [self rememberManualID:requestID account:account];
     if (!manualTest) [self setState:@"pending" key:stateKey];
+    diagnostics[@"stage"] = @"waiting_native_receipt";
     @try {
         id message = [sender sendMessage:model];
         NSString *nativeID = [self value:message key:@"identifier"];

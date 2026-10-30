@@ -36,3 +36,6 @@ xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
 xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
     DYYYIMConversationStore.m Tests/DYYYIMConversationStoreTests.m -o "$test_dir/im-conversation-store-tests"
 "$test_dir/im-conversation-store-tests"
+xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
+    DYYYIMSendLedger.m Tests/DYYYIMSendLedgerTests.m -o "$test_dir/im-send-ledger-tests"
+"$test_dir/im-send-ledger-tests"

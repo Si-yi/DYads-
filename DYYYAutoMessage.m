@@ -237,7 +237,7 @@ static NSString *const kDYYYFriendShareFriends = @"DYYYFriendShareFeedFriends";
 
 + (void)sendConfig:(NSDictionary *)config manualTest:(BOOL)manualTest completion:(void (^)(BOOL, NSString *))completion {
     if (!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(), ^{ [self sendConfig:config manualTest:manualTest completion:completion]; }); return; }
-    NSString *account = [DYYYIMService accountID];
+    NSString *account = manualTest ? [DYYYIMService accountID] : [DYYYIMService capturedAccountID];
     if (!account.length || ![config[@"ownerID"] isEqual:account]) { if (completion) completion(NO, @"配置不属于当前登录账户"); return; }
     if ([config[@"sendMode"] integerValue] != 0) {
         if (completion) completion(NO, @"原生图片上传尚未适配，本次未发送");
@@ -346,7 +346,7 @@ static NSString *const kDYYYFriendShareFriends = @"DYYYFriendShareFeedFriends";
     if (!configs.count) { if (completion) completion(); return; }
     NSDictionary *config = configs.firstObject;
     [configs removeObjectAtIndex:0];
-    if (![config[@"enabled"] boolValue] || ![config[@"ownerID"] isEqualToString:[DYYYIMService accountID]] || [DYYYIMService dailyStateForUserID:config[@"userID"]].length) {
+    if (![config[@"enabled"] boolValue] || ![config[@"ownerID"] isEqualToString:[DYYYIMService capturedAccountID]] || [DYYYIMService dailyStateForUserID:config[@"userID"]].length) {
         [self processDailyConfigs:configs completion:completion];
         return;
     }
@@ -365,8 +365,8 @@ static NSString *const kDYYYFriendShareFriends = @"DYYYFriendShareFeedFriends";
     // 同时注入原版时停止 DYYY 的自动调度，卸掉原版后无需它即可运行。
     if (NSClassFromString(@"AutoMessageManager")) return;
     static BOOL processing;
-    if (processing || ![DYYYIMService accountID].length) return;
-    NSString *account = [DYYYIMService accountID];
+    if (processing || ![DYYYIMService capturedAccountID].length) return;
+    NSString *account = [DYYYIMService capturedAccountID];
     static NSString *lastAccount;
     static NSTimeInterval lastCheck;
     NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
@@ -569,7 +569,7 @@ static NSString *const kDYYYFriendShareFriends = @"DYYYFriendShareFeedFriends";
         NSUInteger sent = 0, pending = 0;
         for (NSDictionary *config in [self messageConfigs]) {
             NSString *state = [DYYYIMService dailyStateForUserID:config[@"userID"]];
-            if ([state isEqual:@"sent"]) sent++;
+            if ([state isEqual:@"sent"] || [state isEqual:@"native_sent"]) sent++;
             if ([state isEqual:@"pending"]) pending++;
         }
         [DYYYUtils showToast:[NSString stringWithFormat:@"今日已确认 %lu 位，待确认 %lu 位", (unsigned long)sent, (unsigned long)pending]];
