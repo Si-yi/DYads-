@@ -529,7 +529,11 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @end
 
 // 39.5 聊天输入，原生背景槽与文本/按钮前景分层。
+@interface AWEIMComponentManager : NSObject
+@property (nonatomic, strong) NSArray *components;
+@end
 @interface AWEIMComponentViewController : UIViewController
+@property (nonatomic, strong) AWEIMComponentManager *componentManager;
 @end
 @interface IESIMInputViewController : AWEIMComponentViewController
 @property (nonatomic, strong) UIView *textView;
@@ -587,6 +591,8 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 - (void)updateWithCount:(long long)count;
 @end
 @interface AWEIMMessageListNaviBarTitleView : UIStackView
+@property (nonatomic, strong) UIStackView *avatarStackView;
+- (void)p_didClickSelfWithGesture:(UITapGestureRecognizer *)gesture;
 @end
 @interface AWEIMEmoticonPanelContainerView : UIView
 - (void)refreshBackgroundColorWhileHasBackground:(BOOL)hasBackground;
