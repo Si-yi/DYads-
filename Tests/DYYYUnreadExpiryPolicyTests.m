@@ -1,6 +1,19 @@
 #import <Foundation/Foundation.h>
 #import "DYYYUnreadExpiryPolicy.h"
 
+@interface TIMXOMessage : NSObject
+@end
+@implementation TIMXOMessage
+@end
+@interface DYYYExpiryNativeMessage : TIMXOMessage
+@end
+@implementation DYYYExpiryNativeMessage
+@end
+@interface AWEIMMessage : NSObject
+@end
+@implementation AWEIMMessage
+@end
+
 @interface DYYYUnreadExpiryPolicyTests : NSObject
 + (void)run;
 @end
@@ -15,6 +28,10 @@
     return [DYYYUnreadExpiryPolicy planForFacts:facts nativeCount:count conversation:@"100" cutoff:cutoff];
 }
 + (void)run {
+    [self check:[DYYYUnreadExpiryPolicy isNativeMessageClass:TIMXOMessage.class] reason:@"验证SDK消息类型"];
+    [self check:[DYYYUnreadExpiryPolicy isNativeMessageClass:DYYYExpiryNativeMessage.class] reason:@"允许SDK消息子类"];
+    [self check:![DYYYUnreadExpiryPolicy isNativeMessageClass:AWEIMMessage.class] reason:@"UI消息包装不能冒充SDK消息传入原生接口"];
+    [self check:![DYYYUnreadExpiryPolicy isNativeMessageClass:Nil] reason:@"空边界不是可学习的消息参数"];
     [self check:[[DYYYUnreadExpiryPolicy daysFromText:@" 7 "] isEqual:@7] reason:@"填写7保留最近7天"];
     [self check:[[DYYYUnreadExpiryPolicy daysFromText:@"0.5"] isEqual:@0.5] reason:@"小数天数可表达小时范围"];
     for (id value in @[@"", @" ", @"0", @"-1", @"NaN", @"inf", @"1e2", @"7天", @"1,5", @"36501", @7, NSNull.null])

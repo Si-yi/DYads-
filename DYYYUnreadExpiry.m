@@ -71,7 +71,7 @@
             NSDictionary *cache = [NSUserDefaults.standardUserDefaults dictionaryForKey:@"DYYYUnreadExpiryNativeStyles"];
             id entry = cache[[self cacheKey:context]];
             if ([entry isKindOfClass:NSDictionary.class]) {
-                if ([entry[@"mode"] isKindOfClass:NSNumber.class] && [@[@"nil", @"void", @"object", @"objects"] containsObject:entry[@"shape"]] &&
+                if ([entry[@"messageKind"] isEqual:@"TIMXOMessage"] && [entry[@"mode"] isKindOfClass:NSNumber.class] && [@[@"nil", @"void", @"object", @"objects"] containsObject:entry[@"shape"]] &&
                     [self matchesClass:NSClassFromString(@"TIMXOConversation") selector:@selector(markAllMessagesBeforeMessage:asReadWithMode:completion:) arguments:@"@Q@"]) {
                     DYYYExpiryStyle *style = [DYYYExpiryStyle new]; style.direct = YES;
                     style.mode = [entry[@"mode"] unsignedLongLongValue]; style.shape = entry[@"shape"]; scope.style = style;
@@ -92,7 +92,7 @@
     NSMutableDictionary *cache = [[NSUserDefaults.standardUserDefaults dictionaryForKey:@"DYYYUnreadExpiryNativeStyles"] mutableCopy] ?: [NSMutableDictionary dictionary];
     NSString *key = [self cacheKey:context];
     NSMutableDictionary *entry = [NSMutableDictionary dictionary];
-    if (scope.style.direct) { entry[@"mode"] = @(scope.style.mode); entry[@"shape"] = scope.style.shape; }
+    if (scope.style.direct) { entry[@"mode"] = @(scope.style.mode); entry[@"shape"] = scope.style.shape; entry[@"messageKind"] = @"TIMXOMessage"; }
     entry[@"hints"] = scope.hints.array;
     if (!cache[key] && cache.count >= 8) [cache removeObjectForKey:[cache.allKeys sortedArrayUsingSelector:@selector(compare:)].firstObject];
     cache[key] = entry;
@@ -113,15 +113,17 @@
     }
     return matches;
 }
-+ (void)learnConversation:(id)conversation receiver:(id)receiver mode:(unsigned long long)mode completion:(id)completion {
++ (void)learnConversation:(id)conversation receiver:(id)receiver message:(id)message mode:(unsigned long long)mode completion:(id)completion {
     if (![self days]) return;
     NSString *shape = [DYYYUnreadExpiryPolicy completionShape:completion];
     NSString *encoding = [DYYYUnreadExpiryPolicy completionEncoding:completion];
+    Class messageClass = message ? object_getClass(message) : Nil;
     __weak id weakConversation = conversation, weakReceiver = receiver;
     dispatch_async(dispatch_get_main_queue(), ^{
         if (![self days] || !weakConversation || !weakReceiver) return;
         NSDictionary *context = [DYYYIMService capturedExpiryContext:weakConversation];
         if (!context) return;
+        if (![DYYYUnreadExpiryPolicy isNativeMessageClass:messageClass]) { [self setStatus:@"原生消息模型尚未识别，保留原状"]; return; }
         [self shared].lastReadEncoding = encoding ?: @"nil";
         if (!shape) { [self setStatus:@"原生已读回调格式尚未支持，保留原状"]; return; }
         DYYYExpiryStyle *style = [DYYYExpiryStyle new];

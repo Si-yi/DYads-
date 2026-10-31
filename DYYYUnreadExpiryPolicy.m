@@ -9,6 +9,12 @@
 struct DYYYExpiryBlockLayout { void *isa; int flags; int reserved; void *invoke; void *descriptor; };
 
 @implementation DYYYUnreadExpiryPolicy
++ (BOOL)isNativeMessageClass:(Class)candidate {
+    Class native = NSClassFromString(@"TIMXOMessage");
+    if (!native) return NO;
+    for (Class cls = candidate; cls; cls = class_getSuperclass(cls)) if (cls == native) return YES;
+    return NO;
+}
 + (NSNumber *)daysFromText:(id)text {
     if (![text isKindOfClass:NSString.class]) return nil;
     NSString *value = [text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];

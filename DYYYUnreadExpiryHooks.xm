@@ -5,7 +5,7 @@
 %hook TIMXOConversation
 - (void)markAllMessagesBeforeMessage:(id)message asReadWithMode:(unsigned long long)mode completion:(id)completion {
     %orig(message, mode, completion);
-    [DYYYUnreadExpiry learnConversation:self receiver:self mode:mode completion:completion];
+    [DYYYUnreadExpiry learnConversation:self receiver:self message:message mode:mode completion:completion];
 }
 %end
 %end
@@ -13,7 +13,7 @@
 %hook IESIMConversationDataManager
 - (void)markAllMessagesBeforeMessage:(id)message asReadWithMode:(unsigned long long)mode ofConversation:(id)conversation completion:(id)completion {
     %orig(message, mode, conversation, completion);
-    [DYYYUnreadExpiry learnConversation:conversation receiver:self mode:mode completion:completion];
+    [DYYYUnreadExpiry learnConversation:conversation receiver:self message:message mode:mode completion:completion];
 }
 %end
 %end
