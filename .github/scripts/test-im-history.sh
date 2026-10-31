@@ -45,3 +45,6 @@ xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
 xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
     DYYYUnreadProbe.m Tests/DYYYUnreadProbeTests.m -o "$test_dir/unread-probe-tests"
 "$test_dir/unread-probe-tests"
+xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
+    DYYYUnreadExpiryPolicy.m Tests/DYYYUnreadExpiryPolicyTests.m -o "$test_dir/unread-expiry-tests"
+"$test_dir/unread-expiry-tests"

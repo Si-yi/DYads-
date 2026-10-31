@@ -23,6 +23,7 @@
 #import "DYYYBackupTools.h"
 #import "DYYYDebugInspector.h"
 #import "DYYYAutoMessage.h"
+#import "DYYYUnreadExpiry.h"
 #import "DYYYSearchClean.h"
 #import "DYYYUtils.h"
 
@@ -2904,6 +2905,11 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
     AWESettingItemModel *autoMessageEntry = DYYYMakePageEntry(rootVC, @"自动消息", @"ic_comment_outlined_20", @"增强设置 · 自动消息", @[ autoMessageSections.firstObject ]);
     AWESettingItemModel *friendShareEntry = DYYYMakePageEntry(rootVC, @"好友分享进推荐", @"ic_video_outlined_20", @"增强设置 · 好友分享进推荐", @[ autoMessageSections.lastObject ]);
 
+    AWESettingSectionModel *expirySection = [DYYYSettingsHelper createSectionWithTitle:@"超时未读处理"
+        footerTitle:@"填写天数后，将更早的未读设为已读，可能同步已读回执及其他设备；聊天记录保留。留空或关闭使用抖音默认，仅停止后续处理，不恢复已读状态。首次请正常读一次有未读的聊天以识别原生处理方式；明细不完整时跳过。"
+        items:[DYYYUnreadExpiry settingsItems]];
+    AWESettingItemModel *expiryEntry = DYYYMakePageEntry(rootVC, @"超时未读处理", @"ic_clock_outlined_20", @"增强设置 · 超时未读处理", @[expirySection]);
+
     // 创建增强设置分类项
     AWESettingItemModel *enhanceSettingItem = [[%c(AWESettingItemModel) alloc] init];
     enhanceSettingItem.identifier = @"DYYYEnhanceSettings";
@@ -3891,6 +3897,7 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
       // 创建并组织所有section
       NSMutableArray *sections = [NSMutableArray array];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"自动消息" items:@[ autoMessageEntry, friendShareEntry ]]];
+      [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"消息处理" items:@[ expiryEntry ]]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"长按面板设置" items:longPressItems]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"媒体保存" items:downloadItems]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"交互增强" items:interactionItems]];

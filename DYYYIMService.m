@@ -267,6 +267,20 @@
     return result;
 }
 
++ (NSDictionary *)capturedExpiryContext:(id)conversation {
+    if (!NSThread.isMainThread) return nil;
+    NSString *account = [self capturedAccountID];
+    id sender = [[self shared].services objectForKey:@"sender"];
+    id root = [self value:sender key:@"sdkRoot"];
+    if (!account.length || !root || (conversation && [self value:conversation key:@"r"] != root)) return nil;
+    NSString *rootAccount = [self value:[self value:root key:@"config"] key:@"uid"];
+    if (![rootAccount isKindOfClass:NSString.class] || ![rootAccount isEqual:account]) return nil;
+    id messages = [self serviceForRole:@"messages" root:root];
+    id manager = [self serviceForRole:@"conversations" root:root];
+    if (!messages || !manager || [self value:messages key:@"r"] != root || [self value:manager key:@"r"] != root) return nil;
+    return @{ @"account":account, @"root":root, @"messages":messages, @"manager":manager };
+}
+
 + (id)contactDatabase {
     id cached = [[self shared].services objectForKey:@"contacts"];
     if ([cached respondsToSelector:@selector(currentDataBaseUid)] &&

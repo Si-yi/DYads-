@@ -2342,6 +2342,7 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @property (nonatomic, readonly, strong) TIMXOMessage *lastMessage;
 @property (nonatomic, readonly) unsigned long long unreadCount;
 @property (nonatomic, copy) NSString *firstUnreadMessageID;
+- (void)markAllMessagesBeforeMessage:(id)message asReadWithMode:(unsigned long long)mode completion:(id)completion;
 @end
 
 @interface TIMXOMessage : NSObject
@@ -2351,6 +2352,9 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @property (nonatomic, readonly, copy) NSDictionary *content;
 @property (nonatomic, readonly, copy) NSString *belongingConversationIdentifier;
 @property (nonatomic, readonly, strong) NSDate *createdAt;
+@property (nonatomic, readonly, strong) NSDate *serverCreatedAt;
+@property (nonatomic, readonly) long long orderIndex;
+@property (nonatomic, readonly) long long hintType;
 @property (nonatomic, readonly) long long sender;
 @property (nonatomic, readonly) long long messageType;
 @end
@@ -2364,6 +2368,7 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @end
 
 @interface TIMXOMessageManager : NSObject
+- (void)asyncGetUnreadMessagesForHintType:(long long)hint inConversation:(id)identifier limit:(unsigned long long)limit completion:(id)completion;
 - (void)asyncGetUnreadMessagesFromSender:(long long)sender inConversation:(id)identifier limit:(unsigned long long)limit completion:(id)completion;
 - (id)earliestMessagesInConversationWithIdentifier:(id)identifier limit:(long long)limit;
 - (id)initWithRootObject:(id)root;
@@ -2458,4 +2463,21 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @end
 @interface AWEIMChatListCommonCell : UITableViewCell
 - (void)renderWithHolder:(id)holder;
+@end
+
+// 39.5 完整导出确认：原生已读操作与总数通知。时限功能只调用原生边界操作。
+@interface IESIMConversationDataManager : NSObject
+- (void)markAllMessagesBeforeMessage:(id)message asReadWithMode:(unsigned long long)mode ofConversation:(id)conversation completion:(id)completion;
+@end
+@interface AWEIMGeneralTotalUnreadCountObserver : NSObject
+- (void)unreadCountForUser:(long long)user changeTo:(int)count cidToUnreadCountDict:(id)counts;
+- (void)unreadCountForUser:(long long)user changeTo:(int)count cidToUnreadCountDict:(id)counts boxType:(int)box;
+@end
+@interface AWEIMChatListViewController : UIViewController
+@end
+@interface TIMXConfig : NSObject
+@property (nonatomic, copy) NSString *uid;
+@end
+@interface TIMXSDKInstance : NSObject
+@property (nonatomic, strong) TIMXConfig *config;
 @end

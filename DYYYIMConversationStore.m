@@ -45,6 +45,22 @@
     if (!root || !identifier.length) return nil;
     @synchronized(self) { return [[[self roots] objectForKey:root] objectForKey:identifier]; }
 }
++ (NSArray *)conversationsForRoot:(id)root limit:(NSUInteger)limit {
+    if (!root || !limit) return @[];
+    NSArray *keys;
+    @synchronized(self) {
+        NSMapTable *map = [[self roots] objectForKey:root];
+        keys = map.keyEnumerator.allObjects;
+    }
+    NSMutableArray *result = [NSMutableArray array];
+    // 只在锁内复制字符串键；原生模型取出与释放均不发生在枚举锁内。
+    for (NSString *key in keys) {
+        if (result.count >= MIN(limit, 128)) break;
+        id conversation = [self conversationForRoot:root identifier:key];
+        if (conversation) [result addObject:conversation];
+    }
+    return result;
+}
 + (NSDictionary *)diagnostics {
     @synchronized(self) {
         NSUInteger count = 0;

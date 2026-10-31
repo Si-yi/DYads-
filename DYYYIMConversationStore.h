@@ -5,5 +5,6 @@
 + (void)capture:(id)conversation root:(id)root identifier:(NSString *)identifier;
 + (id)conversationForRoot:(id)root identifier:(NSString *)identifier;
 + (void)observeNativeConversation:(id)conversation root:(id)root identifier:(NSString *)identifier;
++ (NSArray *)conversationsForRoot:(id)root limit:(NSUInteger)limit;
 + (NSDictionary *)diagnostics;
 @end

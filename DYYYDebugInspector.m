@@ -8,6 +8,7 @@
 #import "DYYYAvatarRing.h"
 #import "DYYYHomeDailyFilter.h"
 #import "DYYYUnreadProbe.h"
+#import "DYYYUnreadExpiry.h"
 #import "DYYYDetailCaptionLayout.h"
 #import "DYYYChatInputGlass.h"
 #import "DYYYChatInputList.h"
@@ -351,6 +352,7 @@ static NSDictionary *DYYYDebugMetadata(void) {
         @"avatarRing": [DYYYAvatarRing diagnostics],
         @"homeDailyFilter": [DYYYHomeDailyFilter diagnostics],
         @"unreadProbe": [DYYYUnreadProbe diagnostics],
+        @"unreadExpiry": [DYYYUnreadExpiry diagnostics],
         @"detailCaption": [DYYYDetailCaptionLayout diagnostics],
         @"chatInputGlass": [DYYYChatInputGlass diagnostics],
         @"chatInputList": [DYYYChatInputList diagnostics],

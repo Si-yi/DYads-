@@ -8,6 +8,8 @@
 + (NSString *)accountID;
 /// 仅从抖音已创建的账户实例取值，自动检查不可唤起服务容器。
 + (NSString *)capturedAccountID;
+/// 仅返回当前账户已捕获的 root/消息管理器，不解析服务容器。
++ (NSDictionary *)capturedExpiryContext:(id)conversation;
 + (void)observeTextModel:(id)model sender:(id)sender;
 + (void)observeConversationSend:(id)model conversation:(id)conversation;
 + (void)observeHistoryQuery:(id)conversation manager:(id)manager;
