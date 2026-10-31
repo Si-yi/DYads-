@@ -63,8 +63,39 @@
 }
 + (DYYYExpiryScope *)scope:(id)root {
     DYYYExpiryScope *scope = [[self shared].scopes objectForKey:root];
-    if (!scope && root) { scope = [DYYYExpiryScope new]; [[self shared].scopes setObject:scope forKey:root]; }
+    if (!scope && root) {
+        scope = [DYYYExpiryScope new]; [[self shared].scopes setObject:scope forKey:root];
+        NSDictionary *context = [DYYYIMService capturedExpiryContext:nil];
+        if (context[@"root"] == root) {
+            NSDictionary *cache = [NSUserDefaults.standardUserDefaults dictionaryForKey:@"DYYYUnreadExpiryNativeStyles"];
+            id entry = cache[[self cacheKey:context]];
+            if ([entry isKindOfClass:NSDictionary.class]) {
+                if ([entry[@"mode"] isKindOfClass:NSNumber.class] && [@[@"nil", @"void", @"object", @"objects"] containsObject:entry[@"shape"]] &&
+                    [self matchesClass:NSClassFromString(@"TIMXOConversation") selector:@selector(markAllMessagesBeforeMessage:asReadWithMode:completion:) arguments:@"@Q@"]) {
+                    DYYYExpiryStyle *style = [DYYYExpiryStyle new]; style.direct = YES;
+                    style.mode = [entry[@"mode"] unsignedLongLongValue]; style.shape = entry[@"shape"]; scope.style = style;
+                }
+                if ([entry[@"hints"] isKindOfClass:NSArray.class])
+                    for (id hint in entry[@"hints"]) if ([hint isKindOfClass:NSNumber.class] && scope.hints.count < 8) [scope.hints addObject:hint];
+            }
+        }
+    }
     return scope;
+}
++ (NSString *)cacheKey:(NSDictionary *)context {
+    NSDictionary *info = NSBundle.mainBundle.infoDictionary;
+    return [NSString stringWithFormat:@"%@/%@/%@", info[@"CFBundleShortVersionString"] ?: @"", info[@"CFBundleVersion"] ?: @"", context[@"account"] ?: @""];
+}
++ (void)saveScope:(DYYYExpiryScope *)scope context:(NSDictionary *)context {
+    if (!scope || !context) return;
+    NSMutableDictionary *cache = [[NSUserDefaults.standardUserDefaults dictionaryForKey:@"DYYYUnreadExpiryNativeStyles"] mutableCopy] ?: [NSMutableDictionary dictionary];
+    NSString *key = [self cacheKey:context];
+    NSMutableDictionary *entry = [NSMutableDictionary dictionary];
+    if (scope.style.direct) { entry[@"mode"] = @(scope.style.mode); entry[@"shape"] = scope.style.shape; }
+    entry[@"hints"] = scope.hints.array;
+    if (!cache[key] && cache.count >= 8) [cache removeObjectForKey:[cache.allKeys sortedArrayUsingSelector:@selector(compare:)].firstObject];
+    cache[key] = entry;
+    [NSUserDefaults.standardUserDefaults setObject:cache forKey:@"DYYYUnreadExpiryNativeStyles"];
 }
 + (void)setStatus:(NSString *)status {
     [self shared].status = status;
@@ -93,7 +124,9 @@
         DYYYExpiryStyle *style = [DYYYExpiryStyle new];
         style.receiver = weakReceiver; style.direct = weakReceiver == weakConversation;
         style.mode = mode; style.shape = shape;
-        [self scope:context[@"root"]].style = style;
+        DYYYExpiryScope *scope = [self scope:context[@"root"]];
+        if (style.direct || !scope.style.direct) scope.style = style;
+        [self saveScope:scope context:context];
         [self setStatus:@"已学习原生方式，等待检查"];
         [self schedule];
     });
@@ -102,10 +135,12 @@
     if (![self days]) return;
     __weak id weakManager = manager;
     dispatch_async(dispatch_get_main_queue(), ^{
+        if (![self days]) return;
         NSDictionary *context = [DYYYIMService capturedExpiryContext:nil];
         if (!context || context[@"messages"] != weakManager) return;
         DYYYExpiryScope *scope = [self scope:context[@"root"]];
         if (scope.hints.count < 8) [scope.hints addObject:@(hint)];
+        [self saveScope:scope context:context];
     });
 }
 + (dispatch_queue_t)queue {
@@ -233,7 +268,7 @@
                         if ([plan[@"status"] isEqual:@"ready"] || [plan[@"status"] isEqual:@"no_safe_expired_prefix"]) {
                             NSUInteger prior = scope.hints.count;
                             for (NSNumber *hint in observedHints) if (scope.hints.count < 8) [scope.hints addObject:hint];
-                            if (scope.hints.count != prior) [self shared].requested = YES;
+                            if (scope.hints.count != prior) { [self shared].requested = YES; [self saveScope:scope context:context]; }
                         }
                         if (![plan[@"status"] isEqual:@"ready"]) { next(); return; }
                         TIMXOMessage *boundary = byID[plan[@"boundary"]];
