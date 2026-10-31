@@ -4,7 +4,7 @@
 #import "DYYYIMConversationStore.h"
 #import "DYYYIMHistoryReader.h"
 #import "DYYYSettingsHelper.h"
-#import "DYYYToast.h"
+#import "DYYYUtils.h"
 #import "AwemeHeaders.h"
 #import <objc/runtime.h>
 #include <math.h>
@@ -40,6 +40,7 @@
 @property (nonatomic) BOOL busy;
 @property (nonatomic) BOOL requested;
 @property (nonatomic, copy) NSString *status;
+@property (nonatomic, copy) NSString *lastReadEncoding;
 @end
 
 @implementation DYYYUnreadExpiry
@@ -115,12 +116,14 @@
 + (void)learnConversation:(id)conversation receiver:(id)receiver mode:(unsigned long long)mode completion:(id)completion {
     if (![self days]) return;
     NSString *shape = [DYYYUnreadExpiryPolicy completionShape:completion];
-    if (!shape) return;
+    NSString *encoding = [DYYYUnreadExpiryPolicy completionEncoding:completion];
     __weak id weakConversation = conversation, weakReceiver = receiver;
     dispatch_async(dispatch_get_main_queue(), ^{
         if (![self days] || !weakConversation || !weakReceiver) return;
         NSDictionary *context = [DYYYIMService capturedExpiryContext:weakConversation];
         if (!context) return;
+        [self shared].lastReadEncoding = encoding ?: @"nil";
+        if (!shape) { [self setStatus:@"原生已读回调格式尚未支持，保留原状"]; return; }
         DYYYExpiryStyle *style = [DYYYExpiryStyle new];
         style.receiver = weakReceiver; style.direct = weakReceiver == weakConversation;
         style.mode = mode; style.shape = shape;
@@ -184,6 +187,8 @@
 }
 + (void)finishRun {
     DYYYUnreadExpiry *state = [self shared]; state.busy = NO;
+    if (![self days]) [self setStatus:@"使用抖音默认"];
+    else if ([state.status isEqual:@"正在检查原生已加载会话"]) [self setStatus:@"本次已加载会话检查结束"];
     if (state.requested) { state.requested = NO; [self schedule]; }
 }
 + (void (^)(id))callbackFor:(void (^)(id))returned {
@@ -341,7 +346,7 @@
     days.cellTappedBlock = ^{
         [DYYYSettingsHelper showTextInputAlert:@"未读保留天数" defaultText:[NSUserDefaults.standardUserDefaults stringForKey:@"DYYYUnreadExpiryDays"] ?: @"" placeholder:@"例如 7；留空使用抖音默认" onConfirm:^(NSString *input) {
             NSString *value = [input stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-            if (value.length && ![DYYYUnreadExpiryPolicy daysFromText:value]) { [DYYYToast showToast:@"请输入大于 0 且不超过 36500 的天数，可填小数"]; return; }
+            if (value.length && ![DYYYUnreadExpiryPolicy daysFromText:value]) { [DYYYUtils showToast:@"请输入大于 0 且不超过 36500 的天数，可填小数"]; return; }
             [DYYYSettingsHelper setUserDefaults:value forKey:@"DYYYUnreadExpiryDays"];
             weakDays.detail = value.length ? value : @"抖音默认"; [weakDays refreshCell]; [self settingsChanged];
         } onCancel:nil];
@@ -356,6 +361,7 @@
     DYYYExpiryScope *scope = context ? [[self shared].scopes objectForKey:context[@"root"]] : nil;
     return @{ @"enabled":@([NSUserDefaults.standardUserDefaults boolForKey:@"DYYYUnreadExpiryEnabled"]), @"days":[self days] ?: NSNull.null,
         @"status":[self shared].status, @"nativeStyleReady":@(scope.style != nil), @"knownHintTypes":@(scope.hints.count),
+        @"lastNativeReadCompletionEncoding":[self shared].lastReadEncoding ?: @"",
         @"submissions":@([self shared].submissions), @"callbacks":@([self shared].callbacks), @"busy":@([self shared].busy),
         @"pendingQueries":@([self shared].pendingQueries), @"pendingWrites":@([self shared].pendingWrites),
         @"checkedConversations":@([self shared].checked), @"skippedUnverified":@([self shared].skippedUnverified),

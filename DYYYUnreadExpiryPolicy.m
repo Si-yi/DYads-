@@ -13,13 +13,15 @@ struct DYYYExpiryBlockLayout { void *isa; int flags; int reserved; void *invoke;
     if (![text isKindOfClass:NSString.class]) return nil;
     NSString *value = [text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
     if (!value.length) return nil;
-    NSRegularExpression *regex = [NSRegularExpression regularExpressionWithPattern:@"^(?:[0-9]+(?:\\.[0-9]+)?|\\.[0-9]+)$" options:0 error:nil];
+    static NSRegularExpression *regex;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ regex = [NSRegularExpression regularExpressionWithPattern:@"^(?:[0-9]+(?:\\.[0-9]+)?|\\.[0-9]+)$" options:0 error:nil]; });
     if (![regex firstMatchInString:value options:0 range:NSMakeRange(0, value.length)]) return nil;
     double days = value.doubleValue;
     return isfinite(days) && days > 0 && days <= 36500 ? @(days) : nil;
 }
-+ (NSString *)completionShape:(id)block {
-    if (!block) return @"nil";
++ (NSString *)completionEncoding:(id)block {
+    if (!block) return nil;
     BOOL isBlock = NO;
     for (Class cls = object_getClass(block); cls; cls = class_getSuperclass(cls)) {
         if ([NSStringFromClass(cls) isEqualToString:@"NSBlock"]) { isBlock = YES; break; }
@@ -39,8 +41,14 @@ struct DYYYExpiryBlockLayout { void *isa; int flags; int reserved; void *invoke;
     encoding = ptrauth_strip(encoding, ptrauth_key_process_independent_data);
 #endif
     if (!encoding) return nil;
+    return [NSString stringWithUTF8String:encoding];
+}
++ (NSString *)completionShape:(id)block {
+    if (!block) return @"nil";
+    NSString *encoding = [self completionEncoding:block];
+    if (!encoding) return nil;
     @try {
-        NSMethodSignature *signature = [NSMethodSignature signatureWithObjCTypes:encoding];
+        NSMethodSignature *signature = [NSMethodSignature signatureWithObjCTypes:encoding.UTF8String];
         if (strcmp(signature.methodReturnType, "v") || signature.numberOfArguments < 1 || signature.numberOfArguments > 3) return nil;
         if (strcmp([signature getArgumentTypeAtIndex:0], "@?")) return nil;
         for (NSUInteger index = 1; index < signature.numberOfArguments; index++)
