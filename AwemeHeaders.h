@@ -2450,3 +2450,12 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 - (void)dyyy_restoreFloatingBackground;
 - (void)dyyy_syncFloatingBackground;
 @end
+
+// 39.5 导出确认的未读提示与列表渲染入口，仅供被动类型诊断。
+@interface AWEIMBaseUnreadMessagesConsumer : NSObject
+- (id)generateHintModelForConversation:(id)conversation filterOptions:(id)options;
+- (id)targetFilterOptionsForUnreadMessagesInChat:(id)chat;
+@end
+@interface AWEIMChatListCommonCell : UITableViewCell
+- (void)renderWithHolder:(id)holder;
+@end

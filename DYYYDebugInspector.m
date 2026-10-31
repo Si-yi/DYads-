@@ -7,6 +7,7 @@
 #import "DYYYFriendShareService.h"
 #import "DYYYAvatarRing.h"
 #import "DYYYHomeDailyFilter.h"
+#import "DYYYUnreadProbe.h"
 #import "DYYYDetailCaptionLayout.h"
 #import "DYYYChatInputGlass.h"
 #import "DYYYChatInputList.h"
@@ -349,6 +350,7 @@ static NSDictionary *DYYYDebugMetadata(void) {
         @"panelBlur": [DYYYPanelBlur diagnostics],
         @"avatarRing": [DYYYAvatarRing diagnostics],
         @"homeDailyFilter": [DYYYHomeDailyFilter diagnostics],
+        @"unreadProbe": [DYYYUnreadProbe diagnostics],
         @"detailCaption": [DYYYDetailCaptionLayout diagnostics],
         @"chatInputGlass": [DYYYChatInputGlass diagnostics],
         @"chatInputList": [DYYYChatInputList diagnostics],
@@ -415,6 +417,8 @@ static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *wi
         // 仅导出抖音自身的运行时声明，不执行联系人查询、消息读取或发送方法。
         // 接口声明合并进完整导出，轻量导出仅保留运行状态摘要。
         NSArray<NSString *> *priority = @[
+            @"AWEIMChatCellViewModel", @"AWEIMChatListControllerViewModel", @"AWEIMChatListHintProviderComponentBase",
+            @"AWEIMBaseUnreadMessagesConsumer", @"AWEIMChatListCommonCell", @"DUXBadge", @"AWENormalModeTabBarBadgeContainerView",
             @"AWEIMMessageListNaviBarChatDetailComponent", @"AWEIMMessageListNaviBarGroupZoneToggleComponent",
             @"AWEIMGroupZoneConversationComponent", @"AWEIMComponentManager",
             @"AWEIMFeedVideoCachePool", @"AWEIMUserDBManager", @"AWEIMUserManager", @"AWEIMSDKManager", @"AWEIMService",
@@ -432,21 +436,34 @@ static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *wi
         for (NSString *name in priority) {
             if (NSClassFromString(name)) [names addObject:name]; else [missing addObject:name];
         }
+        // 实际原生调用里出现的类型优先，不能继续被字母序排在前的广告/音频类挤出。
+        for (NSString *name in [DYYYUnreadProbe observedClassNames]) {
+            if (names.count >= 72) break;
+            if (![name hasPrefix:@"AWEIM"] && ![name hasPrefix:@"TIMX"] && ![name hasPrefix:@"IESIM"]) continue;
+            if (NSClassFromString(name)) [names addObject:name];
+        }
+        NSArray *unreadPriority = names.array.copy;
         unsigned int classCount = 0;
         Class *classes = objc_copyClassList(&classCount);
         NSMutableArray<NSString *> *candidates = [NSMutableArray array];
         NSMutableArray<NSString *> *mediaCandidates = [NSMutableArray array];
+        NSMutableArray<NSString *> *unreadCandidates = [NSMutableArray array];
+        NSMutableArray<NSString *> *detailCandidates = [NSMutableArray array];
         NSArray<NSString *> *terms = @[@"message", @"conversation", @"contact", @"user", @"sender", @"sdk", @"session", @"account"];
         for (unsigned int index = 0; index < classCount; index++) {
             NSString *name = NSStringFromClass(classes[index]);
             BOOL detailClass = [name hasPrefix:@"AWE"] &&
                 ([name containsString:@"AwemeDetail"] || [name containsString:@"MultiAweme"] || [name containsString:@"AwemeRequest"]);
             if (detailClass && !DKClassNameIsRuntimeGenerated(name)) {
-                if (names.count < 80) [names addObject:name];
+                [detailCandidates addObject:name];
                 continue;
             }
             if (![name hasPrefix:@"TIMX"] && ![name hasPrefix:@"IESIM"] && ![name hasPrefix:@"AWEIM"]) continue;
             if (DKClassNameIsRuntimeGenerated(name)) continue;
+            NSString *probeName = name.lowercaseString;
+            if ([probeName containsString:@"unread"] || [probeName containsString:@"readindex"] ||
+                [probeName containsString:@"readcursor"] || [probeName containsString:@"conversationcore"] ||
+                [probeName containsString:@"chatlisthint"]) [unreadCandidates addObject:name];
             if ([name containsString:@"View"] || [name containsString:@"Controller"] || [name containsString:@"Cell"]) continue;
             NSString *lower = name.lowercaseString;
             if ([lower containsString:@"image"] || [lower containsString:@"photo"] || [lower containsString:@"picture"] || [lower containsString:@"upload"])
@@ -456,16 +473,38 @@ static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *wi
             }
         }
         free(classes);
+        [unreadCandidates sortUsingSelector:@selector(compare:)];
+        NSUInteger unreadAdded = 0;
+        for (NSString *name in unreadCandidates) {
+            if ([names containsObject:name]) continue;
+            if (unreadAdded >= 32 || names.count >= 112) break;
+            [names addObject:name]; unreadAdded++;
+        }
+        // 补已选中未读模型的原生父类声明，最多两级，不执行实例方法。
+        for (NSString *name in names.array.copy) {
+            Class parent = class_getSuperclass(NSClassFromString(name));
+            for (NSUInteger depth = 0; parent && depth < 2 && names.count < 128; depth++) {
+                NSString *parentName = NSStringFromClass(parent);
+                if (![parentName hasPrefix:@"AWEIM"] && ![parentName hasPrefix:@"TIMX"] && ![parentName hasPrefix:@"IESIM"]) break;
+                [names addObject:parentName]; parent = class_getSuperclass(parent);
+            }
+        }
+        NSArray *unreadCollected = names.array.copy;
+        [detailCandidates sortUsingSelector:@selector(compare:)];
+        for (NSString *name in detailCandidates) {
+            if (names.count >= 140) break;
+            [names addObject:name];
+        }
         // 图片发送需有真实上传和消息模型签名，不能仅凭文字消息字典猜测。
         [mediaCandidates sortUsingSelector:@selector(compare:)];
         for (NSString *name in mediaCandidates) {
-            if (names.count >= 85) break;
+            if (names.count >= 148) break;
             [names addObject:name];
         }
         [candidates sortUsingSelector:@selector(compare:)];
         NSUInteger matchingCount = candidates.count;
         for (NSString *name in candidates) {
-            if (names.count >= 120) break;
+            if (names.count >= 160) break;
             [names addObject:name];
         }
         NSString *folder = [base stringByAppendingPathComponent:@"im-interfaces"];
@@ -484,8 +523,30 @@ static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *wi
         }
         writeJSON(@"im-interfaces/index.json", @{ @"formatVersion":@1, @"classes":written,
             @"missingPriorityClasses":missing, @"unavailableClasses":unavailable,
-            @"matchingClassCount":@(matchingCount), @"classLimit":@120,
+            @"matchingClassCount":@(matchingCount), @"classLimit":@160,
+            @"unreadPriorityClasses":unreadPriority, @"unreadCollectedClasses":unreadCollected,
+            @"unreadMatchingClassCount":@(unreadCandidates.count), @"unreadAddedClassCount":@(unreadAdded),
             @"collection":@"runtime-declarations-only" });
+        NSMutableArray *protocols = [NSMutableArray array];
+        for (NSString *name in @[ @"AWEIMUnreadMessageConsumerPotocol", @"AWEIMUnreadMessagesConsumerDelegate",
+            @"IESIMMessageProtocol", @"IESIMConversationDataManagerProtocol", @"IESIMReusableCell" ]) {
+            Protocol *protocol = objc_getProtocol(name.UTF8String);
+            if (!protocol) { [protocols addObject:@{ @"name":name, @"available":@NO }]; continue; }
+            NSMutableArray *methods = [NSMutableArray array];
+            for (NSNumber *required in @[@YES, @NO]) for (NSNumber *instance in @[@YES, @NO]) {
+                unsigned int count = 0;
+                struct objc_method_description *descriptions = protocol_copyMethodDescriptionList(protocol, required.boolValue, instance.boolValue, &count);
+                for (unsigned int index = 0; index < count && methods.count < 128; index++) {
+                    if (!descriptions[index].name) continue;
+                    [methods addObject:@{ @"selector":NSStringFromSelector(descriptions[index].name),
+                        @"encoding":descriptions[index].types ? [NSString stringWithUTF8String:descriptions[index].types] : @"",
+                        @"required":required, @"instance":instance }];
+                }
+                free(descriptions);
+            }
+            [protocols addObject:@{ @"name":name, @"available":@YES, @"methods":methods }];
+        }
+        writeJSON(@"im-interfaces/unread-protocols.json", @{ @"collection":@"runtime-declarations-only", @"protocols":protocols });
     }
     if (DYYYDebugStartedAt && !DYYYDebugRecording) {
         NSDictionary *session;
@@ -626,6 +687,7 @@ void DYYYDebugInspectorRefreshOverlay(void) {
         dispatch_async(dispatch_get_main_queue(), ^{ DYYYDebugInspectorRefreshOverlay(); });
         return;
     }
+    [DYYYUnreadProbe installHooks];
     if (DYYYDebugOverlayRefreshing) return;
     DYYYDebugOverlayRefreshing = YES;
     @try {

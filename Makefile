@@ -37,6 +37,7 @@ include $(THEOS)/makefiles/common.mk
 TWEAK_NAME = DYads-
 
 DYads-_FILES = DYYY.xm DYYYFloatClearButton.xm DYYYFloatSpeedButton.m DYYYSettings.xm DYYYAutoMessageHooks.xm DYYYABTestHook.xm DYYYLongPressPanel.xm DYYYGlassTabBar.xm DYYYProfileClean.xm DYYYPlusIcon.m DKTabBarIcons.m DKTabBarIconDraw.m DKIconCropper.m DYYYSettingsHelper.m DYYYAutoMessage.m DYYYAutoMessagePanel.m DYYYBackupTools.m DYYYDebugInspector.m DKDebugCapture.m DKClassDump.m DKZipWriter.m DYYYImagePickerDelegate.m DYYYBackupPickerDelegate.m DYYYBottomAlertView.m DYYYCustomInputView.m DYYYOptionsSelectionView.m DYYYIconOptionsDialogView.m DYYYAboutDialogView.m DYYYKeywordListView.m DYYYFilterSettingsView.m DYYYConfirmCloseView.m DYYYToast.m DYYYManager.m DYYYUtils.m CityManager.m AWMSafeDispatchTimer.m
+DYads-_FILES += DYYYUnreadProbe.m DYYYUnreadProbeHooks.xm
 DYads-_FILES += DYYYHomeDailyFilter.m DYYYHomeDailyFilterHooks.xm
 DYads-_FILES += DYYYAutoMessageEditor.m DYYYAutoMessageQuietHoursPanel.m DYYYAutoMessageBatch.m
 DYads-_FILES += DYYYIMService.m DYYYIMSendLedger.m DYYYIMConversationStore.m DYYYIMHistoryReader.m DYYYIMShareParser.m

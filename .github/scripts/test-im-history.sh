@@ -42,3 +42,6 @@ xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
 xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
     DYYYHomeDailyFilter.m Tests/DYYYHomeDailyFilterTests.m -o "$test_dir/home-daily-filter-tests"
 "$test_dir/home-daily-filter-tests"
+xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
+    DYYYUnreadProbe.m Tests/DYYYUnreadProbeTests.m -o "$test_dir/unread-probe-tests"
+"$test_dir/unread-probe-tests"

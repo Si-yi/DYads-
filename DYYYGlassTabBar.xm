@@ -1,7 +1,7 @@
 //
 //  DYYYGlassTabBar.xm
 //  移植自 DYKiller 的 DKGlassTabBar.xm：自建 UITabBar（4 个 tab 的玻璃胶囊）+ 右侧独立玻璃圆键（拍摄），顶替抖音自绘底栏。
-//  标题、顺序、拍摄图标镜像抖音按钮；未读仅镜像有无，悬浮底栏统一显示红点。
+//  内容全部镜像自抖音自己的按钮：标题、顺序、拍摄图标、未读角标，抖音改什么这里跟着变。
 //
 //  两条不可回退的结论：
 //
@@ -764,7 +764,7 @@ static void DKGlassSyncPlusIcon(UIView *button) {
 
 #pragma mark - 未读角标镜像
 
-// 只读抖音按钮是否存在可见角标，不读取数字。走子视图扫描而不是 badge / badgeContainerView 属性：那两个 getter
+// 读抖音按钮当前的角标。走子视图扫描而不是 badge / badgeContainerView 属性：那两个 getter
 // 可能懒建对象，而这里是逐帧路径，只读不建才安全。
 static NSString *DKGlassBadgeValue(id button) {
     if (![button isKindOfClass:UIView.class]) return nil;
@@ -788,8 +788,11 @@ static NSString *DKGlassBadgeValue(id button) {
     }
     if (!badge) return nil;
 
-    // 空串是 UITabBarItem 的原生纯红点；nil 则不显示。原生角标和消息页保持原样。
-    return @"";
+    NSString *text = DKGlassValue(badge, @"badgeText");
+    if (text.length > 0) return text;                      // 抖音自己给的文案，如 "99+"
+    unsigned long long count = [DKGlassValue(badge, @"badgeNumber") unsignedLongLongValue];
+    if (count > 0) return @(count).stringValue;
+    return @"";                                            // 有角标但无数字 → 纯红点
 }
 
 // badgeValue 交给系统渲染即得 iOS 26 悬浮胶囊里的原生红点，badgeColor 留 nil 用系统默认色。
