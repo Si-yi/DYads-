@@ -2343,6 +2343,8 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @property (nonatomic, readonly) unsigned long long unreadCount;
 @property (nonatomic, copy) NSString *firstUnreadMessageID;
 - (void)markAllMessagesBeforeMessage:(id)message asReadWithMode:(unsigned long long)mode completion:(id)completion;
+- (BOOL)is1to1Chat;
+- (BOOL)isGroupChat;
 @end
 
 @interface TIMXOMessage : NSObject

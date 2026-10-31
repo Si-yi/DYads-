@@ -41,6 +41,7 @@
 @property (nonatomic) BOOL requested;
 @property (nonatomic, copy) NSString *status;
 @property (nonatomic, copy) NSString *lastReadEncoding;
+@property (nonatomic, copy) NSString *lastReadMessageClass;
 @end
 
 @implementation DYYYUnreadExpiry
@@ -123,8 +124,9 @@
         if (![self days] || !weakConversation || !weakReceiver) return;
         NSDictionary *context = [DYYYIMService capturedExpiryContext:weakConversation];
         if (!context) return;
-        if (![DYYYUnreadExpiryPolicy isNativeMessageClass:messageClass]) { [self setStatus:@"原生消息模型尚未识别，保留原状"]; return; }
+        [self shared].lastReadMessageClass = messageClass ? NSStringFromClass(messageClass) : @"nil";
         [self shared].lastReadEncoding = encoding ?: @"nil";
+        if (![DYYYUnreadExpiryPolicy isNativeMessageClass:messageClass]) { [self setStatus:@"原生消息模型尚未识别，保留原状"]; return; }
         if (!shape) { [self setStatus:@"原生已读回调格式尚未支持，保留原状"]; return; }
         DYYYExpiryStyle *style = [DYYYExpiryStyle new];
         style.receiver = weakReceiver; style.direct = weakReceiver == weakConversation;
@@ -212,7 +214,14 @@
     NSUInteger count = conversation.unreadCount;
     if (!count || count > 4096) { if (count > 4096) [self setStatus:@"单会话未读超出检查上限，保留原状"]; next(); return; }
     DYYYExpiryScope *scope = [self scope:context[@"root"]];
-    long long peer = [(TIMXOConversationManager *)context[@"manager"] otherUserIDFor1to1ChatWithConversationID:cid];
+    BOOL direct = [conversation respondsToSelector:@selector(is1to1Chat)] && [conversation is1to1Chat];
+    BOOL group = [conversation respondsToSelector:@selector(isGroupChat)] && [conversation isGroupChat];
+    if (!direct && !group) { next(); return; }
+    long long peer = 0;
+    @try {
+        if (direct) peer = [(TIMXOConversationManager *)context[@"manager"] otherUserIDFor1to1ChatWithConversationID:cid];
+    } @catch (__unused NSException *exception) { next(); return; }
+    if (direct && peer <= 0) { next(); return; }
     if (peer == [context[@"account"] longLongValue]) { next(); return; }
     NSArray *hints = scope.hints.array.copy;
     if (peer <= 0 && !hints.count) { [self setStatus:@"群聊提示类型尚未就绪，保留原状"]; next(); return; }
@@ -364,6 +373,7 @@
     return @{ @"enabled":@([NSUserDefaults.standardUserDefaults boolForKey:@"DYYYUnreadExpiryEnabled"]), @"days":[self days] ?: NSNull.null,
         @"status":[self shared].status, @"nativeStyleReady":@(scope.style != nil), @"knownHintTypes":@(scope.hints.count),
         @"lastNativeReadCompletionEncoding":[self shared].lastReadEncoding ?: @"",
+        @"lastNativeReadMessageClass":[self shared].lastReadMessageClass ?: @"",
         @"submissions":@([self shared].submissions), @"callbacks":@([self shared].callbacks), @"busy":@([self shared].busy),
         @"pendingQueries":@([self shared].pendingQueries), @"pendingWrites":@([self shared].pendingWrites),
         @"checkedConversations":@([self shared].checked), @"skippedUnverified":@([self shared].skippedUnverified),
