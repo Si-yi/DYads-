@@ -26,6 +26,7 @@
   SOFTWARE.
 */
 #import "DYYYCollectionRows.h"
+#import "DYYYPlaybackCatalog.h"
 #import "AwemeHeaders.h"
 #import <objc/runtime.h>
 
@@ -104,6 +105,8 @@ static char kDYYYCollectionCaptionFollowKey;
 + (BOOL)removeRow:(UIView *)row {
     if ([NSUserDefaults.standardUserDefaults boolForKey:@"DYYYHideCaptionFollow"] &&
         [objc_getAssociatedObject(row, &kDYYYCollectionCaptionFollowKey) boolValue]) return YES;
+    NSInteger catalogMode = [DYYYPlaybackCatalog cachedModeForRow:row];
+    if (catalogMode >= 0) return catalogMode == 2;
     NSUInteger flags = [self flags];
     if (!flags) return NO;
     NSUInteger elementKind = [self elementKind:row];
@@ -140,6 +143,7 @@ static char kDYYYCollectionCaptionFollowKey;
         ![stack respondsToSelector:@selector(arrangedSubviews)]) return;
     objc_setAssociatedObject(stack, &kDYYYCollectionStackBusyKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     @try {
+        [DYYYPlaybackCatalog prepareStack:stack];
         id arranged = ((UIStackView *)stack).arrangedSubviews;
         if (![arranged isKindOfClass:NSArray.class]) return;
         NSMutableArray *rows = [arranged mutableCopy];
@@ -177,7 +181,7 @@ static char kDYYYCollectionCaptionFollowKey;
             } else if (elementKind != 2) {
                 objc_setAssociatedObject(row, &kDYYYCollectionTemplateKindKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             }
-            if (elementKind || captionFollow || objc_getAssociatedObject(row, &kDYYYCollectionRowRemovedKey)) [self syncRow:row];
+            if (elementKind || captionFollow || [DYYYPlaybackCatalog cachedModeForRow:row] >= 0 || objc_getAssociatedObject(row, &kDYYYCollectionRowRemovedKey)) [self syncRow:row];
         }
     } @finally {
         objc_setAssociatedObject(stack, &kDYYYCollectionStackBusyKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);

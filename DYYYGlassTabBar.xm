@@ -17,6 +17,7 @@
 #import "AwemeHeaders.h"
 #import "DYYYUtils.h"
 #import "DYYYGlassTabBar.h"
+#import "DYYYTabBarMetrics.h"
 #import "DYYYPlusIcon.h"
 #import "DKTabBarIcons.h"
 
@@ -494,6 +495,10 @@ static void DKGlassApplyInk(UIUserInterfaceStyle style) {
     if (style == UIUserInterfaceStyleUnspecified || !gBar || style == gInkStyle) return;
     gInkStyle = style;
     gInkApplyCount++;
+    if (gPlusIcon && DKPlusCurrentStyle() != DKPlusStyleCustom) {
+        gPlusIconInkStyle = style;
+        gPlusIcon.tintColor = DKGlassInkColor(YES);
+    }
     DKGlassApplyItemImages();
 }
 
@@ -641,8 +646,7 @@ static void DKGlassSyncPlusIcon(UIView *button) {
         return;
     }
 
-    // 着色写在这里而不是 DKGlassApplyInk：这个函数每次布局都跑，图源没变也会走到，
-    // 换样式后不必等极性变化就能补上。
+    // 极性变化时已即时同步；这里补齐新挂载图标和用户切换样式的情况。
     if (gPlusIconInkStyle != gInkStyle) {
         gPlusIconInkStyle = gInkStyle;
         gPlusIcon.tintColor = DKGlassInkColor(YES);
@@ -656,13 +660,6 @@ static void DKGlassSyncPlusIcon(UIView *button) {
         if (gPlusAccent.image != accent) gPlusAccent.image = accent;
         gPlusSourceIcon = nil;
         return;
-    }
-
-    // 着色写在这里而不是 DKGlassApplyInk：这个函数每次布局都跑，图源没变也会走到，
-    // 用户清掉自定义图标后不必等极性变化就能补上。
-    if (gPlusIconInkStyle != gInkStyle) {
-        gPlusIconInkStyle = gInkStyle;
-        gPlusIcon.tintColor = DKGlassInkColor(YES);
     }
 
     UIImage *source = DKGlassPlusSourceIcon(button);
@@ -1051,16 +1048,9 @@ static BOOL DKGlassMeasure(UIView *platter) {
 // 胶囊宽度跟着 4+1 参考态走：参考态是 reference 个项目、右侧有拍摄圆键、整组占满底栏两侧内缩之间。
 // 由参考态得出相邻间距，少几项就少几个间距——每项的大小与位置间隔都与参考态相同，不拉长。
 static CGFloat DKGlassCapsuleWidth(NSUInteger count, NSUInteger reference, CGFloat barWidth) {
-    // 自然尺寸使用固定基线，当前窗口的可用宽度只负责限制间距。
-    CGFloat single = kDKTabButtonFallbackWidth + 2.0 * kDKTabButtonFallbackPad;
-    CGFloat naturalPitch = kDKTabButtonFallbackWidth - 2.0 * kDKTabButtonFallbackPad;
-    reference = MAX(reference, count);
-    if (count <= 1 || reference <= 1) return single;
-
-    CGFloat available = MAX(0.0, barWidth - ((gPlusButton || (gBootstrapActive && gBootstrapHasPlus)) ? gMetrics.height + kDKPlusKeyGap : 0.0) - 2.0 * gMetrics.inset);
-    CGFloat referenceWidth = MIN(available, single + (reference - 1) * naturalPitch);
-    CGFloat pitch = MIN(MAX((referenceWidth - single) / (reference - 1), 0.0), naturalPitch);
-    return single + (count - 1) * pitch;
+    CGFloat accessory = (gPlusButton || (gBootstrapActive && gBootstrapHasPlus)) ? gMetrics.height + kDKPlusKeyGap : 0;
+    return [DYYYTabBarMetrics capsuleWidthForCount:count reference:reference barWidth:barWidth
+        buttonWidth:kDKTabButtonFallbackWidth padding:kDKTabButtonFallbackPad accessory:accessory inset:gMetrics.inset];
 }
 
 NSString *DKGlassGeometryStatus(void) {

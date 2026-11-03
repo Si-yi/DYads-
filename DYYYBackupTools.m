@@ -1,4 +1,5 @@
 #import "DYYYBackupTools.h"
+#import "DYYYPlaybackCatalogStore.h"
 #import "DYYYConstants.h"
 #import <objc/runtime.h>
 
@@ -226,6 +227,7 @@ static BOOL DYYYBackupApplyNormalizedPayload(NSDictionary *payload, BOOL saveUnd
       if (iconError) *stop = YES;
     }];
     if (iconError) { if (error) *error = iconError; return NO; }
+    [[DYYYPlaybackCatalogStore sharedStore] reload];
     [defaults synchronize];
     return YES;
 }

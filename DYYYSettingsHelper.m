@@ -7,6 +7,9 @@
 #import "DYYYAvatarRing.h"
 #import "DYYYSameStyleVisibility.h"
 #import "DYYYCollectionRows.h"
+#import "DYYYPlaybackCatalog.h"
+#import "DYYYFeedCardLayout.h"
+#import "DYYYChatVideoLayout.h"
 #import "DYYYCommentVideoLayout.h"
 #import "DYYYChatChrome.h"
 #import "DYYYGroupChatToolbar.h"
@@ -30,6 +33,8 @@
     if ([key isEqualToString:@"DYYYEnableFloatingChatInput"] || [key isEqualToString:@"DYYYEnableChatTopGlass"]) [DYYYChatChrome refreshVisibleViews];
     if ([key isEqualToString:@"DYYYHideGroupToolbar"]) [DYYYGroupChatToolbar refreshVisible];
     if ([key isEqualToString:@"DYYYDisableCommentVideoShrink"]) [DYYYCommentVideoLayout refreshVisiblePlayers];
+    if ([key hasPrefix:@"DYYYPlayback"] || [@[@"DYYYHideTemplateVideo", @"DYYYHideTemplatePlaylet"] containsObject:key]) [DYYYPlaybackCatalog refresh];
+    if ([key isEqualToString:@"DYYYEnableFullScreen"]) { [DYYYFeedCardLayout refresh]; [DYYYChatVideoLayout refresh]; }
     if ([key isEqualToString:@"DYYYHideCaptionFollow"]) [DYYYCollectionRows refreshVisibleStacks];
     if ([@[ @"DYYYEnableSharePanelBlur", @"DYYYEnableCommentMenuBlur", @"DYYYCommentBlurTransparent" ] containsObject:key]) {
         [DYYYPanelBlur refreshVisiblePanels];

@@ -48,3 +48,12 @@ xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
 xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
     DYYYUnreadExpiryPolicy.m Tests/DYYYUnreadExpiryPolicyTests.m -o "$test_dir/unread-expiry-tests"
 "$test_dir/unread-expiry-tests"
+xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
+    DYYYPlaybackCatalogStore.m Tests/DYYYPlaybackCatalogStoreTests.m -o "$test_dir/playback-catalog-tests"
+"$test_dir/playback-catalog-tests"
+xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
+    DYYYFeedCardPolicy.m Tests/DYYYFeedCardPolicyTests.m -o "$test_dir/feed-card-tests"
+"$test_dir/feed-card-tests"
+xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
+    DYYYTabBarMetrics.m Tests/DYYYTabBarMetricsTests.m -o "$test_dir/tabbar-metrics-tests"
+"$test_dir/tabbar-metrics-tests"

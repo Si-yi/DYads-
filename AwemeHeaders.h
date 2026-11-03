@@ -125,6 +125,7 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @end
 
 @interface AWEAwemeModel : NSObject
+@property (nonatomic, strong) id dCardModel;
 @property(nonatomic, strong, readwrite) NSNumber *createTime;
 @property(nonatomic, strong, readwrite) NSNumber *recommendShareRate; // 推荐视频专有属性 
 @property(nonatomic, assign, readwrite) CGFloat videoDuration;
@@ -239,6 +240,9 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @end
 
 @interface AWEPlayVideoViewController : UIViewController
+@property (nonatomic, strong) UIView *playerBackgroundView;
+- (UIView *)getPlayerBackgroundView;
+- (void)updatePlayerBackgroundViewIfNeededWhenLandscape:(BOOL)landscape fromHomepageHot:(BOOL)home;
 @property(nonatomic, strong) AWEAwemeModel *model;
 - (BOOL)enableHDR;
 - (void)setEnableHDR:(BOOL)enableHDR;
@@ -364,6 +368,9 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @end
 
 @interface AWEPlayInteractionViewController : UIViewController
+@property (nonatomic, strong) UIView *bottomContainerView;
+@property (nonatomic, assign) BOOL isDisplaying;
+@property (nonatomic, assign) BOOL isPreload;
 @property(nonatomic, strong) UIView *view;
 @property(nonatomic, strong) AWEAwemeModel *model;
 @property(nonatomic, strong) NSString *referString;
@@ -420,6 +427,26 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @end
 
 @interface AWEBaseElementView : UIView
+@property (nonatomic, strong) id element;
+@end
+
+// 播放页动态目录与 POI 卡片入口（缺少类时不安装对应适配）。
+@interface AWEFeedPOIDynamicCardCellViewController : UIViewController
+@end
+@interface AWEDynamicCardContainer : UIView
+@end
+@interface AWEFeedTemplateAnchorViewV2 : UIView
+@property (nonatomic, strong) id templateAnchorInfo;
+@end
+@interface AWEPlayInteractionAnchorElement : NSObject
+@end
+@interface AWEPlayInteractionLearnMoreLynxTopElement : NSObject
+@end
+@interface AWETemplateNewBottomElement : NSObject
+@property (nonatomic, copy) NSString *identifier;
+@property (nonatomic, strong) id providerManager;
+@end
+@interface AWEPlayInteractionRelatedVideoNewBottomElement : NSObject
 @end
 
 @interface AWESearchEntranceView : UIView
@@ -2482,4 +2509,7 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @end
 @interface TIMXSDKInstance : NSObject
 @property (nonatomic, strong) TIMXConfig *config;
+@end
+
+@interface AWEPlayInteractionNewMixVideoInfoElement : NSObject
 @end

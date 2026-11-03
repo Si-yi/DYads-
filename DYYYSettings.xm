@@ -20,6 +20,7 @@
 #import "DYYYFloatClearButton.h"
 #import "DYYYFloatSpeedButton.h"
 #import "DYYYSettingsHelper.h"
+#import "DYYYPlaybackCatalog.h"
 #import "DYYYBackupTools.h"
 #import "DYYYDebugInspector.h"
 #import "DYYYAutoMessage.h"
@@ -2745,12 +2746,18 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
               }
           }
       }
+      // 旧隐藏项已迁移到目录，避免同一行同时被两套开关接管。
+      NSSet *catalogLegacyKeys = [NSSet setWithArray:@[@"DYYYHideInteractionSearch", @"DYYYHideHotspot", @"DYYYHideBottomRelated", @"DYYYHideFeedAnchorContainer", @"DYYYHideLocation", @"DYYYHideTemplateVideo", @"DYYYHideTemplatePlaylet"]];
+      for (NSMutableArray *group in @[infoItems, mainUiItems, videoUiItems, sidebarItems, messageAndMineItems]) {
+          for (AWESettingItemModel *item in group.copy) if ([catalogLegacyKeys containsObject:item.identifier]) [group removeObject:item];
+      }
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"首页顶栏" items:homeTopItems]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"主界面元素" items:mainUiItems]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"视频播放界面" items:videoUiItems]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"搜索页" footerTitle:@"修改后重启抖音生效；单独移除榜单需先打开一次搜索页收录目录。" items:[DYYYSearchClean settingsItemsWithRootViewController:rootVC]]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"侧边栏" items:sidebarItems]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"消息页与我的页" items:messageAndMineItems]];
+      [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"播放页动态目录" footerTitle:@"昵称上方标签和底部相关栏目按类型设置，旧隐藏选择自动沿用。" items:[DYYYPlaybackCatalog settingsItemsWithRoot:rootVC]]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"提示与位置信息" items:infoItems]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"直播界面净化" items:livestreamItems]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"长按面板" items:modernpanels]];

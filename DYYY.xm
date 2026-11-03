@@ -27,6 +27,8 @@
 #import "DYYYConstants.h"
 #import "DYYYDebugInspector.h"
 #import "DYYYChatVideoLayout.h"
+#import "DYYYFeedCardLayout.h"
+#import "DYYYFeedCardPolicy.h"
 #import "DYYYCollectionRows.h"
 #import "DYYYDetailCaptionLayout.h"
 #import "DYYYCommentVideoLayout.h"
@@ -3439,18 +3441,7 @@ static void DYYYDisableAVPlayerItemHDRMetadata(AVPlayerItem *item) {
 
 %end
 
-%hook AWEMarkView
-
-- (void)layoutSubviews {
-    %orig;
-
-    if (DYYYGetBool(@"DYYYHideLocation")) {
-        self.hidden = YES;
-        return;
-    }
-}
-
-%end
+// 显隐移至 DYYYPlaybackCatalog，保留原生模型与视图。
 
 %group DYYYSettingsGesture
 
@@ -6129,14 +6120,7 @@ static void DYYYApplyAvatarFollowPromptSettingsWithRetry(id owner) {
 %end
 
 // 隐藏观看历史搜索
-%hook AWEDiscoverFeedEntranceView
-- (id)init {
-    if (DYYYGetBool(@"DYYYHideInteractionSearch")) {
-        return nil;
-    }
-    return %orig;
-}
-%end
+// 显隐移至 DYYYPlaybackCatalog，保留原生模型与视图。
 
 // 隐藏校园提示
 %hook AWETemplateTagsCommonView
@@ -7405,17 +7389,7 @@ static void DYYYLiveDurationInstallFromInnerFeedCell(id cell) {
 %end
 
 
-%hook AWEPlayInteractionSearchAnchorView
-
-- (void)layoutSubviews {
-    if (DYYYGetBool(@"DYYYHideInteractionSearch")) {
-        [self removeFromSuperview];
-        return;
-    }
-    %orig;
-}
-
-%end
+// 显隐移至 DYYYPlaybackCatalog，保留原生模型与视图。
 
 
 // 隐藏暂停关键词
@@ -8621,6 +8595,8 @@ static NSHashTable *processedParentViews = nil;
             continue;
         }
 
+        if (DYYYGetBool(@"DYYYSkipHotSpot") && [m.referString isEqualToString:@"homepage_hot"] && [DYYYFeedCardPolicy isPromotionalCard:m]) continue;
+
         // 2. 直播过滤逻辑 (仅依赖 cellRoom)
         if (skipLive && [m respondsToSelector:@selector(cellRoom)] && m.cellRoom != nil) {
             continue; // 命中直播过滤，跳过
@@ -8851,7 +8827,8 @@ static NSHashTable *processedParentViews = nil;
     BOOL filterHDR = DYYYShouldFilterGlobalHDR();
 
     BOOL shouldFilterAds = noAds && [DYYYUtils isAdvertisementAwemeModel:self];
-    BOOL shouldFilterHotSpot = skipHotSpot && self.hotSpotLynxCardModel;
+    BOOL shouldFilterHotSpot = skipHotSpot && (self.hotSpotLynxCardModel ||
+        ([self.referString isEqualToString:@"homepage_hot"] && [DYYYFeedCardPolicy isPromotionalCard:self]));
     BOOL shouldFilterAllLive = skipAllLive && [self.videoFeedTag isEqualToString:@"直播中"];
     BOOL isRecommendFeed = [self.referString isEqualToString:@"homepage_hot"];
     BOOL shouldskipPhoto = skipPhoto && (self.awemeType == 68) && isRecommendFeed;
@@ -9101,29 +9078,8 @@ static NSHashTable *processedParentViews = nil;
 
 
 // 屏蔽相关视频推荐
-- (id)relatedVideoExtra {
-	BOOL DYYYHideBottomRelated = DYYYGetBool(@"DYYYHideBottomRelated");
-	if (DYYYHideBottomRelated) {
-		return nil;
-	}
-	return %orig;
-}
 
-- (id)relatedVideo {
-	BOOL DYYYHideBottomRelated = DYYYGetBool(@"DYYYHideBottomRelated");
-	if (DYYYHideBottomRelated) {
-		return nil;
-	}
-	return %orig;
-}
 
-- (id)playletRelatedVideoInfoModel {
-	BOOL DYYYHideBottomRelated = DYYYGetBool(@"DYYYHideBottomRelated");
-	if (DYYYHideBottomRelated) {
-		return nil;
-	}
-	return %orig;
-}
 
 // 屏蔽评论搜索锚点
 - (id)commonSearchAnchor {
@@ -9162,145 +9118,25 @@ static NSHashTable *processedParentViews = nil;
 }
 
 // 屏蔽底栏热点
-- (id)hotSpotRawData {
-	BOOL DYYYHideHotspot = DYYYGetBool(@"DYYYHideHotspot");
-	if (DYYYHideHotspot) {
-		return nil;
-	}
-	return %orig;
-}
 
-- (void)setHotSpotRawData:(id)data {
-	BOOL DYYYHideHotspot = DYYYGetBool(@"DYYYHideHotspot");
-	if (DYYYHideHotspot) {
-		%orig(nil);
-		return;
-	}
-	%orig;
-}
 
-- (id)hotSpotListModel {
-	BOOL DYYYHideHotspot = DYYYGetBool(@"DYYYHideHotspot");
-	if (DYYYHideHotspot) {
-		return nil;
-	}
-	return %orig;
-}
 
-- (void)setHotSpotListModel:(id)model {
-	BOOL DYYYHideHotspot = DYYYGetBool(@"DYYYHideHotspot");
-	if (DYYYHideHotspot) {
-		%orig(nil);
-		return;
-	}
-	%orig;
-}
 
-- (NSString *)templateBarsString {
-	BOOL DYYYHideHotspot = DYYYGetBool(@"DYYYHideHotspot");
-	if (DYYYHideHotspot) {
-		return @"";
-	}
-	return %orig;
-}
 
-- (void)setTemplateBarsString:(NSString *)string {
-	BOOL DYYYHideHotspot = DYYYGetBool(@"DYYYHideHotspot");
-	if (DYYYHideHotspot) {
-		%orig(@"");
-		return;
-	}
-	%orig;
-}
 
 // 合集显隐由 DYYYCollectionRows 在原生布局前处理，不修改选集和连播使用的模型数据。
 
 // 屏蔽锚点信息
-- (id)anchorInfo {
-	BOOL DYYYHideFeedAnchorContainer = DYYYGetBool(@"DYYYHideFeedAnchorContainer");
-	if (DYYYHideFeedAnchorContainer) {
-		return nil;
-	}
-	return %orig;
-}
 
-- (void)setAnchorInfo:(id)info {
-	BOOL DYYYHideFeedAnchorContainer = DYYYGetBool(@"DYYYHideFeedAnchorContainer");
-	if (DYYYHideFeedAnchorContainer) {
-		%orig(nil);
-		return;
-	}
-	%orig;
-}
 
-- (id)localLifeAnchorInfo {
-	BOOL DYYYHideFeedAnchorContainer = DYYYGetBool(@"DYYYHideFeedAnchorContainer");
-	if (DYYYHideFeedAnchorContainer) {
-		return nil;
-	}
-	return %orig;
-}
 
-- (void)setLocalLifeAnchorInfo:(id)info {
-	BOOL DYYYHideFeedAnchorContainer = DYYYGetBool(@"DYYYHideFeedAnchorContainer");
-	if (DYYYHideFeedAnchorContainer) {
-		%orig(nil);
-		return;
-	}
-	%orig;
-}
 
-- (id)nearbyFeedDualAnchorInfo {
-	BOOL DYYYHideFeedAnchorContainer = DYYYGetBool(@"DYYYHideFeedAnchorContainer");
-	if (DYYYHideFeedAnchorContainer) {
-		return nil;
-	}
-	return %orig;
-}
 
-- (void)setNearbyFeedDualAnchorInfo:(id)info {
-	BOOL DYYYHideFeedAnchorContainer = DYYYGetBool(@"DYYYHideFeedAnchorContainer");
-	if (DYYYHideFeedAnchorContainer) {
-		%orig(nil);
-		return;
-	}
-	%orig;
-}
 
-- (id)minorAnchorInfo {
-	BOOL DYYYHideFeedAnchorContainer = DYYYGetBool(@"DYYYHideFeedAnchorContainer");
-	if (DYYYHideFeedAnchorContainer) {
-		return nil;
-	}
-	return %orig;
-}
 
-- (void)setMinorAnchorInfo:(id)info {
-	BOOL DYYYHideFeedAnchorContainer = DYYYGetBool(@"DYYYHideFeedAnchorContainer");
-	if (DYYYHideFeedAnchorContainer) {
-		%orig(nil);
-		return;
-	}
-	%orig;
-}
 
 // 屏蔽通用锚点（合并到锚点信息）
-- (id)commonAnchor {
-	BOOL DYYYHideFeedAnchorContainer = DYYYGetBool(@"DYYYHideFeedAnchorContainer");
-	if (DYYYHideFeedAnchorContainer) { 
-		return nil;
-	}
-	return %orig;
-}
 
-- (void)setCommonAnchor:(id)anchor {
-	BOOL DYYYHideFeedAnchorContainer = DYYYGetBool(@"DYYYHideFeedAnchorContainer");
-	if (DYYYHideFeedAnchorContainer) {
-		%orig(nil);
-		return;
-	}
-	%orig;
-}
 
 // 屏蔽作者声明及风险提示
 - (id)riskInfoModel {
@@ -9442,89 +9278,7 @@ static NSHashTable *processedParentViews = nil;
 
 
 // 隐藏下面底部热点框
-%hook AWEHotSpotListModel
-
-- (BOOL)disableDisplay {
-	BOOL DYYYHideHotspot = DYYYGetBool(@"DYYYHideHotspot");
-	if (DYYYHideHotspot) {
-		return YES;
-	}
-	return %orig;
-}
-
-- (BOOL)disableDisplayInner {
-	BOOL DYYYHideHotspot = DYYYGetBool(@"DYYYHideHotspot");
-	if (DYYYHideHotspot) {
-		return YES;
-	}
-	return %orig;
-}
-
-- (NSString *)hotSpotTipTitleHeader {
-	BOOL DYYYHideHotspot = DYYYGetBool(@"DYYYHideHotspot");
-	if (DYYYHideHotspot) {
-		return @"";
-	}
-	return %orig;
-}
-
-- (NSString *)hotSpotTipTitle {
-	BOOL DYYYHideHotspot = DYYYGetBool(@"DYYYHideHotspot");
-	if (DYYYHideHotspot) {
-		return @"";
-	}
-	return %orig;
-}
-
-- (NSString *)hotSpotTipTitleFooter {
-	BOOL DYYYHideHotspot = DYYYGetBool(@"DYYYHideHotspot");
-	if (DYYYHideHotspot) {
-		return @"";
-	}
-	return %orig;
-}
-
-- (NSString *)hotInfoWord {
-	BOOL DYYYHideHotspot = DYYYGetBool(@"DYYYHideHotspot");
-	if (DYYYHideHotspot) {
-		return @"";
-	}
-	return %orig;
-}
-
-- (NSString *)i18NTipTitle {
-	BOOL DYYYHideHotspot = DYYYGetBool(@"DYYYHideHotspot");
-	if (DYYYHideHotspot) {
-		return @"";
-	}
-	return %orig;
-}
-
-- (NSString *)tipSchema {
-	BOOL DYYYHideHotspot = DYYYGetBool(@"DYYYHideHotspot");
-	if (DYYYHideHotspot) {
-		return nil;
-	}
-	return %orig;
-}
-
-- (NSDictionary *)extraDictionary {
-	BOOL DYYYHideHotspot = DYYYGetBool(@"DYYYHideHotspot");
-	if (DYYYHideHotspot) {
-		return @{};
-	}
-	return %orig;
-}
-
-- (NSDictionary *)relativityExtra {
-	BOOL DYYYHideHotspot = DYYYGetBool(@"DYYYHideHotspot");
-	if (DYYYHideHotspot) {
-		return @{};
-	}
-	return %orig;
-}
-
-%end
+// 显隐移至 DYYYPlaybackCatalog，保留原生模型与视图。
 
 // 屏蔽精选标签
 %hook AWETemplateStaticLabelInfoModel
@@ -12995,7 +12749,7 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
     if (DYYYGetBool(@"DYYYEnableFullScreen")) {
         CGRect frame = self.frame;
         frame.size.height = self.superview.frame.size.height;
-        self.frame = frame;
+        [DYYYFeedCardLayout applyFrame:frame table:self];
     } else if (gCurrentTabBarHeight > 0) {
         UIWindow *keyWindow = [DYYYUtils getActiveWindow];
         if (keyWindow && keyWindow.safeAreaInsets.bottom == 0) {
@@ -13004,7 +12758,7 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
 
         CGRect frame = self.frame;
         frame.size.height = self.superview.frame.size.height - gCurrentTabBarHeight;
-        self.frame = frame;
+        [DYYYFeedCardLayout applyFrame:frame table:self];
     }
 }
 %end
