@@ -3,6 +3,7 @@
 @interface DYYYPlaybackCatalogStore ()
 @property (nonatomic, strong) NSUserDefaults *defaults;
 @property (nonatomic, strong) NSMutableDictionary<NSNumber *, NSMutableArray *> *catalogs;
+@property (nonatomic, strong) NSMutableDictionary<NSNumber *, NSMutableSet *> *identifiers;
 @end
 
 @implementation DYYYPlaybackCatalogStore
@@ -51,6 +52,7 @@
 }
 - (void)reload {
     self.catalogs = [NSMutableDictionary dictionary];
+    self.identifiers = [NSMutableDictionary dictionary];
     // 旧“隐藏视频锚点”是总开关；只在新档位不存在时迁移，用户的新选择优先。
     NSString *key = [self.class masterKey:0];
     if (![self.defaults objectForKey:key] && [self.defaults boolForKey:@"DYYYHideFeedAnchorContainer"]) [self.defaults setObject:@"移除" forKey:key];
@@ -75,6 +77,7 @@
             [entries addObject:entry]; [seen addObject:entry[@"id"]];
         }
         self.catalogs[@(kind)] = entries;
+        self.identifiers[@(kind)] = seen;
     }
     return [self.catalogs[@(kind)] copy];
 }
@@ -83,10 +86,10 @@
     NSUInteger kind = [raw[@"kind"] unsignedIntegerValue];
     NSDictionary *entry = [self.class descriptorWithKind:kind identifier:raw[@"id"] title:raw[@"title"]];
     if (!entry) return NO;
-    NSArray *entries = [self entries:kind];
-    for (NSDictionary *existing in entries) if ([existing[@"id"] isEqual:entry[@"id"]]) return NO;
-    if (entries.count >= 512) return NO;
+    if (!self.catalogs[@(kind)]) [self entries:kind];
+    if ([self.identifiers[@(kind)] containsObject:entry[@"id"]] || self.catalogs[@(kind)].count >= 512) return NO;
     [self.catalogs[@(kind)] addObject:entry];
+    [self.identifiers[@(kind)] addObject:entry[@"id"]];
     [self.defaults setObject:self.catalogs[@(kind)] forKey:[self.class storageKey:kind]];
     return YES;
 }

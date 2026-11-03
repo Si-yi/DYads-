@@ -33,7 +33,7 @@
 #import "AwemeHeaders.h"
 #import <objc/runtime.h>
 
-static char kDYYYCatalogModeKey, kDYYYCatalogMaskKey, kDYYYCatalogBusyKey;
+static char kDYYYCatalogModeKey, kDYYYCatalogMaskKey, kDYYYCatalogBusyKey, kDYYYCatalogAnchorKey;
 static NSMutableArray *DYYYCatalogRejected;
 @interface DYYYPlaybackMaskState : NSObject
 @property (nonatomic, strong) CALayer *nativeMask;
@@ -44,6 +44,7 @@ static NSMutableArray *DYYYCatalogRejected;
 
 @implementation DYYYPlaybackCatalog
 + (id)value:(id)object key:(NSString *)key {
+    if (!object || (![object isKindOfClass:NSDictionary.class] && ![object respondsToSelector:NSSelectorFromString(key)])) return nil;
     @try { return [object valueForKey:key]; } @catch (__unused NSException *e) { return nil; }
 }
 + (NSString *)string:(id)value {
@@ -53,11 +54,18 @@ static NSMutableArray *DYYYCatalogRejected;
     Class cls = NSClassFromString(name); return cls && [object isKindOfClass:cls];
 }
 + (id)anchorInRow:(UIView *)row {
+    NSHashTable *cached = objc_getAssociatedObject(row, &kDYYYCatalogAnchorKey);
+    UIView *anchor = cached.anyObject;
+    if (anchor && [anchor isDescendantOfView:row]) return anchor;
     NSMutableArray *views = [NSMutableArray arrayWithObject:row];
     for (NSUInteger depth = 0; depth <= 4 && views.count; depth++) {
         NSMutableArray *next = [NSMutableArray array];
         for (UIView *view in views) {
-            if ([self object:view is:@"AWEFeedTemplateAnchorViewV2"]) return view;
+            if ([self object:view is:@"AWEFeedTemplateAnchorViewV2"]) {
+                NSHashTable *weakView = [NSHashTable weakObjectsHashTable]; [weakView addObject:view];
+                objc_setAssociatedObject(row, &kDYYYCatalogAnchorKey, weakView, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                return view;
+            }
             if (next.count + view.subviews.count <= 128) [next addObjectsFromArray:view.subviews];
         }
         views = next;
@@ -143,13 +151,14 @@ static NSMutableArray *DYYYCatalogRejected;
         if (visible) visible = CGRectIntersectsRect([controller.view convertRect:controller.view.bounds toView:controller.view.window], controller.view.window.bounds);
         id displaying = [self value:controller key:@"isDisplaying"];
         id preload = [self value:controller key:@"isPreload"];
-        visible = visible && [displaying respondsToSelector:@selector(boolValue)] && [displaying boolValue] && ![preload boolValue];
+        visible = visible && [displaying respondsToSelector:@selector(boolValue)] && [displaying boolValue] && !([preload respondsToSelector:@selector(boolValue)] && [preload boolValue]);
         for (NSUInteger i = 0; i < rows.count && i < 64; i++) {
             UIView *row = rows[i];
-            id element = [self value:row key:@"element"];
+            BOOL baseRow = [self object:row is:@"AWEBaseElementView"];
+            id element = baseRow ? [self value:row key:@"element"] : nil;
             BOOL anchor = [self object:element is:@"AWEPlayInteractionAnchorElement"] || [self object:element is:@"AWEPlayInteractionLearnMoreLynxTopElement"];
             BOOL knownBottom = [self object:element is:@"AWEPlayInteractionNewMixVideoInfoElement"] || [self object:element is:@"AWEPlayInteractionRelatedVideoNewBottomElement"];
-            BOOL managed = controller && [self object:row is:@"AWEBaseElementView"] && element && (anchor || bottom || knownBottom);
+            BOOL managed = controller && baseRow && element && (anchor || bottom || knownBottom);
             NSInteger mode = -1;
             if (managed) {
                 NSUInteger kind = anchor ? 0 : 1;
