@@ -4,6 +4,7 @@
 #import "DYYYIMShareParser.h"
 #import "DYYYIMConversationStore.h"
 #import "DYYYIMSendLedger.h"
+#import "DYYYUnreadExpiry.h"
 
 @interface DYYYIMService ()
 @property (nonatomic, strong) NSMapTable *services;
@@ -221,6 +222,7 @@
     NSHashTable *instances = s.instances[role];
     if (!instances) { instances = [NSHashTable weakObjectsHashTable]; s.instances[role] = instances; }
     [instances addObject:service];
+    [DYYYUnreadExpiry servicesChanged];
 }
 
 + (id)serviceForRole:(NSString *)role root:(id)root {

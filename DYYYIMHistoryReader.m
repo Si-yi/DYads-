@@ -183,7 +183,10 @@
     }
     // 数量只能用作交叉校验，不能据此从完整历史凑出未读。
     if (incoming.count > count) { diagnostics[@"nativeUnreadStatus"] = @"count_mismatch"; return nil; }
-    diagnostics[@"nativeUnreadStatus"] = @"validated";
+    // 按发送者查询的结果不能充当整会话完整性证明；175 对 0 也必须留下差异。
+    diagnostics[@"nativeUnreadStatus"] = incoming.count == 0 ? @"empty_for_nonzero_count" : @"validated";
+    diagnostics[@"nativeUnreadCompleteness"] = incoming.count == count ? @"count_matched" : @"partial_or_unavailable";
+    diagnostics[@"nativeUnreadCountGap"] = @(count - incoming.count);
     diagnostics[@"unreadSelection"] = @"native_unread_query";
     diagnostics[@"unreadSliceCount"] = @(incoming.count);
     return incoming;

@@ -430,6 +430,7 @@ static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *wi
             @"AWEIMFeedVideoCachePool", @"AWEIMUserDBManager", @"AWEIMUserManager", @"AWEIMSDKManager", @"AWEIMService",
             @"TIMXOSendMessage", @"TIMXSenderMessageTemplate", @"TIMXOMessageManager",
             @"TIMXOConversationManager", @"TIMXOConversation", @"TIMXOMessage", @"TIMXOUser",
+            @"TIMXMessageReadManager", @"TIMXOConversationAuditUnreadManager", @"AWEIMMessageReadIndexComponent",
             @"IESIMSendMessageModel", @"IESIMMessageSender", @"IESIMConversationDataManager",
             @"IESIMService", @"AWEUserModel", @"AWEUser", @"AWEAwemeModel",
             @"HTSService", @"HTSServiceCenter", @"TIMXSDKInstance", @"TIMXContext", @"TIMXConfig", @"TIMXSingletonsPage", @"AWEIMUser", @"IMUser", @"AWEURLModel",
@@ -535,7 +536,8 @@ static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *wi
             @"collection":@"runtime-declarations-only" });
         NSMutableArray *protocols = [NSMutableArray array];
         for (NSString *name in @[ @"AWEIMUnreadMessageConsumerPotocol", @"AWEIMUnreadMessagesConsumerDelegate",
-            @"IESIMMessageProtocol", @"IESIMConversationDataManagerProtocol", @"IESIMReusableCell" ]) {
+            @"IESIMMessageProtocol", @"IESIMConversationDataManagerProtocol", @"IESIMReusableCell",
+            @"AWEIMMessageReadIndexInterface", @"AWEIMMessageListDataAction", @"AWEIMMessageTableViewAction" ]) {
             Protocol *protocol = objc_getProtocol(name.UTF8String);
             if (!protocol) { [protocols addObject:@{ @"name":name, @"available":@NO }]; continue; }
             NSMutableArray *methods = [NSMutableArray array];

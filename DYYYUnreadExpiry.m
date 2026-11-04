@@ -1,5 +1,6 @@
 #import "DYYYUnreadExpiry.h"
 #import "DYYYUnreadExpiryPolicy.h"
+#import "DYYYUnreadReadLearning.h"
 #import "DYYYIMService.h"
 #import "DYYYIMConversationStore.h"
 #import "DYYYIMHistoryReader.h"
@@ -26,6 +27,11 @@
 @end
 @interface DYYYUnreadExpiry ()
 @property (nonatomic, strong) NSMapTable *scopes;
+@property (nonatomic, strong) DYYYUnreadReadLearning *learning;
+@property (nonatomic, strong) NSMutableDictionary *readOperations;
+@property (nonatomic, copy) NSDictionary *hookState;
+@property (nonatomic, copy) NSString *lastLearningDecision;
+@property (nonatomic) BOOL serviceRefreshScheduled;
 @property (nonatomic, strong) NSMutableDictionary *scanned;
 @property (nonatomic, strong) NSMutableSet *attempted;
 @property (nonatomic, strong) NSHashTable *statusItems;
@@ -51,6 +57,9 @@
     dispatch_once(&once, ^{
         instance = [DYYYUnreadExpiry new];
         instance.scopes = [NSMapTable mapTableWithKeyOptions:NSPointerFunctionsWeakMemory | NSPointerFunctionsOpaquePersonality valueOptions:NSPointerFunctionsStrongMemory];
+        instance.learning = [DYYYUnreadReadLearning new];
+        instance.readOperations = [NSMutableDictionary dictionary];
+        instance.lastLearningDecision = @"not_observed";
         instance.scanned = [NSMutableDictionary dictionary]; instance.attempted = [NSMutableSet set];
         instance.statusItems = [NSHashTable weakObjectsHashTable]; instance.status = @"尚未处理";
     });
@@ -114,35 +123,82 @@
     }
     return matches;
 }
++ (void)recordHookState:(NSDictionary *)state {
+    if (NSThread.isMainThread) [self shared].hookState = state;
+}
++ (void)observeReadOperation:(NSString *)operation count:(unsigned long long)count {
+    // SDK 调用栈只转交固定标识与标量，不读会话/游标、不给原生回调加包装。
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (operation.length == 0) return;
+        NSMutableDictionary *operations = [self shared].readOperations;
+        NSDictionary *prior = operations[operation];
+        if (!prior && operations.count >= 8) return;
+        operations[operation] = @{@"calls": @([prior[@"calls"] unsignedIntegerValue] + 1), @"lastRequestedCount": @(count)};
+    });
+}
 + (void)learnConversation:(id)conversation receiver:(id)receiver message:(id)message mode:(unsigned long long)mode completion:(id)completion {
-    if (![self days]) return;
+    // 开关关闭时也被动识别原生方式，之后开启不必重新等待一次相同调用；关闭期间不检查/清理。
     NSString *shape = [DYYYUnreadExpiryPolicy completionShape:completion];
     NSString *encoding = [DYYYUnreadExpiryPolicy completionEncoding:completion];
     Class messageClass = message ? object_getClass(message) : Nil;
     __weak id weakConversation = conversation, weakReceiver = receiver;
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (![self days] || !weakConversation || !weakReceiver) return;
-        NSDictionary *context = [DYYYIMService capturedExpiryContext:weakConversation];
-        if (!context) return;
-        [self shared].lastReadMessageClass = messageClass ? NSStringFromClass(messageClass) : @"nil";
-        [self shared].lastReadEncoding = encoding ?: @"nil";
-        if (![DYYYUnreadExpiryPolicy isNativeMessageClass:messageClass]) { [self setStatus:@"原生消息模型尚未识别，保留原状"]; return; }
-        if (!shape) { [self setStatus:@"原生已读回调格式尚未支持，保留原状"]; return; }
-        DYYYExpiryStyle *style = [DYYYExpiryStyle new];
-        style.receiver = weakReceiver; style.direct = weakReceiver == weakConversation;
-        style.mode = mode; style.shape = shape;
+        DYYYUnreadExpiry *state = [self shared];
+        state.lastReadMessageClass = messageClass ? NSStringFromClass(messageClass) : @"nil";
+        state.lastReadEncoding = encoding ?: @"nil";
+        id observedConversation = weakConversation, observedReceiver = weakReceiver;
+        if (!observedConversation || !observedReceiver) { state.lastLearningDecision = @"native_object_released"; return; }
+        if (![DYYYUnreadExpiryPolicy isNativeMessageClass:messageClass]) { state.lastLearningDecision = @"unsupported_message_domain"; return; }
+        if (!shape) { state.lastLearningDecision = @"unsupported_completion_abi"; return; }
+        // 只从这次已存在的原生会话读取所属根与 UID，不创建服务或查询联系人。
+        id root = [self value:observedConversation key:@"r"];
+        id account = [self value:[self value:root key:@"config"] key:@"uid"];
+        BOOL recorded = [state.learning recordConversation:observedConversation receiver:observedReceiver root:root account:account
+            mode:mode shape:shape messageClass:messageClass at:NSProcessInfo.processInfo.systemUptime];
+        state.lastLearningDecision = recorded ? @"pending_account_services" : @"unverified_native_owner";
+        [self replayLearning];
+    });
+}
++ (void)replayLearning {
+    if (!NSThread.isMainThread) return;
+    NSDictionary *context = [DYYYIMService capturedExpiryContext:nil];
+    if (!context) return;
+    NSArray *samples = [[self shared].learning takeForRoot:context[@"root"] account:context[@"account"] at:NSProcessInfo.processInfo.systemUptime];
+    for (NSDictionary *sample in samples) {
+        id conversation = sample[@"conversation"], receiver = sample[@"receiver"];
+        NSDictionary *validated = [DYYYIMService capturedExpiryContext:conversation];
+        if (!validated || validated[@"root"] != context[@"root"] || ![validated[@"account"] isEqual:sample[@"account"]]) {
+            [self shared].lastLearningDecision = @"account_context_changed"; continue;
+        }
+        BOOL direct = receiver == conversation;
+        SEL selector = direct ? @selector(markAllMessagesBeforeMessage:asReadWithMode:completion:) : @selector(markAllMessagesBeforeMessage:asReadWithMode:ofConversation:completion:);
+        if (![self matchesClass:[receiver class] selector:selector arguments:direct ? @"@Q@" : @"@Q@@"]) {
+            [self shared].lastLearningDecision = @"native_receiver_changed"; continue;
+        }
+        DYYYExpiryStyle *style = [DYYYExpiryStyle new]; style.receiver = receiver; style.direct = direct;
+        style.mode = [sample[@"mode"] unsignedLongLongValue]; style.shape = sample[@"shape"];
         DYYYExpiryScope *scope = [self scope:context[@"root"]];
         if (style.direct || !scope.style.direct) scope.style = style;
         [self saveScope:scope context:context];
-        [self setStatus:@"已学习原生方式，等待检查"];
-        [self schedule];
+        [self shared].lastLearningDecision = @"ready";
+        if ([self days]) { [self setStatus:@"原生方式已就绪，等待检查"]; [self schedule]; }
+    }
+}
++ (void)servicesChanged {
+    if (!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(), ^{ [self servicesChanged]; }); return; }
+    DYYYUnreadExpiry *state = [self shared];
+    if (state.serviceRefreshScheduled) return;
+    state.serviceRefreshScheduled = YES;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        state.serviceRefreshScheduled = NO;
+        [self installHooks];
+        [self replayLearning];
+        if ([self days]) [self schedule];
     });
 }
 + (void)observeHintType:(long long)hint manager:(id)manager {
-    if (![self days]) return;
     __weak id weakManager = manager;
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (![self days]) return;
         NSDictionary *context = [DYYYIMService capturedExpiryContext:nil];
         if (!context || context[@"messages"] != weakManager) return;
         DYYYExpiryScope *scope = [self scope:context[@"root"]];
@@ -160,7 +216,7 @@
     DYYYUnreadExpiry *state = [self shared]; state.generation++;
     [state.scanned removeAllObjects]; [state.attempted removeAllObjects];
     [self installHooks];
-    [self setStatus:[self days] ? @"等待原生已读方式，请正常读一次聊天" : @"使用抖音默认"];
+    [self setStatus:[self days] ? @"设置已保存，原生已读方式尚未就绪" : @"使用抖音默认"];
     [self schedule];
 }
 + (void)schedule {
@@ -176,8 +232,9 @@
         if (![self days] || state.busy || UIApplication.sharedApplication.applicationState != UIApplicationStateActive) return;
         NSDictionary *context = [DYYYIMService capturedExpiryContext:nil];
         if (!context) { [self setStatus:@"等待当前账户消息服务"]; return; }
+        [self replayLearning];
         DYYYExpiryStyle *style = [self scope:context[@"root"]].style;
-        if (!style || (!style.direct && !style.receiver)) { [self setStatus:@"请先正常读一次有未读的聊天"]; return; }
+        if (!style || (!style.direct && !style.receiver)) { [self setStatus:@"时限尚未执行：原生已读方式未就绪"]; return; }
         NSArray *conversations = [DYYYIMConversationStore conversationsForRoot:context[@"root"] limit:128];
         [self setStatus:@"正在检查原生已加载会话"];
         state.busy = YES; state.requested = NO;
@@ -374,6 +431,10 @@
         @"status":[self shared].status, @"nativeStyleReady":@(scope.style != nil), @"knownHintTypes":@(scope.hints.count),
         @"lastNativeReadCompletionEncoding":[self shared].lastReadEncoding ?: @"",
         @"lastNativeReadMessageClass":[self shared].lastReadMessageClass ?: @"",
+        @"learningDecision":[self shared].lastLearningDecision ?: @"", @"nativeReadOperations":[[self shared].readOperations copy],
+        @"pendingReadSamples":@([[self shared].learning pendingCountAt:NSProcessInfo.processInfo.systemUptime]),
+        @"readyToCheck":@([self days] != nil && scope.style != nil && (scope.style.direct || scope.style.receiver != nil)),
+        @"didCheck":@([self shared].checked > 0), @"didSubmit":@([self shared].submissions > 0), @"hooks":[self shared].hookState ?: @{},
         @"submissions":@([self shared].submissions), @"callbacks":@([self shared].callbacks), @"busy":@([self shared].busy),
         @"pendingQueries":@([self shared].pendingQueries), @"pendingWrites":@([self shared].pendingWrites),
         @"checkedConversations":@([self shared].checked), @"skippedUnverified":@([self shared].skippedUnverified),

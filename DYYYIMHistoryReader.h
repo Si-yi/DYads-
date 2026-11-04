@@ -22,7 +22,7 @@
 + (NSArray *)unreadIncomingMessages:(NSArray *)history peerID:(long long)peer
                        unreadCount:(NSUInteger)count firstUnreadID:(NSString *)boundary diagnostics:(NSMutableDictionary *)diagnostics;
 /// 原生 unread 查询本身提供未读依据，不依赖可能为空的 firstUnreadMessageID。
-/// 返回 nil 表示结果不可验证，空数组表示原生确认没有该好友的未读消息。
+/// 返回 nil 表示结果不可验证；空数组只表示本次发送者查询没返回消息，不能据此判定整会话已读。
 + (NSArray *)nativeUnreadIncomingMessages:(id)result conversation:(NSString *)identifier
                                   peerID:(long long)peer unreadCount:(NSUInteger)count
                              diagnostics:(NSMutableDictionary *)diagnostics;

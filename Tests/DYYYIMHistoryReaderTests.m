@@ -117,6 +117,9 @@
     [self check:incoming.count == 2 reason:@"同一未读回执只交付一次"];
     incoming = [DYYYIMHistoryReader nativeUnreadIncomingMessages:@[] conversation:@"chat-A" peerID:42 unreadCount:2 diagnostics:window];
     [self check:incoming != nil && incoming.count == 0 reason:@"原生查询确认空列表与读取失败必须区分"];
+    [self check:[window[@"nativeUnreadStatus"] isEqual:@"empty_for_nonzero_count"] &&
+        [window[@"nativeUnreadCompleteness"] isEqual:@"partial_or_unavailable"] && [window[@"nativeUnreadCountGap"] intValue] == 2
+        reason:@"计数非零而查询为空不能误标为完整未读集合或已读成功"];
     for (id invalid in @[@[unread, own], @[foreign], @[unread, boundary, read], @"invalid", NSNull.null]) {
         incoming = [DYYYIMHistoryReader nativeUnreadIncomingMessages:invalid conversation:@"chat-A" peerID:42 unreadCount:2 diagnostics:window];
         [self check:incoming == nil reason:@"错误发送者、错误会话、历史超量和无效结果不能成为未读凭据"];

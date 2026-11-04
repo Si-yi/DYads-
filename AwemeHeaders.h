@@ -2370,6 +2370,9 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @property (nonatomic, readonly) unsigned long long unreadCount;
 @property (nonatomic, copy) NSString *firstUnreadMessageID;
 - (void)markAllMessagesBeforeMessage:(id)message asReadWithMode:(unsigned long long)mode completion:(id)completion;
+// 只观察原生自然调用，用于区分正常已读路径和主动标未读；本插件不发起这些操作。
+- (void)markAllMessagesAsReadWithMode:(unsigned long long)mode completion:(id)completion;
+- (void)markAsUnreadWithMode:(unsigned long long)mode unreadCount:(long long)count completion:(id)completion;
 - (BOOL)is1to1Chat;
 - (BOOL)isGroupChat;
 @end
@@ -2497,6 +2500,7 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 // 39.5 完整导出确认：原生已读操作与总数通知。时限功能只调用原生边界操作。
 @interface IESIMConversationDataManager : NSObject
 - (void)markAllMessagesBeforeMessage:(id)message asReadWithMode:(unsigned long long)mode ofConversation:(id)conversation completion:(id)completion;
+- (void)markAllMessagesAsReadWithMode:(unsigned long long)mode ofConversation:(id)conversation completion:(id)completion;
 @end
 @interface AWEIMGeneralTotalUnreadCountObserver : NSObject
 - (void)unreadCountForUser:(long long)user changeTo:(int)count cidToUnreadCountDict:(id)counts;

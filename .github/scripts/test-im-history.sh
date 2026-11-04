@@ -57,3 +57,6 @@ xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
 xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
     DYYYTabBarMetrics.m Tests/DYYYTabBarMetricsTests.m -o "$test_dir/tabbar-metrics-tests"
 "$test_dir/tabbar-metrics-tests"
+xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
+    DYYYUnreadExpiryPolicy.m DYYYUnreadReadLearning.m Tests/DYYYUnreadReadLearningTests.m -o "$test_dir/unread-learning-tests"
+"$test_dir/unread-learning-tests"
