@@ -34,12 +34,14 @@
     [self check:![learning recordConversation:conversation receiver:receiver root:nil account:@"old" mode:0 shape:@"object" messageClass:TIMXOMessage.class at:180] reason:@"根不明不得留样本"];
     [self check:![learning recordConversation:conversation receiver:receiver root:root account:nil mode:0 shape:@"object" messageClass:TIMXOMessage.class at:180] reason:@"账号不明不得跨启动推测"];
     NSMutableArray *owners = [NSMutableArray array];
-    for (NSUInteger i = 0; i < 30; i++) {
-        NSObject *other = [NSObject new]; [owners addObject:other];
-        [learning recordConversation:other receiver:receiver root:root account:@"old" mode:i shape:@"nil" messageClass:TIMXOMessage.class at:200];
+    @autoreleasepool {
+        for (NSUInteger i = 0; i < 30; i++) {
+            NSObject *other = [NSObject new]; [owners addObject:other];
+            [learning recordConversation:other receiver:receiver root:root account:@"old" mode:i shape:@"nil" messageClass:TIMXOMessage.class at:200];
+        }
+        [self check:[learning pendingCountAt:200] == 16 reason:@"最多16份待验证样本"];
+        [owners removeAllObjects];
     }
-    [self check:[learning pendingCountAt:200] == 16 reason:@"最多16份待验证样本"];
-    [owners removeAllObjects];
     [self check:[learning pendingCountAt:201] == 0 reason:@"弱原生对象释放后自动淘汰，不延长 SDK 生命周期"];
     NSLog(@"DYYYUnreadReadLearning regression tests passed");
 }
