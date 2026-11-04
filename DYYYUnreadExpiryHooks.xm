@@ -76,6 +76,9 @@
 
 @implementation DYYYUnreadExpiry (Hooks)
 + (void)installHooks {
+#if DYYY_UNREAD_EXPERIMENTS_SUSPENDED
+    return; // 隔离对照：不安装任何未读实验钩子，原偏好保留。
+#endif
     if (!NSThread.isMainThread) return;
     static BOOL conversation, manager, allConversation, allManager, markUnread, hints, list, total;
     if (!conversation && [self matchesClass:NSClassFromString(@"TIMXOConversation") selector:@selector(markAllMessagesBeforeMessage:asReadWithMode:completion:) arguments:@"@Q@"]) {
@@ -108,8 +111,10 @@
 }
 @end
 %ctor {
+#if !DYYY_UNREAD_EXPERIMENTS_SUSPENDED
     dispatch_async(dispatch_get_main_queue(), ^{ [DYYYUnreadExpiry installHooks]; });
     [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
         [DYYYUnreadExpiry installHooks]; [DYYYUnreadExpiry schedule];
     }];
+#endif
 }

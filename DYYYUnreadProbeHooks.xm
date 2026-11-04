@@ -32,6 +32,9 @@
 
 @implementation DYYYUnreadProbe (Hooks)
 + (void)installHooks {
+#if DYYY_UNREAD_EXPERIMENTS_SUSPENDED
+    return; // 隔离对照：不安装任何未读实验钩子，原偏好保留。
+#endif
     if (!NSThread.isMainThread || ![NSUserDefaults.standardUserDefaults boolForKey:@"DYYYDebugInspectorEnabled"]) return;
     static BOOL hint, filter, cell;
     Class consumer = NSClassFromString(@"AWEIMBaseUnreadMessagesConsumer");

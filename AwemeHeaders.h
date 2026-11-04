@@ -567,9 +567,39 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @interface AWEIMComponentViewController : UIViewController
 @property (nonatomic, strong) AWEIMComponentManager *componentManager;
 @end
+// 聊天增强：从实际插件调用及39.5导出确认，运行时仍逐项核对签名。
+@interface AWEIMInputStateManager : NSObject
+- (void)reportInputStateWithText:(id)text;
+@end
+@interface AWEIMActiveUserUploader : NSObject
+- (BOOL)checkEnableServerUploadActiveStatus;
+- (void)updateUserActiveStatusWithEntrance:(id)entrance context:(id)context;
+- (void)p_updateUserActiveWithContext:(id)context;
+@end
+@interface AWEIMAudioMessageTranslateManager : NSObject
++ (instancetype)sharedInstance;
+- (void)translateAudioMessageList:(id)messages convShortID:(id)identifier;
+- (void)translateAudioMessageList:(id)messages convShortID:(id)identifier convType:(long long)type;
+@end
+@interface AWEIMWatchOnceMessageManager : NSObject
+- (BOOL)isReadingWatchOnceMessage:(id)message;
+- (long long)watchOnceMediaLoopTimes;
+@end
+@interface AWEIMWatchOnceImageMessage : NSObject
+- (BOOL)watchEnd;
+@end
+@interface AWEIMWatchOnceVideoMessage : NSObject
+- (BOOL)watchEnd;
+@end
+
 @interface IESIMInputViewController : AWEIMComponentViewController
 @property (nonatomic, strong) UIView *textView;
 @property (nonatomic, readonly) long long currentInputType;
+- (void)quoteReplyMessage:(id)message keyboardShow:(BOOL)show scene:(id)scene;
+- (void)quoteReplyMessage:(id)message keyboardShow:(BOOL)show shoudAt:(BOOL)mention;
+- (void)quoteReplyMessage:(id)message keyboardShow:(BOOL)show;
+- (void)configQuoteReplyWithMessage:(id)message keyboardShow:(BOOL)show;
+- (void)quoteReplyMessage:(id)message;
 - (void)refreshbackground:(BOOL)refresh;
 - (void)setHasBackgroundImage:(BOOL)hasImage;
 @end
@@ -596,6 +626,10 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 
 @interface AWEIMMessageListViewController : UIViewController
 @property (nonatomic, strong) UITableView *tableView;
+- (id)getInputViewController;
+- (id)msg_conversationShortID;
+- (id)msg_conversationID;
+- (id)conversation;
 @end
 // 群功能栏原生组件入口；运行时按方法可用性安装，Swift view 仅作为别名。
 @interface AWEIMGroupZoneConversationComponent : AWEIMComponentBase

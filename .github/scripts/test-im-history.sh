@@ -60,3 +60,10 @@ xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
 xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
     DYYYUnreadExpiryPolicy.m DYYYUnreadReadLearning.m Tests/DYYYUnreadReadLearningTests.m -o "$test_dir/unread-learning-tests"
 "$test_dir/unread-learning-tests"
+xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
+    DYYYChatEnhancementPolicy.m Tests/DYYYChatEnhancementPolicyTests.m -o "$test_dir/chat-enhancement-tests"
+"$test_dir/chat-enhancement-tests"
+# 用生产隔离宏验证：即使旧偏好仍开着，未读探针也必须完全暂停。
+xcrun clang -fobjc-arc -fblocks -DDYYY_UNREAD_EXPERIMENTS_SUSPENDED=1 -framework Foundation -I. \
+    DYYYUnreadProbe.m Tests/DYYYUnreadIsolationTests.m -o "$test_dir/unread-isolation-tests"
+"$test_dir/unread-isolation-tests"

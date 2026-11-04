@@ -66,6 +66,9 @@
     return instance;
 }
 + (NSNumber *)days {
+#if DYYY_UNREAD_EXPERIMENTS_SUSPENDED
+    return nil;
+#endif
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
     return [defaults boolForKey:@"DYYYUnreadExpiryEnabled"] ? [DYYYUnreadExpiryPolicy daysFromText:[defaults objectForKey:@"DYYYUnreadExpiryDays"]] : nil;
 }
@@ -185,6 +188,9 @@
     }
 }
 + (void)servicesChanged {
+#if DYYY_UNREAD_EXPERIMENTS_SUSPENDED
+    return;
+#endif
     if (!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(), ^{ [self servicesChanged]; }); return; }
     DYYYUnreadExpiry *state = [self shared];
     if (state.serviceRefreshScheduled) return;
@@ -212,6 +218,9 @@
     return queue;
 }
 + (void)settingsChanged {
+#if DYYY_UNREAD_EXPERIMENTS_SUSPENDED
+    return;
+#endif
     if (!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(), ^{ [self settingsChanged]; }); return; }
     DYYYUnreadExpiry *state = [self shared]; state.generation++;
     [state.scanned removeAllObjects]; [state.attempted removeAllObjects];
@@ -405,6 +414,12 @@
     });
 }
 + (NSArray<AWESettingItemModel *> *)settingsItems {
+#if DYYY_UNREAD_EXPERIMENTS_SUSPENDED
+    NSString *saved = [NSUserDefaults.standardUserDefaults stringForKey:@"DYYYUnreadExpiryDays"] ?: @"";
+    AWESettingItemModel *paused = [DYYYSettingsHelper createSettingItem:@{ @"identifier":@"DYYYUnreadExpiryPaused", @"title":@"未读实验已暂停", @"detail":@"隔离对照中", @"cellType":@26, @"imageName":@"ic_clock_outlined_20" }];
+    AWESettingItemModel *savedDaysItem = [DYYYSettingsHelper createSettingItem:@{ @"identifier":@"DYYYUnreadExpirySavedDays", @"title":@"原保留天数（未生效）", @"detail":saved.length ? saved : @"抖音默认", @"cellType":@26, @"imageName":@"ic_clock_outlined_20" }];
+    return @[paused, savedDaysItem];
+#endif
     AWESettingItemModel *toggle = [DYYYSettingsHelper createSettingItem:@{ @"identifier":@"DYYYUnreadExpiryEnabled", @"title":@"超时未读自动已读", @"subTitle":@"将超时消息设为已读，聊天记录仍可翻看", @"cellType":@37, @"imageName":@"ic_comment_outlined_20" }];
     void (^original)(void) = toggle.switchChangedBlock;
     toggle.switchChangedBlock = ^{ if (original) original(); [self settingsChanged]; };
@@ -424,6 +439,10 @@
     return @[toggle, days, status];
 }
 + (NSDictionary *)diagnostics {
+#if DYYY_UNREAD_EXPERIMENTS_SUSPENDED
+    return @{ @"enabled":@NO, @"suspended":@YES, @"requestedEnabled":@([NSUserDefaults.standardUserDefaults boolForKey:@"DYYYUnreadExpiryEnabled"]),
+        @"savedDays":[NSUserDefaults.standardUserDefaults stringForKey:@"DYYYUnreadExpiryDays"] ?: @"", @"status":@"隔离对照：未安装钩子，不查询、不自动标已读", @"hooks":@{}, @"didCheck":@NO, @"didSubmit":@NO };
+#endif
     if (!NSThread.isMainThread) return @{};
     NSDictionary *context = [DYYYIMService capturedExpiryContext:nil];
     DYYYExpiryScope *scope = context ? [[self shared].scopes objectForKey:context[@"root"]] : nil;

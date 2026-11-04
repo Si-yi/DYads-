@@ -12,6 +12,7 @@
 #import "DYYYHomeDailyFilter.h"
 #import "DYYYUnreadProbe.h"
 #import "DYYYUnreadExpiry.h"
+#import "DYYYChatEnhancements.h"
 #import "DYYYDetailCaptionLayout.h"
 #import "DYYYChatInputGlass.h"
 #import "DYYYChatInputList.h"
@@ -336,6 +337,7 @@ static NSDictionary *DYYYDebugMetadata(void) {
         if (name && ([name rangeOfString:DYYY_NAME options:NSCaseInsensitiveSearch].location != NSNotFound ||
                      [name rangeOfString:@"DYYY" options:NSCaseInsensitiveSearch].location != NSNotFound ||
                      [name rangeOfString:@"AutoMessage" options:NSCaseInsensitiveSearch].location != NSNotFound ||
+                     [name rangeOfString:@"Yuki" options:NSCaseInsensitiveSearch].location != NSNotFound ||
                      [name rangeOfString:@"DYKiller" options:NSCaseInsensitiveSearch].location != NSNotFound)) [pluginImages addObject:name];
     }
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
@@ -356,6 +358,7 @@ static NSDictionary *DYYYDebugMetadata(void) {
         @"homeDailyFilter": [DYYYHomeDailyFilter diagnostics],
         @"unreadProbe": [DYYYUnreadProbe diagnostics],
         @"unreadExpiry": [DYYYUnreadExpiry diagnostics],
+        @"chatEnhancements": [DYYYChatEnhancements diagnostics],
         @"detailCaption": [DYYYDetailCaptionLayout diagnostics],
         @"chatInputGlass": [DYYYChatInputGlass diagnostics],
         @"chatInputList": [DYYYChatInputList diagnostics],

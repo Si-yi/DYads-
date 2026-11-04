@@ -36,6 +36,9 @@
     return cls ? NSStringFromClass(cls) : @"";
 }
 + (void)recordReceiver:(id)receiver input:(id)input result:(id)result selector:(SEL)selector {
+#if DYYY_UNREAD_EXPERIMENTS_SUSPENDED
+    return;
+#endif
     if (!NSThread.isMainThread || ![NSUserDefaults.standardUserDefaults boolForKey:@"DYYYDebugInspectorEnabled"]) return;
     NSString *owner = [self className:receiver], *source = [self className:input], *output = [self className:result];
     NSString *method = NSStringFromSelector(selector);
@@ -54,6 +57,9 @@
     return [names.allObjects sortedArrayUsingSelector:@selector(compare:)];
 }
 + (NSDictionary *)diagnostics {
+#if DYYY_UNREAD_EXPERIMENTS_SUSPENDED
+    return @{ @"enabled":@NO, @"suspended":@YES, @"installed":@[], @"observations":@[], @"timeFilterActive":@NO, @"policy":@"isolation_no_hooks_no_observation" };
+#endif
     if (!NSThread.isMainThread) return @{ @"status":@"main_thread_only" };
     return @{ @"enabled":@([NSUserDefaults.standardUserDefaults boolForKey:@"DYYYDebugInspectorEnabled"]),
         @"installed":[[self installed].allObjects sortedArrayUsingSelector:@selector(compare:)],

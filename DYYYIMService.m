@@ -222,7 +222,9 @@
     NSHashTable *instances = s.instances[role];
     if (!instances) { instances = [NSHashTable weakObjectsHashTable]; s.instances[role] = instances; }
     [instances addObject:service];
+#if !DYYY_UNREAD_EXPERIMENTS_SUSPENDED
     [DYYYUnreadExpiry servicesChanged];
+#endif
 }
 
 + (id)serviceForRole:(NSString *)role root:(id)root {
