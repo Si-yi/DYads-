@@ -6029,7 +6029,7 @@ static void DYYYApplyAvatarFollowPromptSettingsWithRetry(id owner) {
     %orig;
 
     if (DYYYGetBool(@"DYYYHideCommentViews")) {
-        BOOL wasHidden = self.hidden;
+        BOOL wasHidden = ((UIView *)self).hidden;
         [self setHidden:YES];
         if (!wasHidden) [DYYYCommentHeaderLayout businessViewDidHide:(UIView *)self];
     }
@@ -6075,7 +6075,7 @@ static void DYYYApplyAvatarFollowPromptSettingsWithRetry(id owner) {
     %orig;
 
     if (DYYYGetBool(@"DYYYHideCommentViews")) {
-        BOOL wasHidden = self.hidden;
+        BOOL wasHidden = ((UIView *)self).hidden;
         [self setHidden:YES];
         if (!wasHidden) [DYYYCommentHeaderLayout businessViewDidHide:(UIView *)self];
     }
@@ -6088,7 +6088,7 @@ static void DYYYApplyAvatarFollowPromptSettingsWithRetry(id owner) {
     %orig;
 
     if (DYYYGetBool(@"DYYYHideCommentViews")) {
-        BOOL wasHidden = self.hidden;
+        BOOL wasHidden = ((UIView *)self).hidden;
         [self setHidden:YES];
         if (!wasHidden) [DYYYCommentHeaderLayout businessViewDidHide:(UIView *)self];
     }
@@ -6101,7 +6101,7 @@ static void DYYYApplyAvatarFollowPromptSettingsWithRetry(id owner) {
     %orig;
 
     if (DYYYGetBool(@"DYYYHideCommentViews")) {
-        BOOL wasHidden = self.hidden;
+        BOOL wasHidden = ((UIView *)self).hidden;
         [self setHidden:YES];
         if (!wasHidden) [DYYYCommentHeaderLayout businessViewDidHide:(UIView *)self];
     }
