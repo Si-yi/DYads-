@@ -30,6 +30,7 @@
 #import "DYYYFeedCardLayout.h"
 #import "DYYYFeedCardPolicy.h"
 #import "DYYYCollectionRows.h"
+#import "DYYYCommentHeaderLayout.h"
 #import "DYYYDetailCaptionLayout.h"
 #import "DYYYCommentVideoLayout.h"
 
@@ -6028,7 +6029,9 @@ static void DYYYApplyAvatarFollowPromptSettingsWithRetry(id owner) {
     %orig;
 
     if (DYYYGetBool(@"DYYYHideCommentViews")) {
+        BOOL wasHidden = self.hidden;
         [self setHidden:YES];
+        if (!wasHidden) [DYYYCommentHeaderLayout businessViewDidHide:(UIView *)self];
     }
 
     if (DYYYGetBool(@"DYYYMusicCopyText")) {
@@ -6072,7 +6075,9 @@ static void DYYYApplyAvatarFollowPromptSettingsWithRetry(id owner) {
     %orig;
 
     if (DYYYGetBool(@"DYYYHideCommentViews")) {
+        BOOL wasHidden = self.hidden;
         [self setHidden:YES];
+        if (!wasHidden) [DYYYCommentHeaderLayout businessViewDidHide:(UIView *)self];
     }
 }
 %end
@@ -6083,7 +6088,9 @@ static void DYYYApplyAvatarFollowPromptSettingsWithRetry(id owner) {
     %orig;
 
     if (DYYYGetBool(@"DYYYHideCommentViews")) {
+        BOOL wasHidden = self.hidden;
         [self setHidden:YES];
+        if (!wasHidden) [DYYYCommentHeaderLayout businessViewDidHide:(UIView *)self];
     }
 }
 %end
@@ -6094,7 +6101,9 @@ static void DYYYApplyAvatarFollowPromptSettingsWithRetry(id owner) {
     %orig;
 
     if (DYYYGetBool(@"DYYYHideCommentViews")) {
+        BOOL wasHidden = self.hidden;
         [self setHidden:YES];
+        if (!wasHidden) [DYYYCommentHeaderLayout businessViewDidHide:(UIView *)self];
     }
 }
 %end

@@ -4,14 +4,6 @@
 
 %group DYYYCommentHeaderLayoutHooks
 %hook DYYYCommentHeaderSectionController
-- (void)setDidUpdateHeight:(DYYYCommentHeaderHeightCallback)callback {
-    DYYYCommentHeaderHeightCallback wrapped = [DYYYCommentHeaderLayout heightCallback:callback section:self];
-    %orig(wrapped);
-}
-- (void)setDidTopBarUpdate:(DYYYCommentHeaderTopCallback)callback {
-    DYYYCommentHeaderTopCallback wrapped = [DYYYCommentHeaderLayout topCallback:callback section:self];
-    %orig(wrapped);
-}
 - (double)currentHeight {
     double nativeHeight = %orig;
     return [DYYYCommentHeaderLayout height:nativeHeight section:self];
@@ -23,8 +15,10 @@
 - (void)configCell:(UICollectionViewCell *)cell index:(NSInteger)index model:(id)model {
     [DYYYCommentHeaderLayout bindCell:cell model:model section:self];
     %orig(cell, index, model);
+    [DYYYCommentHeaderLayout bindCell:cell model:model section:self];
     (void)[(DYYYCommentHeaderSectionController *)self currentHeight];
     [DYYYCommentHeaderLayout synchronizeCell:cell];
+    [DYYYCommentHeaderLayout businessViewDidHide:cell.contentView];
 }
 %end
 
@@ -39,6 +33,24 @@
 - (void)setHidden:(BOOL)hidden {
     %orig(hidden);
     if (hidden) [DYYYCommentHeaderLayout businessViewDidHide:(UIView *)self];
+}
+%end
+%end
+
+%group DYYYCommentHeaderHeightCallbackHooks
+%hook DYYYCommentHeaderSectionController
+- (void)setDidUpdateHeight:(DYYYCommentHeaderHeightCallback)callback {
+    DYYYCommentHeaderHeightCallback wrapped = [DYYYCommentHeaderLayout heightCallback:callback section:self];
+    %orig(wrapped);
+}
+%end
+%end
+
+%group DYYYCommentHeaderTopCallbackHooks
+%hook DYYYCommentHeaderSectionController
+- (void)setDidTopBarUpdate:(DYYYCommentHeaderTopCallback)callback {
+    DYYYCommentHeaderTopCallback wrapped = [DYYYCommentHeaderLayout topCallback:callback section:self];
+    %orig(wrapped);
 }
 %end
 %end
@@ -64,11 +76,15 @@
         class_getInstanceMethod(section, @selector(configCell:index:model:)) &&
         class_getInstanceMethod(section, @selector(sizeForItemAtIndex:model:collectionViewSize:)) &&
         class_getInstanceMethod(section, @selector(currentHeight)) &&
-        class_getInstanceMethod(section, @selector(setDidUpdateHeight:)) &&
-        class_getInstanceMethod(section, @selector(setDidTopBarUpdate:)) &&
         class_getInstanceMethod(section, @selector(updateLayout:completion:));
     if (sectionReady) {
         %init(DYYYCommentHeaderLayoutHooks, DYYYCommentHeaderSectionController = section, DYYYCommentHeaderCell = cell);
+        if (class_getInstanceMethod(section, @selector(setDidUpdateHeight:))) {
+            %init(DYYYCommentHeaderHeightCallbackHooks, DYYYCommentHeaderSectionController = section);
+        }
+        if (class_getInstanceMethod(section, @selector(setDidTopBarUpdate:))) {
+            %init(DYYYCommentHeaderTopCallbackHooks, DYYYCommentHeaderSectionController = section);
+        }
     }
     if (sectionReady && inner && class_getInstanceMethod(inner, @selector(heightForSegmentedControl)) &&
         class_getInstanceMethod(inner, @selector(autoFullScreen_topContainerTotalHeight)) &&

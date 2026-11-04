@@ -1,5 +1,6 @@
 #import "DYYYDebugInspector.h"
 #import "DYYYPlaybackCatalog.h"
+#import "DYYYCommentHeaderLayout.h"
 #import "DYYYFeedCardLayout.h"
 #import "DYYYDebugAppearance.h"
 #import "DYYYPanelBlur.h"
@@ -625,6 +626,7 @@ static void DYYYDebugShowActions(UIWindow *window) {
     DKDebugExportContext *context = DKDebugCaptureContext(window, CGPointZero, nil);
     NSMutableDictionary *snapshotMetadata = [DYYYDebugMetadata() mutableCopy];
     snapshotMetadata[@"independentIM"] = [DYYYIMService diagnostics];
+    snapshotMetadata[@"commentHeaderLayout"] = [DYYYCommentHeaderLayout diagnostics];
     snapshotMetadata[@"playbackCatalog"] = [DYYYPlaybackCatalog diagnostics];
     snapshotMetadata[@"feedCardLayout"] = [DYYYFeedCardLayout diagnostics];
     snapshotMetadata[@"friendShareFeed"] = [DYYYFriendShareService diagnostics];

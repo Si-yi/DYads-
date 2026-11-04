@@ -11,5 +11,6 @@ typedef void (^DYYYCommentHeaderTopCallback)(BOOL, BOOL);
 + (CGSize)size:(CGSize)size model:(id)model section:(id)section;
 + (DYYYCommentHeaderHeightCallback)heightCallback:(DYYYCommentHeaderHeightCallback)callback section:(id)section;
 + (DYYYCommentHeaderTopCallback)topCallback:(DYYYCommentHeaderTopCallback)callback section:(id)section;
++ (NSDictionary *)diagnostics;
 + (double)topHeight:(double)height controller:(UIViewController *)controller;
 @end

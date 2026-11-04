@@ -51,6 +51,13 @@ static char kDYYYCommentHeaderLayoutKey;
 
 #pragma mark - 原生分区状态
 
++ (NSHashTable *)states {
+    static NSHashTable *states;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ states = [NSHashTable weakObjectsHashTable]; });
+    return states;
+}
+
 + (id)value:(id)object key:(NSString *)key {
     @try { return [object valueForKey:key]; } @catch (__unused NSException *exception) { return nil; }
 }
@@ -61,6 +68,7 @@ static char kDYYYCommentHeaderLayoutKey;
     if (!state) {
         state = [DYYYCommentHeaderLayout new];
         state.section = section;
+        [[self states] addObject:state];
         objc_setAssociatedObject(section, &kDYYYCommentHeaderLayoutKey, state, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
     UIViewController *owner = [self value:section key:@"viewController"];
@@ -158,6 +166,13 @@ static char kDYYYCommentHeaderLayoutKey;
     if (!NSThread.isMainThread || !cell) return;
     DYYYCommentHeaderLayout *state = objc_getAssociatedObject(cell, &kDYYYCommentHeaderLayoutKey);
     if (!state || state.cell != cell) return;
+    UIResponder *responder = cell.nextResponder;
+    for (NSUInteger depth = 0; responder && depth < 20; depth++, responder = responder.nextResponder) {
+        if ([NSStringFromClass(responder.class) isEqualToString:@"AWECommentPanelContainerSwiftImpl.CommentContainerInnerViewController"]) {
+            objc_setAssociatedObject(responder, &kDYYYCommentHeaderLayoutKey, state, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            break;
+        }
+    }
     BOOL collapsed = NO;
     if (DYYYGetBool(@"DYYYHideCommentViews")) {
         id models = [self value:state.section key:@"modelsArray"];
@@ -207,7 +222,9 @@ static char kDYYYCommentHeaderLayoutKey;
 + (DYYYCommentHeaderHeightCallback)heightCallback:(DYYYCommentHeaderHeightCallback)callback section:(id)section {
     DYYYCommentHeaderLayout *state = [self stateForSection:section];
     if (!state) return callback;
+    BOOL firstCallback = !state.nativeHeight && callback;
     state.nativeHeight = callback;
+    if (firstCallback && [state isCollapsed]) { state.hasNotifiedLayout = NO; [state scheduleLayout]; }
     if (!callback) return nil;
     __weak DYYYCommentHeaderLayout *weakState = state;
     return ^(double height) {
@@ -220,7 +237,9 @@ static char kDYYYCommentHeaderLayoutKey;
 + (DYYYCommentHeaderTopCallback)topCallback:(DYYYCommentHeaderTopCallback)callback section:(id)section {
     DYYYCommentHeaderLayout *state = [self stateForSection:section];
     if (!state) return callback;
+    BOOL firstCallback = !state.nativeTop && callback;
     state.nativeTop = callback;
+    if (firstCallback && [state isCollapsed]) { state.hasNotifiedLayout = NO; [state scheduleLayout]; }
     if (!callback) return nil;
     __weak DYYYCommentHeaderLayout *weakState = state;
     return ^(BOOL onlyCount, BOOL hasBusiness) {
@@ -241,6 +260,26 @@ static char kDYYYCommentHeaderLayoutKey;
     if (![state isCollapsed] || !state.section) return height;
     // 顶部业务高度归零，但保留原生评论/AI 解析分页的高度。
     return [(DYYYCommentHeaderInnerController *)controller heightForSegmentedControl];
+}
+
++ (NSDictionary *)diagnostics {
+    if (!NSThread.isMainThread) return @{};
+    Class section = NSClassFromString(@"AWECommentPanelHeaderSwiftImpl.CommentPanelHeaderSectionController");
+    NSMutableArray *missing = [NSMutableArray array];
+    for (NSString *name in @[@"configCell:index:model:", @"sizeForItemAtIndex:model:collectionViewSize:", @"currentHeight", @"updateLayout:completion:"]) {
+        if (!section || !class_getInstanceMethod(section, NSSelectorFromString(name))) [missing addObject:name];
+    }
+    NSMutableArray *rows = [NSMutableArray array];
+    for (DYYYCommentHeaderLayout *state in [self states].allObjects) {
+        if (!state.cell.window || rows.count >= 8) continue;
+        id models = [self value:state.section key:@"modelsArray"];
+        [rows addObject:@{@"cellHeight": @(state.cell.bounds.size.height), @"nativeHeight": @(state.measuredHeight),
+            @"collapsed": @([state isCollapsed]), @"onlyHiddenBusiness": @([self containsOnlyHiddenBusiness:state.cell.contentView]),
+            @"modelCount": @([models isKindOfClass:NSArray.class] ? (NSInteger)[models count] : -1),
+            @"modelMatches": @([models isKindOfClass:NSArray.class] && [models firstObject] == state.model),
+            @"heightCallback": @(state.nativeHeight != nil), @"topCallback": @(state.nativeTop != nil)}];
+    }
+    return @{@"enabled": @(DYYYGetBool(@"DYYYHideCommentViews")), @"missingRequiredMethods": missing, @"rows": rows};
 }
 
 @end
