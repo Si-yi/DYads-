@@ -426,6 +426,10 @@ static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *wi
         // 接口声明合并进完整导出，轻量导出仅保留运行状态摘要。
         NSArray<NSString *> *priority = @[
             @"AWEIMMessage", @"AWEIMChatModel",
+            @"AWEIMMessageListViewController", @"AWEIMReusableCommonCell", @"AWEIMMessageComponentContext", @"IESIMInputViewController",
+            @"AWEIMInputStateManager", @"AWEIMActiveUserUploader", @"AWEIMAudioMessageTranslateManager", @"AWEIMAudioMessage", @"AWEIMEncryptAudioMessageV2",
+            @"AWEIMWatchOnceMessageManager", @"AWEIMWatchOnceDataManager", @"AWEIMWatchOnceImageMessage", @"AWEIMWatchOnceVideoMessage",
+            @"TIMXMessageMarkAsReadOperator", @"TIMXOMessageReadReceiptFlushDataManager",
             @"AWEIMChatCellViewModel", @"AWEIMChatListControllerViewModel", @"AWEIMChatListHintProviderComponentBase",
             @"AWEIMBaseUnreadMessagesConsumer", @"AWEIMChatListCommonCell", @"DUXBadge", @"AWENormalModeTabBarBadgeContainerView",
             @"AWEIMMessageListNaviBarChatDetailComponent", @"AWEIMMessageListNaviBarGroupZoneToggleComponent",

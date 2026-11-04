@@ -134,6 +134,10 @@
         if (!reading && readingReady) { %init(DYYYWatchOnceReadingHooks); reading = YES; }
         if (!loops && loopReady) { %init(DYYYWatchOnceLoopHooks); loops = YES; }
     }
+    [self recordCapability:@"typingHookInstalled" available:typing];
+    [self recordCapability:@"onlineHooksInstalled" available:onlineGate && onlineUpdate && onlinePrivate];
+    [self recordCapability:@"chatCellHooksInstalled" available:cells && context && appearance];
+    [self recordCapability:@"watchOnceHooksInstalled" available:image && video && reading && loops];
 }
 @end
 %ctor {
