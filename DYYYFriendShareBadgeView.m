@@ -1,5 +1,8 @@
 #import "DYYYFriendShareBadgeView.h"
 #import "DYYYFriendShareService.h"
+#import "DYYYFriendShareBadgeMetrics.h"
+#import "DYYYFeedTagGlass.h"
+#import "DYYYUtils.h"
 #import "AwemeHeaders.h"
 #import <objc/runtime.h>
 #import <math.h>
@@ -11,11 +14,21 @@ static char kDYYYFriendShareBadgeKey;
 @property (nonatomic, strong) UILabel *nameLabel;
 @property (nonatomic, strong) UILabel *suffixLabel;
 @property (nonatomic, weak) UIView *anchor;
+@property (nonatomic, strong) NSMapTable<UIView *, NSValue *> *nativeTagFrames;
+@property (nonatomic, assign) BOOL layoutPending;
+@property (nonatomic, assign) NSUInteger occupiedTagCount;
+@property (nonatomic, assign) CGFloat captionTop;
 @property (nonatomic, copy) NSString *avatarURL;
 @property (nonatomic, strong) NSURLSessionDataTask *avatarTask;
 @end
 
 @implementation DYYYFriendShareBadgeView
+
++ (NSHashTable<UIViewController *> *)controllers {
+    static NSHashTable *controllers; static dispatch_once_t once;
+    dispatch_once(&once, ^{ controllers = [NSHashTable weakObjectsHashTable]; });
+    return controllers;
+}
 
 + (NSCache<NSString *, UIImage *> *)avatarCache {
     static NSCache *cache;
@@ -27,6 +40,7 @@ static char kDYYYFriendShareBadgeKey;
     // 固定使用深色薄磨砂，视频明暗变化时白字仍有对比度，不绘制白色实底。
     self = [super initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterialDark]];
     if (self) {
+        self.nativeTagFrames = [NSMapTable mapTableWithKeyOptions:NSPointerFunctionsWeakMemory | NSPointerFunctionsOpaquePersonality valueOptions:NSPointerFunctionsStrongMemory];
         self.userInteractionEnabled = NO;
         self.layer.cornerRadius = 8;
         self.layer.cornerCurve = kCACornerCurveContinuous;
@@ -123,6 +137,7 @@ static char kDYYYFriendShareBadgeKey;
     DYYYFriendShareBadgeView *badge = objc_getAssociatedObject(controller, &kDYYYFriendShareBadgeKey);
     [badge.avatarTask cancel]; badge.avatarTask = nil; badge.avatarURL = nil;
     [badge removeFromSuperview];
+    [[self controllers] removeObject:controller];
     objc_setAssociatedObject(controller, &kDYYYFriendShareBadgeKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 + (BOOL)visibleAnchor:(UIView *)anchor root:(UIView *)root {
@@ -130,6 +145,84 @@ static char kDYYYFriendShareBadgeKey;
         if (view.hidden || view.alpha <= 0.01) return NO;
     }
     return YES;
+}
+#pragma mark - 原生标签避让
++ (CGRect)visibleFrameForView:(UIView *)view root:(UIView *)root {
+    if (!view || !root || ![view isDescendantOfView:root] || CGRectIsEmpty(view.bounds)) return CGRectNull;
+    CGRect frame = [view convertRect:view.bounds toView:root];
+    for (UIView *parent = view; parent; parent = parent.superview) {
+        if (parent.hidden || parent.alpha <= 0.01) return CGRectNull;
+        if (parent.clipsToBounds || parent == root) frame = CGRectIntersection(frame, [parent convertRect:parent.bounds toView:root]);
+        if (CGRectIsNull(frame) || CGRectIsEmpty(frame)) return CGRectNull;
+        if (parent == root) return frame;
+    }
+    return CGRectNull;
+}
++ (NSArray<NSDictionary<NSString *, NSNumber *> *> *)occupiedTagFramesInStack:(UIView *)stack root:(UIView *)root {
+    NSMutableArray *frames = [NSMutableArray array];
+    NSMutableArray<UIView *> *queue = [NSMutableArray arrayWithObject:stack];
+    for (NSUInteger i = 0; i < queue.count && i < 160; i++) {
+        UIView *view = queue[i];
+        if (view.hidden || view.alpha <= 0.01) continue;
+        if ([DYYYFeedTagGlass isLabelView:view]) {
+            CGRect frame = [self visibleFrameForView:view root:root];
+            if (!CGRectIsNull(frame) && !CGRectIsEmpty(frame)) [frames addObject:@{ @"x":@(CGRectGetMinX(frame)), @"y":@(CGRectGetMinY(frame)), @"width":@(CGRectGetWidth(frame)), @"height":@(CGRectGetHeight(frame)) }];
+            continue; // 原生标签自己的文字/头像/玻璃不重复计入。
+        }
+        if ([view isKindOfClass:UILabel.class] || [view isKindOfClass:UIImageView.class] ||
+            [view isKindOfClass:UIVisualEffectView.class] || [view isKindOfClass:UIScrollView.class]) continue;
+        for (UIView *child in view.subviews) { if (queue.count >= 160) break; [queue addObject:child]; }
+    }
+    return frames;
+}
++ (void)nativeTagUpdated:(UIView *)tag {
+    if (!NSThread.isMainThread || !tag || ![NSUserDefaults.standardUserDefaults boolForKey:@"DYYYFriendShareFeedEnabled"]) return;
+    UIViewController *controller = [DYYYUtils firstAvailableViewControllerFromView:tag];
+    Class interaction = NSClassFromString(@"AWEPlayInteractionViewController");
+    for (NSUInteger i = 0; controller && i < 8; i++, controller = controller.parentViewController) {
+        if (![controller isKindOfClass:interaction]) continue;
+        DYYYFriendShareBadgeView *badge = objc_getAssociatedObject(controller, &kDYYYFriendShareBadgeKey);
+        if (!badge || !badge.anchor || ![tag isDescendantOfView:badge.anchor]) return;
+        CGRect frame = [self visibleFrameForView:tag root:controller.view];
+        NSValue *old = [badge.nativeTagFrames objectForKey:tag];
+        if (old && CGRectEqualToRect(old.CGRectValue, frame)) return;
+        if (badge.nativeTagFrames.count >= 128) return;
+        [badge.nativeTagFrames setObject:[NSValue valueWithCGRect:frame] forKey:tag];
+        if (badge.layoutPending) return;
+        badge.layoutPending = YES;
+        __weak UIViewController *weakController = controller;
+        __weak DYYYFriendShareBadgeView *weakBadge = badge;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            DYYYFriendShareBadgeView *current = weakBadge;
+            UIViewController *owner = weakController;
+            if (!current) return;
+            current.layoutPending = NO;
+            if (!owner || objc_getAssociatedObject(owner, &kDYYYFriendShareBadgeKey) != current || !owner.view.window) return;
+            [self updateForController:owner];
+        });
+        return;
+    }
+}
++ (NSDictionary *)diagnosticsForController:(UIViewController *)controller {
+    if (!NSThread.isMainThread || !controller) return @{};
+    DYYYFriendShareBadgeView *badge = objc_getAssociatedObject(controller, &kDYYYFriendShareBadgeKey);
+    if (!badge) return @{ @"present":@NO };
+    return @{ @"present":@YES, @"hidden":@(badge.hidden), @"frame":NSStringFromCGRect(badge.frame),
+        @"captionTop":@(badge.captionTop), @"nativeTagCount":@(badge.occupiedTagCount), @"layoutPending":@(badge.layoutPending),
+        @"policy":@"above_visible_native_tags" };
+}
++ (NSDictionary *)diagnostics {
+    if (!NSThread.isMainThread) return @{};
+    NSMutableArray *visible = [NSMutableArray array];
+    NSUInteger inspected = 0;
+    for (UIViewController *controller in [self controllers]) {
+        if (++inspected > 32 || visible.count >= 8) break;
+        if (!controller.isViewLoaded || !controller.view.window) continue;
+        CGRect frame = [controller.view convertRect:controller.view.bounds toView:controller.view.window];
+        if (!CGRectIntersectsRect(frame, controller.view.window.bounds)) continue;
+        [visible addObject:[self diagnosticsForController:controller]];
+    }
+    return @{ @"visible":visible, @"policy":@"above_visible_native_tags" };
 }
 + (void)updateForController:(UIViewController *)controller {
     if (!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(), ^{ [self updateForController:controller]; }); return; }
@@ -146,6 +239,7 @@ static char kDYYYFriendShareBadgeKey;
         badge = [self new];
         objc_setAssociatedObject(controller, &kDYYYFriendShareBadgeKey, badge, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         [controller.view addSubview:badge];
+        [[self controllers] addObject:controller];
     }
     badge.anchor = anchor;
     [badge setSource:source];
@@ -155,7 +249,12 @@ static char kDYYYFriendShareBadgeKey;
     CGFloat x = MAX(12, CGRectGetMinX(caption));
     CGFloat maxWidth = MIN(300, CGRectGetWidth(controller.view.bounds) - x - 84);
     CGSize size = [badge sizeThatFits:CGSizeMake(MAX(0, maxWidth), 30)];
-    CGRect frame = CGRectMake(x, CGRectGetMinY(caption) - size.height - 6, size.width, size.height);
+    NSArray *occupied = [self occupiedTagFramesInStack:anchor root:controller.view];
+    CGFloat top = [DYYYFriendShareBadgeMetrics topForCaptionTop:CGRectGetMinY(caption) badgeX:x width:size.width height:size.height occupiedFrames:occupied];
+    badge.captionTop = CGRectGetMinY(caption);
+    badge.occupiedTagCount = occupied.count;
+    if (!isfinite(top)) { badge.hidden = YES; return; }
+    CGRect frame = CGRectMake(x, top, size.width, size.height);
     badge.hidden = size.width < 105 || CGRectGetMinY(frame) < controller.view.safeAreaInsets.top;
     if (!CGRectEqualToRect(badge.frame, frame)) badge.frame = frame;
     badge.alpha = anchor.alpha;

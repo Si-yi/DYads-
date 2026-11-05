@@ -67,3 +67,6 @@ xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
 xcrun clang -fobjc-arc -fblocks -DDYYY_UNREAD_EXPERIMENTS_SUSPENDED=1 -framework Foundation -I. \
     DYYYUnreadProbe.m Tests/DYYYUnreadIsolationTests.m -o "$test_dir/unread-isolation-tests"
 "$test_dir/unread-isolation-tests"
+xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
+    DYYYFriendShareBadgeMetrics.m Tests/DYYYFriendShareBadgeMetricsTests.m -o "$test_dir/friend-share-badge-tests"
+"$test_dir/friend-share-badge-tests"

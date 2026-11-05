@@ -1,4 +1,5 @@
 #import "DYYYFeedTagGlass.h"
+#import "DYYYFriendShareBadgeView.h"
 #import "DYYYUtils.h"
 #import <QuartzCore/QuartzCore.h>
 #import <objc/runtime.h>
@@ -112,6 +113,7 @@ static char kDYYYFeedTagRefreshKey;
 
 + (void)decorateTag:(UIView *)tag {
     if (!NSThread.isMainThread || !tag) return;
+    [DYYYFriendShareBadgeView nativeTagUpdated:tag];
     if ([objc_getAssociatedObject(tag, &kDYYYFeedTagUpdateDepthKey) unsignedIntegerValue] > 0) return;
     DYYYFeedTagGlassState *state = objc_getAssociatedObject(tag, &kDYYYFeedTagGlassKey);
     if (state.busy) return;
@@ -213,6 +215,7 @@ static char kDYYYFeedTagRefreshKey;
 
 + (void)decorateStack:(UIView *)stack {
     if (!NSThread.isMainThread || !stack) return;
+    [DYYYFriendShareBadgeView nativeTagUpdated:stack];
     NSMutableArray<UIView *> *queue = [NSMutableArray arrayWithArray:stack.subviews];
     for (NSUInteger index = 0; index < queue.count && index < 96; index++) {
         UIView *view = queue[index];

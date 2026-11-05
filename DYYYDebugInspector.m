@@ -13,6 +13,7 @@
 #import "DYYYUnreadProbe.h"
 #import "DYYYUnreadExpiry.h"
 #import "DYYYChatEnhancements.h"
+#import "DYYYFriendShareBadgeView.h"
 #import "DYYYDetailCaptionLayout.h"
 #import "DYYYChatInputGlass.h"
 #import "DYYYChatInputList.h"
@@ -359,6 +360,7 @@ static NSDictionary *DYYYDebugMetadata(void) {
         @"unreadProbe": [DYYYUnreadProbe diagnostics],
         @"unreadExpiry": [DYYYUnreadExpiry diagnostics],
         @"chatEnhancements": [DYYYChatEnhancements diagnostics],
+        @"friendShareBadgeLayout": [DYYYFriendShareBadgeView diagnostics],
         @"detailCaption": [DYYYDetailCaptionLayout diagnostics],
         @"chatInputGlass": [DYYYChatInputGlass diagnostics],
         @"chatInputList": [DYYYChatInputList diagnostics],

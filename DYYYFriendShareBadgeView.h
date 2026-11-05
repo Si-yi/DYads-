@@ -4,4 +4,6 @@
 @interface DYYYFriendShareBadgeView : UIVisualEffectView
 + (void)updateForController:(UIViewController *)controller;
 + (void)resetForController:(UIViewController *)controller;
++ (void)nativeTagUpdated:(UIView *)tag;
++ (NSDictionary *)diagnostics;
 @end
