@@ -70,3 +70,9 @@ xcrun clang -fobjc-arc -fblocks -DDYYY_UNREAD_EXPERIMENTS_SUSPENDED=1 -framework
 xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
     DYYYFriendShareBadgeMetrics.m Tests/DYYYFriendShareBadgeMetricsTests.m -o "$test_dir/friend-share-badge-tests"
 "$test_dir/friend-share-badge-tests"
+xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
+    DYYYRecallPolicy.m Tests/DYYYRecallPolicyTests.m -o "$test_dir/recall-policy-tests"
+"$test_dir/recall-policy-tests"
+xcrun clang -fobjc-arc -fblocks -framework Foundation -framework ImageIO -framework AVFoundation -framework CoreMedia -lsqlite3 -I. \
+    DYYYRecallPolicy.m DYYYRecallStore.m Tests/DYYYRecallStoreTests.m -o "$test_dir/recall-store-tests"
+"$test_dir/recall-store-tests"

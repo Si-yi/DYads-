@@ -13,6 +13,7 @@
 #import "DYYYUnreadProbe.h"
 #import "DYYYUnreadExpiry.h"
 #import "DYYYChatEnhancements.h"
+#import "DYYYRecallCoordinator.h"
 #import "DYYYFriendShareBadgeView.h"
 #import "DYYYDetailCaptionLayout.h"
 #import "DYYYChatInputGlass.h"
@@ -360,6 +361,7 @@ static NSDictionary *DYYYDebugMetadata(void) {
         @"unreadProbe": [DYYYUnreadProbe diagnostics],
         @"unreadExpiry": [DYYYUnreadExpiry diagnostics],
         @"chatEnhancements": [DYYYChatEnhancements diagnostics],
+        @"messageRecall": [DYYYRecallCoordinator diagnostics],
         @"friendShareBadgeLayout": [DYYYFriendShareBadgeView diagnostics],
         @"detailCaption": [DYYYDetailCaptionLayout diagnostics],
         @"chatInputGlass": [DYYYChatInputGlass diagnostics],
@@ -431,7 +433,7 @@ static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *wi
             @"AWEIMMessageListViewController", @"AWEIMReusableCommonCell", @"AWEIMMessageComponentContext", @"IESIMInputViewController",
             @"AWEIMInputStateManager", @"AWEIMActiveUserUploader", @"AWEIMAudioMessageTranslateManager", @"AWEIMAudioMessage", @"AWEIMEncryptAudioMessageV2",
             @"AWEIMWatchOnceMessageManager", @"AWEIMWatchOnceDataManager", @"AWEIMWatchOnceImageMessage", @"AWEIMWatchOnceVideoMessage",
-            @"TIMXMessageMarkAsReadOperator", @"TIMXOMessageReadReceiptFlushDataManager",
+            @"AWEIMMessageViewModel", @"TIMXOModel", @"TIMXMessageMarkAsReadOperator", @"TIMXOMessageReadReceiptFlushDataManager",
             @"AWEIMChatCellViewModel", @"AWEIMChatListControllerViewModel", @"AWEIMChatListHintProviderComponentBase",
             @"AWEIMBaseUnreadMessagesConsumer", @"AWEIMChatListCommonCell", @"DUXBadge", @"AWENormalModeTabBarBadgeContainerView",
             @"AWEIMMessageListNaviBarChatDetailComponent", @"AWEIMMessageListNaviBarGroupZoneToggleComponent",

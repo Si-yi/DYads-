@@ -2411,7 +2411,31 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 - (BOOL)isGroupChat;
 @end
 
+@interface AWEIMMessage : NSObject
+@property (nonatomic, copy) NSString *messageID;
+@property (nonatomic, copy) NSString *conversationID;
+@property (nonatomic, copy) NSString *fromUid;
+@property (nonatomic, assign) BOOL recalled;
+- (id)initWithContentDict:(id)content;
+- (id)getContentDict;
+- (id)rawContentDict;
+- (id)filePath;
+- (id)awe_filePathDictionary;
++ (id)messageWithContext:(id)context;
++ (id)createMessageWithContext:(id)context;
+@end
+
 @interface TIMXOMessage : NSObject
+- (id)initWithRootObject:(id)root model:(id)model;
+- (id)initWithRootObject:(id)root identifier:(id)identifier;
+- (id)initEmptyNoCacheInstanceWithRootObject:(id)root;
++ (id)cachedInstanceWithRootObject:(id)root identifier:(id)identifier;
++ (id)instanceWithRootObject:(id)root identifier:(id)identifier inConversation:(id)conversation;
+- (void)setContent:(id)content;
+- (void)setRecalled:(BOOL)recalled;
+- (BOOL)recalled;
+- (void)setRecalledContent:(id)content;
+- (void)setFileDownloadProgressPercentage:(int)percentage;
 @property (nonatomic, readonly, strong) NSNumber *serverMessageID;
 @property (nonatomic, readonly, strong) NSNumber *orderInConversation;
 @property (nonatomic, readonly, copy) NSString *identifier;

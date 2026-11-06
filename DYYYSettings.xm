@@ -26,6 +26,7 @@
 #import "DYYYAutoMessage.h"
 #import "DYYYUnreadExpiry.h"
 #import "DYYYChatEnhancements.h"
+#import "DYYYRecallCoordinator.h"
 #import "DYYYSearchClean.h"
 #import "DYYYUtils.h"
 
@@ -2923,6 +2924,11 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
         items:[DYYYChatEnhancements settingsItems]];
     AWESettingItemModel *chatEnhancementsEntry = DYYYMakePageEntry(rootVC, @"聊天增强", @"ic_comment_outlined_20", @"增强设置 · 聊天增强", @[chatEnhancementsSection]);
 
+    AWESettingSectionModel *recallSection = [DYYYSettingsHelper createSectionWithTitle:@"消息防撤回"
+        footerTitle:@"在原聊天保留本机已取得的对方消息并标记撤回发现时间。请关闭Yuki、DY778的同类防撤回后重启，以免重复接管。未收到的原内容不能恢复。内部留存按账号隔离，不改变普通已读接口；每账号最多5000条，媒体总计512MB，满后停止新增且保留原副本。副本随抖音数据清理而删除。开启后请彻底重启抖音。"
+        items:[DYYYRecallCoordinator settingsItems]];
+    AWESettingItemModel *recallEntry = DYYYMakePageEntry(rootVC, @"消息防撤回", @"ic_comment_outlined_20", @"增强设置 · 消息防撤回", @[recallSection]);
+
     // 创建增强设置分类项
     AWESettingItemModel *enhanceSettingItem = [[%c(AWESettingItemModel) alloc] init];
     enhanceSettingItem.identifier = @"DYYYEnhanceSettings";
@@ -3910,7 +3916,7 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
       // 创建并组织所有section
       NSMutableArray *sections = [NSMutableArray array];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"自动消息" items:@[ autoMessageEntry, friendShareEntry ]]];
-      [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"消息处理" items:@[ chatEnhancementsEntry, expiryEntry ]]];
+      [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"消息处理" items:@[ recallEntry, chatEnhancementsEntry, expiryEntry ]]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"长按面板设置" items:longPressItems]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"媒体保存" items:downloadItems]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"交互增强" items:interactionItems]];

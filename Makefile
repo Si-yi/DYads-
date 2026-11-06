@@ -39,6 +39,7 @@ TWEAK_NAME = DYads-
 DYads-_FILES = DYYY.xm DYYYFloatClearButton.xm DYYYFloatSpeedButton.m DYYYSettings.xm DYYYAutoMessageHooks.xm DYYYABTestHook.xm DYYYLongPressPanel.xm DYYYGlassTabBar.xm DYYYProfileClean.xm DYYYPlusIcon.m DKTabBarIcons.m DKTabBarIconDraw.m DKIconCropper.m DYYYSettingsHelper.m DYYYAutoMessage.m DYYYAutoMessagePanel.m DYYYBackupTools.m DYYYDebugInspector.m DKDebugCapture.m DKClassDump.m DKZipWriter.m DYYYImagePickerDelegate.m DYYYBackupPickerDelegate.m DYYYBottomAlertView.m DYYYCustomInputView.m DYYYOptionsSelectionView.m DYYYIconOptionsDialogView.m DYYYAboutDialogView.m DYYYKeywordListView.m DYYYFilterSettingsView.m DYYYConfirmCloseView.m DYYYToast.m DYYYManager.m DYYYUtils.m CityManager.m AWMSafeDispatchTimer.m
 DYads-_FILES += DYYYUnreadExpiry.m DYYYUnreadExpiryPolicy.m DYYYUnreadReadLearning.m DYYYUnreadExpiryHooks.xm
 DYads-_FILES += DYYYUnreadProbe.m DYYYUnreadProbeHooks.xm
+DYads-_FILES += DYYYRecallPolicy.m DYYYRecallStore.m DYYYRecallCoordinator.m DYYYRecallHooks.xm
 DYads-_FILES += DYYYChatEnhancements.m DYYYChatEnhancementPolicy.m DYYYChatEnhancementHooks.xm
 DYads-_FILES += DYYYHomeDailyFilter.m DYYYHomeDailyFilterHooks.xm
 DYads-_FILES += DYYYAutoMessageEditor.m DYYYAutoMessageQuietHoursPanel.m DYYYAutoMessageBatch.m
@@ -62,8 +63,8 @@ DYads-_CFLAGS = -fobjc-arc -w -DDYYY_UNREAD_EXPERIMENTS_SUSPENDED=1
 ifeq ($(GITHUB_ACTIONS),true)
 DYads-_CFLAGS += -DDYYY_REQUIRE_GLASS_TAB_BAR=1
 endif
-DYads-_LDFLAGS = -weak_framework AVFAudio -lz
-DYads-_FRAMEWORKS = CoreAudio PhotosUI
+DYads-_LDFLAGS = -weak_framework AVFAudio -lz -lsqlite3
+DYads-_FRAMEWORKS = CoreAudio PhotosUI AVFoundation ImageIO CoreMedia
 CXXFLAGS += -std=c++11
 CCFLAGS += -std=c++11
 DYads-_LOGOS_DEFAULT_GENERATOR = internal
