@@ -738,6 +738,8 @@ void DYYYDebugInspectorRefreshOverlay(void) {
 
 
 void DYYYDebugInspectorInstall(void) {
+    // 启动时异步载入上次离页记录；不依赖用户再次打开聊天或第二次导出。
+    if ([NSUserDefaults.standardUserDefaults boolForKey:@"DYYYDebugInspectorEnabled"]) [DYYYChatTransitionTrace diagnostics];
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
       // 窗口/场景切换时迁移同一个悬浮层；普通导航 push/present 不会再遮住按钮。
