@@ -116,7 +116,7 @@
         [self bind:key at:1 statement:statement]; [self bind:account at:2 statement:statement]; [self bind:conversation at:3 statement:statement]; [self bind:saved[@"message"] at:4 statement:statement]; [self bind:saved[@"server"] at:5 statement:statement];
         sqlite3_bind_int(statement, 6, [saved[@"recalled"] boolValue]); sqlite3_bind_blob(statement, 7, data.bytes, (int)data.length, SQLITE_TRANSIENT);
         BOOL success = sqlite3_step(statement) == SQLITE_DONE; sqlite3_finalize(statement);
-        if (completion) completion(success ? saved : nil, success ? nil : @"本地留存写入失败");
+        if (completion) completion(success ? [self readAccount:account conversation:conversation message:saved[@"message"] server:saved[@"server"]] : nil, success ? nil : @"本地留存写入失败");
     });
 }
 - (void)recordForAccount:(NSString *)account conversation:(NSString *)conversation message:(NSString *)message server:(NSString *)server completion:(void (^)(NSDictionary *))completion {
@@ -206,7 +206,18 @@
         if (sqlite3_prepare_v2(self.database,"SELECT relative FROM media WHERE key IN (SELECT key FROM records WHERE account=?)",-1,&statement,NULL)==SQLITE_OK) {
             [self bind:account at:1 statement:statement]; while(sqlite3_step(statement)==SQLITE_ROW) { const char *p=(const char *)sqlite3_column_text(statement,0); if(p)[files addObject:[NSString stringWithUTF8String:p]]; } sqlite3_finalize(statement);
         }
+        NSMutableArray *serverKeys=[NSMutableArray array];
+        statement=NULL;
+        if(sqlite3_prepare_v2(self.database,"SELECT conversation,server FROM records WHERE account=? AND server<>''",-1,&statement,NULL)==SQLITE_OK){
+            [self bind:account at:1 statement:statement];
+            while(sqlite3_step(statement)==SQLITE_ROW){const char *c=(const char *)sqlite3_column_text(statement,0),*m=(const char *)sqlite3_column_text(statement,1);if(c && m){NSString *key=[DYYYRecallPolicy keyForAccount:account conversation:[NSString stringWithUTF8String:c] message:[NSString stringWithUTF8String:m]];if(key)[serverKeys addObject:key];}}
+            sqlite3_finalize(statement);
+        }
         BOOL success = sqlite3_exec(self.database,"BEGIN IMMEDIATE",NULL,NULL,NULL)==SQLITE_OK;
+        statement=NULL;
+        if(success && sqlite3_prepare_v2(self.database,"INSERT OR IGNORE INTO forgotten(key) VALUES(?)",-1,&statement,NULL)==SQLITE_OK){
+            for(NSString *key in serverKeys){[self bind:key at:1 statement:statement];if(sqlite3_step(statement)!=SQLITE_DONE){success=NO;break;}sqlite3_reset(statement);sqlite3_clear_bindings(statement);}sqlite3_finalize(statement);
+        }else success=NO;
         for (NSString *sql in @[@"INSERT OR IGNORE INTO forgotten(key) SELECT key FROM records WHERE account=?",@"DELETE FROM media WHERE key IN (SELECT key FROM records WHERE account=?)",@"DELETE FROM records WHERE account=?"]) {
             statement=NULL;
             if (success && sqlite3_prepare_v2(self.database,sql.UTF8String,-1,&statement,NULL)==SQLITE_OK) {

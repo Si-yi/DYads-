@@ -42,6 +42,8 @@
     [store clearAccount:@"a" completion:^(BOOL success){cleared=success;dispatch_semaphore_signal(semaphore);}];[self wait:semaphore];
     [self check:cleared && ![self read:store account:@"a" message:@"local" server:@"123"] reason:@"显式清理后记录消失"];
     [self check:![self save:record store:store] reason:@"迟到回调不能重新写回用户清理过的留存"];
+    NSMutableDictionary *alias=[record mutableCopy];alias[@"message"]=@"new-local-id";
+    [self check:![self save:alias store:store] reason:@"换成本机新ID也不能按相同服务器ID回灌已清理记录"];
     [NSFileManager.defaultManager removeItemAtURL:base error:nil];
     NSLog(@"DYYYRecallStore regression tests passed");
 }

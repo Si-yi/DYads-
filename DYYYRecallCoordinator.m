@@ -16,6 +16,7 @@
 @property (atomic, weak) NSDictionary *content;
 @property (atomic, copy) NSDictionary *identity;
 @property (atomic, assign) BOOL recalled;
+@property (atomic, assign) BOOL countedProtection;
 @property (atomic, assign) NSTimeInterval recalledAt;
 @property (atomic, assign) BOOL pending;
 @property (atomic, copy) NSString *lastSignature;
@@ -50,6 +51,7 @@
 @property (nonatomic, strong) NSHashTable<UITableViewCell *> *cells;
 @property (nonatomic, strong) NSHashTable<DYYYRecallUIReference *> *uiReferences;
 @property (atomic, assign) NSUInteger savedSnapshots;
+@property (atomic, assign) NSUInteger protectedModels;
 @property (nonatomic, strong) NSMutableDictionary *hooks;
 @property (atomic, copy) NSString *status;
 @property (atomic, copy) NSDictionary *statistics;
@@ -132,9 +134,15 @@
     NSDictionary *snapshot=[DYYYRecallPolicy contentSnapshot:content];
     if(!snapshot)return;
     DYYYRecallModelState *state=[self state:model create:YES];
-    if([state.content isEqual:snapshot])return;
-    if(!state.recalled || !state.content.count) [self retainContent:snapshot state:state];
+    if(state.content.count)return;
+    [self retainContent:snapshot state:state];
     [self scheduleModel:model];
+}
++ (void)captureOriginalContent:(id)content model:(id)model {
+    if(![self enabled])return;
+    NSDictionary *snapshot=[DYYYRecallPolicy contentSnapshot:content];if(!snapshot)return;
+    DYYYRecallModelState *state=[self state:model create:YES];
+    [self retainContent:snapshot state:state];[self scheduleModel:model];
 }
 + (void)observeRecalled:(BOOL)recalled model:(id)model {
     if(![self enabled] || !recalled)return;
@@ -146,7 +154,9 @@
     if(![self enabled])return NO;
     DYYYRecallModelState *state=[self state:model create:NO]; NSDictionary *identity=state.identity;
     if([self shared].account.length && ![identity[@"account"] isEqual:[self shared].account])return NO;
-    return state.recalled && [DYYYRecallPolicy canProtectAccount:identity[@"account"] sender:identity[@"sender"] conversation:identity[@"conversation"] message:identity[@"message"] content:state.content];
+    BOOL protected=state.recalled && [DYYYRecallPolicy canProtectAccount:identity[@"account"] sender:identity[@"sender"] conversation:identity[@"conversation"] message:identity[@"message"] content:state.content];
+    if(protected && !state.countedProtection){@synchronized(state){if(!state.countedProtection){state.countedProtection=YES;[self shared].protectedModels++;}}}
+    return protected;
 }
 + (NSDictionary *)protectedContentForModel:(id)model { return [self protectModel:model] ? [self state:model create:NO].content : nil; }
 + (void)scheduleModel:(id)model {
@@ -164,7 +174,7 @@
             NSString *message=[self identifier:[self object:current selector:@"identifier"]];
             NSString *sender=[self identifier:[self number:current selector:@"sender"]];
             NSNumber *type=[self number:current selector:@"conversationType"];
-            if(!account.length || !conversation.length || !message.length || !sender.length || [account isEqual:sender] || type.unsignedLongLongValue==10)return;
+            if(!account.length || !conversation.length || !message.length || !sender.length || sender.longLongValue<=0 || [account isEqual:sender] || type.unsignedLongLongValue==10)return;
             if(state.identity[@"account"] && ![state.identity[@"account"] isEqual:account])return;
             if(coordinator.account.length && ![coordinator.account isEqual:account])return;
             NSString *server=[self identifier:[self object:current selector:@"serverMessageID"]] ?: @"";
@@ -172,7 +182,7 @@
             state.identity=@{@"account":account,@"conversation":conversation,@"message":message,@"sender":sender,@"server":server};
             BOOL nativeRecalled=[[self number:current selector:@"recalled"] boolValue];
             if(nativeRecalled){state.recalled=YES;if(!state.recalledAt)state.recalledAt=NSDate.date.timeIntervalSince1970;}
-            if(!state.recalled || !state.content) {
+            if(!state.content) {
                 NSDictionary *snapshot=[DYYYRecallPolicy contentSnapshot:[self object:current selector:@"content"]];
                 if(snapshot)[self retainContent:snapshot state:state];
             }
@@ -384,6 +394,6 @@
 + (NSDictionary *)diagnostics {
     if(!NSThread.isMainThread)return @{};
     DYYYRecallCoordinator *coordinator=[self shared];
-    return @{@"enabled":@(coordinator.active),@"hooks":[coordinator.hooks copy],@"status":coordinator.status?:@"",@"statistics":coordinator.statistics?:@{},@"savedSnapshots":@(coordinator.savedSnapshots),@"nativeReadHooks":@NO,@"historyQueries":@0,@"mediaLimitMB":@512,@"recordLimit":@5000};
+    return @{@"enabled":@(coordinator.active),@"hooks":[coordinator.hooks copy],@"status":coordinator.status?:@"",@"statistics":coordinator.statistics?:@{},@"savedSnapshots":@(coordinator.savedSnapshots),@"protectedModels":@(coordinator.protectedModels),@"nativeReadHooks":@NO,@"historyQueries":@0,@"mediaLimitMB":@512,@"recordLimit":@5000};
 }
 @end

@@ -62,7 +62,7 @@
 %group DYYYRecallOriginalContentHooks
 %hook TIMXOMessage
 - (void)setRecalledContent:(id)content {
-    [DYYYRecallCoordinator captureContent:content model:self];
+    [DYYYRecallCoordinator captureOriginalContent:content model:self];
     %orig(content);
 }
 %end

@@ -7,6 +7,7 @@
 + (void)settingsChanged;
 + (void)bindModel:(id)model root:(id)root;
 + (void)captureContent:(id)content model:(id)model;
++ (void)captureOriginalContent:(id)content model:(id)model;
 + (void)observeRecalled:(BOOL)recalled model:(id)model;
 + (BOOL)protectModel:(id)model;
 + (NSDictionary *)protectedContentForModel:(id)model;

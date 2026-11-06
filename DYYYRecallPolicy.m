@@ -34,12 +34,20 @@
     }
     return nil; // 不调用未知原生对象的 description / getter / 序列化。
 }
++ (BOOL)hasPayload:(NSDictionary *)content depth:(NSUInteger)depth {
+    if(depth>6)return NO;
+    for(NSString *key in @[@"text",@"title",@"resource_url",@"url",@"url_list",@"uri",@"image",@"images",@"image_url",@"origin_url",@"video",@"audio",@"sticker",@"animated_url",@"display_name",@"itemId",@"aweme_id",@"location"]){
+        id value=content[key];
+        if(([value isKindOfClass:NSString.class] && [value length]) || ([value isKindOfClass:NSDictionary.class] && [value count]) || ([value isKindOfClass:NSArray.class] && [value count]) || ([value isKindOfClass:NSNumber.class] && [value longLongValue]>0))return YES;
+    }
+    return [content[@"content"] isKindOfClass:NSDictionary.class] && [self hasPayload:content[@"content"] depth:depth+1];
+}
 + (NSDictionary *)contentSnapshot:(id)content {
     if (![content isKindOfClass:NSDictionary.class] || ![content count]) return nil;
     NSUInteger budget = 2048;
     NSDictionary *copy = nil;
     @try { copy = [self copyJSON:content depth:0 budget:&budget]; } @catch (__unused NSException *exception) { return nil; }
-    if (!copy || [self isRecallPlaceholder:copy]) return nil;
+    if (!copy || [self isRecallPlaceholder:copy] || ![self hasPayload:copy depth:0]) return nil;
     NSData *data = [NSJSONSerialization dataWithJSONObject:copy options:0 error:nil];
     return data.length && data.length <= 256 * 1024 ? copy : nil;
 }
@@ -48,7 +56,7 @@
         [content[@"text"] isEqualToString:@"Recall Content Hided"];
 }
 + (BOOL)validIdentity:(id)value {
-    return [value isKindOfClass:NSString.class] && [value length] && [value length] <= 512;
+    return [value isKindOfClass:NSString.class] && [value length] && [value length] <= 512 && ![value isEqual:@"0"];
 }
 + (BOOL)canProtectAccount:(NSString *)account sender:(NSString *)sender conversation:(NSString *)conversation message:(NSString *)message content:(NSDictionary *)content {
     return [self validIdentity:account] && [self validIdentity:sender] && ![account isEqual:sender] &&

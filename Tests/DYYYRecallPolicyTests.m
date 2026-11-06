@@ -22,6 +22,8 @@
     [self check:![[DYYYRecallPolicy keyForAccount:@"a/b" conversation:@"c" message:@"d"] isEqual:[DYYYRecallPolicy keyForAccount:@"a" conversation:@"b/c" message:@"d"]] reason:@"身份分隔符不会造成跨会话碰撞"];
     NSMutableArray *deep=[NSMutableArray array];for(NSUInteger i=0;i<300;i++)[deep addObject:@"x"];
     [self check:![DYYYRecallPolicy contentSnapshot:@{@"items":deep}] reason:@"回调内快照限制数组容量"];
+    [self check:![DYYYRecallPolicy contentSnapshot:@{@"type":@1,@"message_id":@"m"}] reason:@"类型或编号本身不能冒充消息原内容"];
+    [self check:[[DYYYRecallPolicy fingerprint:@{@"b":@2,@"a":@1}] isEqual:[DYYYRecallPolicy fingerprint:@{@"a":@1,@"b":@2}]] reason:@"去重摘要不受字典顺序影响"];
     NSLog(@"DYYYRecallPolicy regression tests passed");
 }
 @end
