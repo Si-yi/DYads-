@@ -27,6 +27,7 @@ SOFTWARE.
 */
 #import "DYYYCommentVideoLayout.h"
 #import "DYYYUtils.h"
+#import "DYYYChatVideoLayout.h"
 #import "AwemeHeaders.h"
 #import <objc/runtime.h>
 #import <math.h>
@@ -77,7 +78,7 @@ static char kDYYYCommentVideoStateKey;
 + (BOOL)eligibleController:(UIViewController *)controller {
     UIView *view = controller.viewIfLoaded;
     // PiP/系统横屏浮窗独立管理自己的尺寸，不能撑成视频页。
-    return [self isContentController:controller] && view.superview &&
+    return ![DYYYChatVideoLayout usesNativePagingForController:controller] && [self isContentController:controller] && view.superview &&
         CGRectGetWidth(view.bounds) > 0 && CGRectGetHeight(view.bounds) > 0 && CGAffineTransformIsIdentity(view.transform) &&
         (!view.window || view.window.windowLevel == UIWindowLevelNormal);
 }

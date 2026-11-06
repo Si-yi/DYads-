@@ -71,6 +71,22 @@
 + (void)watchController:(UIViewController *)controller phase:(NSString *)phase {
     if (!NSThread.isMainThread || !controller || ![self enabled]) return;
     NSDictionary *facts = [self factsForController:controller phase:phase];
+    [self watchFacts:facts controller:controller phase:phase];
+}
++ (void)recordPaging:(UIViewController *)controller scrollView:(UIScrollView *)scroll phase:(NSString *)phase probe:(BOOL)probe {
+    if (!NSThread.isMainThread || !controller || ![scroll isKindOfClass:UIScrollView.class] || ![self enabled]) return;
+    NSMutableDictionary *facts = [[self factsForController:controller phase:phase] mutableCopy];
+    facts[@"scrollFrame"] = NSStringFromCGRect(scroll.frame);
+    facts[@"scrollBounds"] = NSStringFromCGRect(scroll.bounds);
+    facts[@"contentSize"] = NSStringFromCGSize(scroll.contentSize);
+    facts[@"contentOffset"] = NSStringFromCGPoint(scroll.contentOffset);
+    facts[@"dragging"] = @(scroll.dragging);
+    facts[@"decelerating"] = @(scroll.decelerating);
+    facts[@"nativePagingGeometry"] = @YES;
+    if (probe) [self watchFacts:facts controller:controller phase:phase];
+    else [self append:facts];
+}
++ (void)watchFacts:(NSDictionary *)facts controller:(UIViewController *)controller phase:(NSString *)phase {
     [self append:facts];
     __weak UIViewController *weakController = controller;
     // 每次真实进入事件只探测一次，不轮询，不抓取/挂起线程，不触碰 SDK。

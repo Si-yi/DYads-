@@ -1614,6 +1614,9 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @interface AFDMentionFeedTableViewController : AWEAwemeDetailTableViewController
 @end
 @interface AWEAwemeIMDetailTableViewController : AWEAwemeDetailTableViewController
+- (void)scrollViewWillBeginDragging:(UIScrollView *)scroll;
+- (void)scrollViewDidEndDragging:(UIScrollView *)scroll willDecelerate:(BOOL)decelerate;
+- (void)scrollViewDidEndDecelerating:(UIScrollView *)scroll;
 @end
 @interface AWEAwemeDetailCellViewController : UIViewController
 @end

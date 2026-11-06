@@ -1,9 +1,7 @@
 #import <UIKit/UIKit.h>
 
 @interface DYYYChatVideoLayout : NSObject
-+ (CGRect)adjustedFrame:(CGRect)frame view:(UIView *)view controller:(UIViewController *)controller;
-+ (void)layoutCellController:(UIViewController *)controller;
-+ (void)layoutInteractionController:(UIViewController *)controller;
++ (BOOL)usesNativePagingForController:(UIViewController *)controller;
 + (void)updateReplyBackground:(UIViewController *)controller;
 + (void)syncPlayerBackdrop:(UIViewController *)controller;
 + (void)removePlayerBackdrop:(UIViewController *)controller;

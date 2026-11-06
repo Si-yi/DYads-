@@ -4,7 +4,6 @@
 #import "DYYYIMConversationStore.h"
 #import "DYYYFriendShareService.h"
 #import "DYYYFriendShareBadgeView.h"
-#import "DYYYChatVideoLayout.h"
 #import "DYYYDetailCaptionLayout.h"
 #import "DYYYUtils.h"
 
@@ -21,7 +20,6 @@
 }
 - (void)viewDidLayoutSubviews {
     %orig;
-    [DYYYChatVideoLayout layoutInteractionController:self];
     [DYYYFriendShareBadgeView updateForController:self];
     [DYYYDetailCaptionLayout endControllerLayout:self];
 }

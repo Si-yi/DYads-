@@ -69,3 +69,6 @@ xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
 xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
     DYYYChatLifecycle.m Tests/DYYYChatLifecycleTests.m -o "$test_dir/chat-lifecycle-tests"
 "$test_dir/chat-lifecycle-tests"
+xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
+    DYYYVideoPageMetrics.m Tests/DYYYVideoPageMetricsTests.m -o "$test_dir/video-page-metrics-tests"
+"$test_dir/video-page-metrics-tests"

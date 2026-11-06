@@ -1,5 +1,6 @@
 #import "DYYYChatChrome.h"
 #import "DYYYChatTransitionTrace.h"
+#import "DYYYChatEnhancementPolicy.h"
 #import "AwemeHeaders.h"
 
 %group DYYYChatChromeNavigationHooks
@@ -160,6 +161,31 @@
 %end
 %end
 
+%group DYYYChatVideoDragBeginHooks
+%hook AWEAwemeIMDetailTableViewController
+- (void)scrollViewWillBeginDragging:(UIScrollView *)scroll {
+    [DYYYChatTransitionTrace recordPaging:self scrollView:scroll phase:@"video_scroll_begin" probe:YES];
+    %orig(scroll);
+}
+%end
+%end
+%group DYYYChatVideoDragEndHooks
+%hook AWEAwemeIMDetailTableViewController
+- (void)scrollViewDidEndDragging:(UIScrollView *)scroll willDecelerate:(BOOL)decelerate {
+    %orig(scroll, decelerate);
+    [DYYYChatTransitionTrace recordPaging:self scrollView:scroll phase:decelerate ? @"video_scroll_released_decelerating" : @"video_scroll_released" probe:NO];
+}
+%end
+%end
+%group DYYYChatVideoDecelerationHooks
+%hook AWEAwemeIMDetailTableViewController
+- (void)scrollViewDidEndDecelerating:(UIScrollView *)scroll {
+    %orig(scroll);
+    [DYYYChatTransitionTrace recordPaging:self scrollView:scroll phase:@"video_scroll_settled" probe:NO];
+}
+%end
+%end
+
 @implementation DYYYChatChrome (Hooks)
 + (void)installHooks {
     if (!NSThread.isMainThread) {
@@ -169,6 +195,17 @@
     [self preparePreferences];
     static BOOL nav, configuration, unread, unreadSubclass, title, panel, theme, host;
     static BOOL video;
+    static BOOL dragBegin, dragEnd, deceleration;
+    Class videoClass = NSClassFromString(@"AWEAwemeIMDetailTableViewController");
+    if (!dragBegin && [DYYYChatEnhancementPolicy class:videoClass selector:@selector(scrollViewWillBeginDragging:) result:'v' arguments:@"@"]) {
+        %init(DYYYChatVideoDragBeginHooks); dragBegin = YES;
+    }
+    if (!dragEnd && [DYYYChatEnhancementPolicy class:videoClass selector:@selector(scrollViewDidEndDragging:willDecelerate:) result:'v' arguments:@"@B"]) {
+        %init(DYYYChatVideoDragEndHooks); dragEnd = YES;
+    }
+    if (!deceleration && [DYYYChatEnhancementPolicy class:videoClass selector:@selector(scrollViewDidEndDecelerating:) result:'v' arguments:@"@"]) {
+        %init(DYYYChatVideoDecelerationHooks); deceleration = YES;
+    }
     if (!video && NSClassFromString(@"AWEAwemeIMDetailTableViewController")) { %init(DYYYChatVideoAppearanceHooks); video = YES; }
     if (!nav && NSClassFromString(@"AWENavigationBar")) { %init(DYYYChatChromeNavigationHooks); nav = YES; }
     Class navClass = NSClassFromString(@"AWENavigationBar");

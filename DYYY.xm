@@ -27,6 +27,7 @@
 #import "DYYYConstants.h"
 #import "DYYYDebugInspector.h"
 #import "DYYYChatVideoLayout.h"
+#import "DYYYVideoPageMetrics.h"
 #import "DYYYFeedCardLayout.h"
 #import "DYYYFeedCardPolicy.h"
 #import "DYYYCollectionRows.h"
@@ -228,16 +229,19 @@ static char kDYYYDetailPreparingKey;
 static CGRect DYYYDetailTableFrame(UITableView *table, CGRect frame, CGFloat target) {
     if (!NSThread.isMainThread || !DYYYGetBool(@"DYYYEnableFullScreen")) return frame;
     CGFloat native = CGRectGetHeight(frame);
-    if (!CGAffineTransformIsIdentity(table.transform) || !isfinite(native) || !isfinite(target) ||
-        native <= 0 || target <= native + 0.5 || native < target * 0.5 || target - native > 160) return frame;
+    if (!CGAffineTransformIsIdentity(table.transform)) return frame;
+    BOOL nativePaging = [DYYYChatVideoLayout usesNativePagingForController:[DYYYUtils firstAvailableViewControllerFromView:table]];
+    CGFloat expanded = [DYYYVideoPageMetrics tableHeight:native target:target enabled:YES nativePaging:nativePaging];
+    if (!isfinite(expanded) || expanded == native) return frame;
     objc_setAssociatedObject(table, &kDYYYDetailNativeHeightKey, @(native), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     objc_setAssociatedObject(table, &kDYYYDetailBottomReserveKey, @(target - native), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    frame.size.height = target;
+    frame.size.height = expanded;
     return frame;
 }
 
 static void DYYYPrepareDetailTable(AWEAwemeDetailTableViewController *controller, UITableView *table) {
     if (!NSThread.isMainThread || !table || !controller.isViewLoaded ||
+        [DYYYChatVideoLayout usesNativePagingForController:controller] ||
         objc_getAssociatedObject(table, &kDYYYDetailPreparingKey)) return;
     UIView *root = controller.viewIfLoaded;
     if (table.superview && ![table isDescendantOfView:root]) return;
@@ -263,10 +267,8 @@ static double DYYYDetailPageHeight(UITableView *table, double native) {
     if (!NSThread.isMainThread || !DYYYGetBool(@"DYYYEnableFullScreen")) return native;
     NSNumber *original = objc_getAssociatedObject(table, &kDYYYDetailNativeHeightKey);
     CGFloat target = CGRectGetHeight(table.bounds);
-    if (!original || !isfinite(native) || native <= 0 || target <= original.doubleValue + 0.5) return native;
-    // 只接管整页行，广告特殊行、自动尺寸保持原逻辑。
-    if (fabs(native - original.doubleValue) > 0.5 && fabs(native - target) > 0.5) return native;
-    return target;
+    BOOL nativePaging = [DYYYChatVideoLayout usesNativePagingForController:[DYYYUtils firstAvailableViewControllerFromView:table]];
+    return [DYYYVideoPageMetrics rowHeight:native original:(original ? original.doubleValue : NAN) viewport:target enabled:YES nativePaging:nativePaging];
 }
 
 
@@ -11707,23 +11709,19 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
     DYYYPrepareDetailTable(self, self.tableView);
 }
 - (double)fixedCellHeight {
-    DYYYPrepareDetailTable(self, self.tableView);
     double native = %orig;
+    if ([DYYYChatVideoLayout usesNativePagingForController:self]) return native;
     return DYYYDetailPageHeight(self.tableView, native);
 }
 - (double)cellHeightAtIndex:(long long)index {
-    DYYYPrepareDetailTable(self, self.tableView);
     double native = %orig;
+    if ([DYYYChatVideoLayout usesNativePagingForController:self]) return native;
     return DYYYDetailPageHeight(self.tableView, native);
 }
 - (double)tableView:(UITableView *)table heightForRowAtIndexPath:(NSIndexPath *)indexPath {
-    DYYYPrepareDetailTable(self, table);
     double native = %orig;
+    if ([DYYYChatVideoLayout usesNativePagingForController:self]) return native;
     return DYYYDetailPageHeight(table, native);
-}
-- (double)contentOffsetYForCellAtIndex:(long long)index {
-    DYYYPrepareDetailTable(self, self.tableView);
-    return %orig;
 }
 - (void)viewDidLayoutSubviews {
     DYYYPrepareDetailTable(self, self.tableView);
@@ -12269,6 +12267,7 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
 
     if (DYYYGetBool(@"DYYYEnableFullScreen")) {
         UIViewController *vc = [DYYYUtils firstAvailableViewControllerFromView:self];
+        if ([DYYYChatVideoLayout usesNativePagingForController:vc]) { %orig(backgroundColor); return; }
         if ([vc isKindOfClass:%c(AWEAwemeDetailTableViewController)] ||
             [vc isKindOfClass:%c(AWEAwemeDetailCellViewController)]) {
             if (!DYYYGetBool(@"DYYYEnableFloatingCommentInput") && [DYYYUtils isCommentInputView:self]) {
@@ -12285,6 +12284,8 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
 
 - (void)layoutSubviews {
     %orig;
+    if ((DYYYGetBool(@"DYYYEnableFullScreen") || DYYYGetBool(@"DYYYEnableCommentBlur")) &&
+        [DYYYChatVideoLayout usesNativePagingForController:[DYYYUtils firstAvailableViewControllerFromView:self]]) return;
 
     if (DYYYGetBool(@"DYYYEnableFullScreen")) {
         if (self.frame.size.height == originalTabBarHeight && originalTabBarHeight > 0) {
@@ -12326,15 +12327,14 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
     Class PlayVCClass2 = NSClassFromString(@"AWEDPlayerFeedPlayerViewController");
     Class PlayVCClass3 = NSClassFromString(@"AWEDPlayerViewController_Merge");
 
+    // 私信分页全程使用原生尺寸，不让首页全屏/评论防缩放争夺播放器布局。
+    if ([DYYYChatVideoLayout usesNativePagingForController:vc]) {
+        %orig(frame);
+        return;
+    }
     CGRect commentFrame = [DYYYCommentVideoLayout adjustedFrame:frame view:self];
     if (!CGRectEqualToRect(commentFrame, frame)) {
         %orig(commentFrame);
-        return;
-    }
-
-    CGRect chatFrame = [DYYYChatVideoLayout adjustedFrame:frame view:self controller:vc];
-    if (!CGRectEqualToRect(chatFrame, frame)) {
-        %orig(chatFrame);
         return;
     }
 
@@ -12447,6 +12447,8 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
         [FloatingSpeedButton reloadConfiguration];
         updateClearButtonVisibility();
     }
+
+    if ([DYYYChatVideoLayout usesNativePagingForController:self]) return;
 
     // 详情页（别人主页里的视频、顶栏「经验」等入口）：原生表高就是整屏，信息区本来就按整页高度排到评论输入栏上沿。
     // 表被底栏压缩过的情况上面的钉位已经接管；走到这里说明没被压缩，再减一次底栏高度只会让信息区、进度条整体上移，
@@ -12664,6 +12666,7 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
 
 - (void)viewDidLayoutSubviews {
     %orig;
+    if ([DYYYChatVideoLayout usesNativePagingForController:self]) return;
     if (DYYYGetBool(@"DYYYEnableFullScreen")) {
         UIView *contentView = self.contentView;
         if (contentView && contentView.superview) {
@@ -12713,6 +12716,7 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
 
 - (void)viewDidLayoutSubviews {
     %orig;
+    if ([DYYYChatVideoLayout usesNativePagingForController:self]) return;
     if (DYYYGetBool(@"DYYYEnableFullScreen")) {
         UIView *contentView = self.contentView;
         if (contentView && contentView.superview) {
@@ -12754,6 +12758,7 @@ static void DYYYInstallAdaptiveInputLifecycle(void) {
 %hook AWEFeedTableView
 - (void)layoutSubviews {
     %orig;
+    if ([DYYYChatVideoLayout usesNativePagingForController:[DYYYUtils firstAvailableViewControllerFromView:self]]) return;
 
     if (DYYYGetBool(@"DYYYEnableFullScreen")) {
         CGRect frame = self.frame;
@@ -13489,7 +13494,7 @@ static Class TagViewClass = nil;
         if (viewWidth + 0.5f >= screenWidth) {
             UIViewController *vc = [DYYYUtils firstAvailableViewControllerFromView:view];
             Class playClass = %c(AWEPlayVideoViewController);
-            if (playClass && [vc isKindOfClass:playClass]) {
+            if (playClass && [vc isKindOfClass:playClass] && ![DYYYChatVideoLayout usesNativePagingForController:vc]) {
                 AWEPlayVideoViewController *playVC = (AWEPlayVideoViewController *)vc;
                 AWEAwemeModel *model = playVC.model;
                 if ([model respondsToSelector:@selector(isShowLandscapeEntryView)] && model.isShowLandscapeEntryView) {
@@ -13520,7 +13525,7 @@ static Class TagViewClass = nil;
         if (viewWidth + 0.5f >= screenWidth) {
             UIViewController *vc = [DYYYUtils firstAvailableViewControllerFromView:view];
             Class playClass = %c(AWEPlayVideoViewController);
-            if (playClass && [vc isKindOfClass:playClass]) {
+            if (playClass && [vc isKindOfClass:playClass] && ![DYYYChatVideoLayout usesNativePagingForController:vc]) {
                 AWEPlayVideoViewController *playVC = (AWEPlayVideoViewController *)vc;
                 AWEAwemeModel *model = playVC.model;
                 if ([model respondsToSelector:@selector(isShowLandscapeEntryView)] && model.isShowLandscapeEntryView) {
@@ -13551,7 +13556,7 @@ static Class TagViewClass = nil;
         if (viewWidth + 0.5f >= screenWidth) {
             UIViewController *vc = [DYYYUtils firstAvailableViewControllerFromView:view];
             Class playClass = %c(AWEPlayVideoViewController);
-            if (playClass && [vc isKindOfClass:playClass]) {
+            if (playClass && [vc isKindOfClass:playClass] && ![DYYYChatVideoLayout usesNativePagingForController:vc]) {
                 AWEPlayVideoViewController *playVC = (AWEPlayVideoViewController *)vc;
                 AWEAwemeModel *model = playVC.model;
                 if ([model respondsToSelector:@selector(isShowLandscapeEntryView)] && model.isShowLandscapeEntryView) {
@@ -13773,7 +13778,6 @@ static Class TagViewClass = nil;
 %hook AWEAwemeDetailCellViewController
 - (void)viewDidLayoutSubviews {
     %orig;
-    [DYYYChatVideoLayout layoutCellController:self];
     [DYYYDetailCaptionLayout synchronizePageController:self];
 }
 %end
