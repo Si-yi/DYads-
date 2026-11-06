@@ -3,7 +3,7 @@
 @implementation DYYYMessageListCardView
 + (Class)layerClass { return CAShapeLayer.class; }
 - (instancetype)initWithFrame:(CGRect)frame {
-    if ((self=[super initWithFrame:frame])) { self.userInteractionEnabled=NO; self.accessibilityElementsHidden=YES; self.backgroundColor=UIColor.clearColor; }
+    if ((self=[super initWithFrame:frame])) { self.userInteractionEnabled=NO; self.accessibilityElementsHidden=YES; self.backgroundColor=UIColor.clearColor; self.opaque=NO; }
     return self;
 }
 - (void)setSegment:(NSDictionary *)segment {

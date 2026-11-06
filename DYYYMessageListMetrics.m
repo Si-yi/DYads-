@@ -7,6 +7,13 @@
     BOOL first = [kind isEqual:@"notice"] || ![kind isEqual:previous];
     BOOL last = [kind isEqual:@"notice"] || ![kind isEqual:next];
     double top = first ? 6 : 0, bottom = last ? 6 : 0;
-    return @{@"x":@12,@"y":@(top),@"width":@(width-24),@"height":@(height-top-bottom),@"first":@(first),@"last":@(last),@"radius":@18};
+    return @{@"x":@16,@"y":@(top),@"width":@(width-32),@"height":@(height-top-bottom),@"first":@(first),@"last":@(last),@"radius":@18};
+}
++ (NSDictionary *)contentPlacementForX:(double)x width:(double)width rowWidth:(double)rowWidth trailing:(BOOL)trailing {
+    if (!isfinite(x) || !isfinite(width) || !isfinite(rowWidth) || rowWidth<160 || x<0 || width<=0 || x+width>rowWidth+0.5) return @{};
+    double translation=trailing?-16:16;
+    double visibleWidth=MIN(width,rowWidth-32-x-translation);
+    if (visibleWidth<=0 || x+translation<16) return @{};
+    return @{@"translation":@(translation),@"visibleWidth":@(visibleWidth)};
 }
 @end

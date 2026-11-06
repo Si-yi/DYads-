@@ -22,24 +22,29 @@
 %end
 %group DYYYMessageListCellHooks
 %hook AWEIMChatListCommonCell
-- (void)layoutSubviews { %orig; [DYYYMessageListStyle synchronizeCell:self]; }
+- (void)layoutSubviews { [DYYYMessageListStyle prepareCellLayout:self]; %orig; [DYYYMessageListStyle synchronizeCell:self]; }
 - (void)didMoveToWindow { %orig; if(self.window)[DYYYMessageListStyle synchronizeCell:self];else [DYYYMessageListStyle resetCell:self]; }
 - (void)prepareForReuse { [DYYYMessageListStyle resetCell:self]; %orig; }
 - (void)renderWithHolder:(id)holder { [DYYYMessageListStyle resetCell:self]; %orig(holder); [DYYYMessageListStyle synchronizeCell:self]; }
 %end
 %end
-%group DYYYMessageListCellPaintHooks
-%hook AWEIMChatListCommonCell
-- (UIColor *)chatBackgroundColor {
-    UIColor *native=%orig;
-    return [DYYYMessageListStyle usesCardsForCell:self] ? UIColor.clearColor : native;
-}
-%end
-%end
 %group DYYYMessageListBarHooks
 %hook AWENavigationBar
-- (void)layoutSubviews { %orig; [DYYYMessageListStyle synchronizeBar:self]; }
-- (void)didMoveToWindow { %orig; [DYYYMessageListStyle synchronizeBar:self]; }
+- (void)setBackgroundColor:(UIColor *)color { %orig([DYYYMessageListStyle nativeBackgroundColor:color forBar:self]); }
+- (void)setOpaque:(BOOL)opaque { %orig([DYYYMessageListStyle nativeOpaque:opaque forBar:self]); }
+- (void)layoutSubviews { %orig; [DYYYMessageListStyle synchronizeBar:self]; [DYYYMessageListStyle scheduleBarSynchronization:self]; }
+- (void)didMoveToWindow { %orig; [DYYYMessageListStyle synchronizeBar:self]; [DYYYMessageListStyle scheduleBarSynchronization:self]; }
+%end
+%end
+%group DYYYMessageListBarConfigurationHooks
+%hook AWENavigationBar
+- (void)addRightNaviBarBtnView:(UIView *)view { %orig(view); [DYYYMessageListStyle synchronizeBar:self]; [DYYYMessageListStyle scheduleBarSynchronization:self]; }
+- (void)setRightBtnsContainerView:(UIView *)view { %orig(view); [DYYYMessageListStyle synchronizeBar:self]; [DYYYMessageListStyle scheduleBarSynchronization:self]; }
+%end
+%end
+%group DYYYMessageListCellThemeHooks
+%hook AWEIMChatListCommonCell
+- (void)onThemeDidChanged { %orig; [DYYYMessageListStyle synchronizeCell:self]; }
 %end
 %end
 %ctor {
@@ -53,7 +58,12 @@
     }
     if([cell isSubclassOfClass:UITableViewCell.class] && [DYYYChatEnhancementPolicy class:cell selector:@selector(renderWithHolder:) result:'v' arguments:@"@"]) {
         %init(DYYYMessageListCellHooks);
-        if([DYYYChatEnhancementPolicy class:cell selector:@selector(chatBackgroundColor) result:'@' arguments:@""]) { %init(DYYYMessageListCellPaintHooks); }
+        if([DYYYChatEnhancementPolicy class:cell selector:@selector(onThemeDidChanged) result:'v' arguments:@""]) { %init(DYYYMessageListCellThemeHooks); }
     }
-    if([NSClassFromString(@"AWENavigationBar") isSubclassOfClass:UIView.class]) { %init(DYYYMessageListBarHooks); }
+    Class bar=NSClassFromString(@"AWENavigationBar");
+    if([bar isSubclassOfClass:UIView.class] && [DYYYChatEnhancementPolicy class:bar selector:@selector(rightBtnsContainerView) result:'@' arguments:@""]) {
+        %init(DYYYMessageListBarHooks);
+        if([DYYYChatEnhancementPolicy class:bar selector:@selector(addRightNaviBarBtnView:) result:'v' arguments:@"@"] &&
+           [DYYYChatEnhancementPolicy class:bar selector:@selector(setRightBtnsContainerView:) result:'v' arguments:@"@"]) { %init(DYYYMessageListBarConfigurationHooks); }
+    }
 }

@@ -2566,9 +2566,11 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @end
 @interface AWEIMChatListCommonCell : UITableViewCell
 @property (nonatomic, weak) AWEIMChatCellViewModel *cellViewModel;
+@property (nonatomic, strong) UIView *avatarContainer;
 @property (nonatomic, strong) UIView *horizontalLine;
 - (void)renderWithHolder:(id)holder;
 - (UIColor *)chatBackgroundColor;
+- (void)onThemeDidChanged;
 @end
 @interface TIMXConfig : NSObject
 @property (nonatomic, copy) NSString *uid;
