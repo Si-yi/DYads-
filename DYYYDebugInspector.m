@@ -17,6 +17,7 @@
 #import "DYYYChatInputGlass.h"
 #import "DYYYChatInputList.h"
 #import "DYYYChatChrome.h"
+#import "DYYYMessageListStyle.h"
 #import "DYYYChatTransitionTrace.h"
 #import "DYYYChatVideoLayout.h"
 #import "DYYYGroupChatToolbar.h"
@@ -365,6 +366,7 @@ static NSDictionary *DYYYDebugMetadata(void) {
         @"chatInputGlass": [DYYYChatInputGlass diagnostics],
         @"chatInputList": [DYYYChatInputList diagnostics],
         @"chatChrome": [DYYYChatChrome diagnostics],
+        @"messageListStyle": [DYYYMessageListStyle diagnostics],
         @"chatTransition": [DYYYChatTransitionTrace diagnostics],
         @"chatVideoPaint": [DYYYChatVideoLayout diagnostics],
             @"groupChatToolbar": [DYYYGroupChatToolbar diagnostics],

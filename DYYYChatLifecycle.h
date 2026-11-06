@@ -4,7 +4,11 @@
 @interface DYYYChatLifecycle : NSObject
 @property (nonatomic, readonly) BOOL active;
 @property (nonatomic, readonly) NSUInteger generation;
+@property (nonatomic, readonly) BOOL preparing;
+@property (nonatomic, readonly) BOOL canStyleTop;
+- (void)beginAppearance;
 - (void)resume;
 - (void)suspend;
 - (BOOL)acceptsGeneration:(NSUInteger)generation;
+- (BOOL)acceptsTopGeneration:(NSUInteger)generation;
 @end

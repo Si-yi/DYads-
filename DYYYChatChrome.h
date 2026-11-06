@@ -4,6 +4,9 @@
 + (UIColor *)nativeBackgroundColor:(UIColor *)color forBar:(UIView *)bar;
 + (BOOL)nativeOpaque:(BOOL)opaque forBar:(UIView *)bar;
 + (void)preparePreferences;
++ (void)prepareHost:(UIViewController *)host;
++ (UIVisualEffectView *)glassBackgroundWithIdentifier:(NSString *)identifier;
++ (void)placeGlassBackground:(UIVisualEffectView *)glass frame:(CGRect)frame inView:(UIView *)carrier;
 + (id)beginTopUpdate:(UIView *)view;
 + (void)endTopUpdate:(id)token;
 + (void)synchronizeTopForView:(UIView *)view;

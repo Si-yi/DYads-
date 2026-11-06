@@ -12,6 +12,7 @@
 #import "DYYYChatVideoLayout.h"
 #import "DYYYCommentVideoLayout.h"
 #import "DYYYChatChrome.h"
+#import "DYYYMessageListStyle.h"
 #import "DYYYGroupChatToolbar.h"
 
 #import "DYYYAboutDialogView.h"
@@ -31,6 +32,7 @@
     if ([key isEqualToString:@"DYYYHideAvatarColorRing"]) [DYYYAvatarRing refreshVisibleRings];
     if ([key isEqualToString:@"DYYYHideSameStyleButton"]) [DYYYSameStyleVisibility refreshVisibleViews];
     if ([key isEqualToString:@"DYYYEnableFloatingChatInput"] || [key isEqualToString:@"DYYYEnableChatTopGlass"]) [DYYYChatChrome refreshVisibleViews];
+    if ([key isEqualToString:@"DYYYEnableMessageListCards"] || [key isEqualToString:@"DYYYEnableMessageListTopGlass"]) [DYYYMessageListStyle refresh];
     if ([key isEqualToString:@"DYYYHideGroupToolbar"]) [DYYYGroupChatToolbar refreshVisible];
     if ([key isEqualToString:@"DYYYDisableCommentVideoShrink"]) [DYYYCommentVideoLayout refreshVisiblePlayers];
     if ([key hasPrefix:@"DYYYPlayback"] || [@[@"DYYYHideTemplateVideo", @"DYYYHideTemplatePlaylet"] containsObject:key]) [DYYYPlaybackCatalog refresh];

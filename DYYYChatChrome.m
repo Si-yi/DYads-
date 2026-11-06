@@ -250,6 +250,11 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey, kDYYYChatMaterialKey;
     if (glass.overrideUserInterfaceStyle != style) glass.overrideUserInterfaceStyle = style;
     if (glass.superview != carrier) [carrier insertSubview:glass atIndex:0];
 }
++ (UIVisualEffectView *)glassBackgroundWithIdentifier:(NSString *)identifier { return [self glass:identifier]; }
++ (void)placeGlassBackground:(UIVisualEffectView *)glass frame:(CGRect)frame inView:(UIView *)carrier {
+    UIUserInterfaceStyle style = [DYYYUtils isDarkMode] || carrier.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark ? UIUserInterfaceStyleDark : UIUserInterfaceStyleLight;
+    [self placeGlass:glass frame:frame carrier:carrier style:style];
+}
 + (void)synchronizeTopForView:(UIView *)view {
     AWENavigationBar *bar = [self barForView:view];
     [self synchronizeBar:bar];
@@ -260,16 +265,16 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey, kDYYYChatMaterialKey;
     if (!NSThread.isMainThread) return;
     AWENavigationBar *bar = [self barForView:view];
     DYYYChatTopState *state = [self topState:bar create:NO];
-    if (!state || state.pending || state.suspended || !bar.window || ![self isHostActive:state.host]) return;
+    if (!state || state.pending || state.suspended || !bar.window || ![self canStyleTopForHost:state.host]) return;
     DYYYChatLifecycle *lifecycle = [self lifecycleForHost:state.host create:NO];
     NSUInteger generation = lifecycle.generation;
     state.pending = YES;
     __weak DYYYChatTopState *weakState = state;
     dispatch_async(dispatch_get_main_queue(), ^{
         DYYYChatTopState *current = weakState;
-        if (!current || ![lifecycle acceptsGeneration:generation]) return;
+        if (!current || ![lifecycle acceptsTopGeneration:generation]) return;
         current.pending = NO;
-        if (!current.suspended && [self isHostActive:current.host]) [self synchronizeBar:current.bar];
+        if (!current.suspended && [self canStyleTopForHost:current.host]) [self synchronizeBar:current.bar];
     });
 }
 + (void)synchronizeBar:(UIView *)candidate {
@@ -294,7 +299,7 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey, kDYYYChatMaterialKey;
     // 不在这里排队；外层原生 layout 已安排一次复核，避免未就绪状态自调度循环。
 }
 + (BOOL)interceptsNativePaint:(DYYYChatTopState *)state bar:(UIView *)bar {
-    return NSThread.isMainThread && state.active && !state.busy && !state.suspended && bar.window && [self topEnabled] && [self isHostActive:state.host];
+    return NSThread.isMainThread && state.active && !state.busy && !state.suspended && bar.window && [self topEnabled] && [self canStyleTopForHost:state.host];
 }
 + (UIColor *)nativeBackgroundColor:(UIColor *)color forBar:(UIView *)bar {
     DYYYChatTopState *state = [self topState:(id)bar create:NO];
@@ -317,7 +322,7 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey, kDYYYChatMaterialKey;
     DYYYChatTopState *state = [self topState:bar create:NO];
     if (state.busy || state.depth) return;
     UIViewController *host = [self chatForController:[self controllerForView:bar]];
-    if (host && ![self isHostActive:host]) return;
+    if (host && ![self canStyleTopForHost:host]) return;
     if (![self topEnabled] || state.suspended || !host || !bar.window || ![self visible:bar inRoot:host.viewIfLoaded]) {
         state.lastDecision = @"disabled_or_outside_visible_chat";
         [self restoreTop:state]; return;
@@ -407,13 +412,13 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey, kDYYYChatMaterialKey;
         [self centerBackGlyph:back state:state style:style];
         state.lastDecision = hasActions ? @"applied" : @"applied_waiting_actions";
         state.backFrame = backRect; state.rightFrame = rightRect; state.active = YES;
-        if (notifyList) [DYYYChatInputList synchronizeHost:(id)host topActive:YES];
+        if (notifyList && [self isHostActive:host]) [DYYYChatInputList synchronizeHost:(id)host topActive:YES];
     } @finally { state.busy = NO; }
 }
 + (id)beginTopUpdate:(UIView *)view {
     if (!NSThread.isMainThread) return nil;
     AWENavigationBar *bar = [self barForView:view];
-    if (!bar || ![self isHostActive:[self chatForController:[self controllerForView:bar]]]) return nil;
+    if (!bar || ![self canStyleTopForHost:[self chatForController:[self controllerForView:bar]]]) return nil;
     DYYYChatTopState *state = [self topState:bar create:NO];
     if (!state && [self topEnabled] && [self chatForController:[self controllerForView:bar]]) state = [self topState:bar create:YES];
     if (!state || state.busy) return nil;
@@ -581,6 +586,27 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey, kDYYYChatMaterialKey;
     }
     return lifecycle;
 }
++ (BOOL)canStyleTopForHost:(UIViewController *)host {
+    if (!NSThread.isMainThread || !host || ![self lifecycleForHost:host create:NO].canStyleTop || !host.isViewLoaded) return NO;
+    if ([self lifecycleForHost:host create:NO].active) return [self isHostActive:host];
+    if (host.navigationController.topViewController && host.navigationController.topViewController != host) return NO;
+    UIViewController *ancestor = host;
+    for (NSUInteger depth = 0; ancestor && depth < 16; depth++, ancestor = ancestor.parentViewController)
+        if (ancestor.presentedViewController && !ancestor.presentedViewController.isBeingDismissed) return NO;
+    return YES;
+}
++ (void)prepareHost:(UIViewController *)host {
+    if (!NSThread.isMainThread || [self chatForController:host] != host) return;
+    DYYYChatLifecycle *lifecycle = [self lifecycleForHost:host create:YES];
+    NSUInteger previous = lifecycle.generation;
+    [lifecycle beginAppearance];
+    for (UIView *view in host.viewIfLoaded.subviews) if ([view isKindOfClass:NSClassFromString(@"AWENavigationBar")]) {
+        DYYYChatTopState *state = [self topState:(id)view create:[self topEnabled]];
+        if (lifecycle.generation != previous) state.pending = NO;
+        state.suspended = NO;
+        [self synchronizeBar:view];
+    }
+}
 + (BOOL)isHostActive:(UIViewController *)host {
     if (!NSThread.isMainThread || !host || ![self lifecycleForHost:host create:NO].active ||
         !host.viewIfLoaded.window || host.viewIfLoaded.hidden || host.viewIfLoaded.alpha <= 0.01) return NO;
@@ -595,8 +621,11 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey, kDYYYChatMaterialKey;
 + (void)resumeHost:(UIViewController *)host {
     if (!NSThread.isMainThread || [self chatForController:host] != host) return;
     [[self lifecycleForHost:host create:YES] resume];
-    for (DYYYChatTopState *state in [self topStates].allObjects) if (state.host == host) state.suspended = NO;
+    for (DYYYChatTopState *state in [self topStates].allObjects) if (state.host == host) { state.suspended = NO; state.pending = NO; }
     [self synchronizeHost:host];
+    BOOL topActive = NO;
+    for (DYYYChatTopState *state in [self topStates].allObjects) if (state.host == host && state.active) topActive = YES;
+    [DYYYChatInputList synchronizeHost:host topActive:topActive];
 }
 + (void)synchronizeHost:(UIViewController *)host {
     if (!NSThread.isMainThread || [self chatForController:host] != host || ![self isHostActive:host]) return;

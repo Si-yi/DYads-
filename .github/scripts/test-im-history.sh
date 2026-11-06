@@ -72,3 +72,6 @@ xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
 xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
     DYYYVideoPageMetrics.m Tests/DYYYVideoPageMetricsTests.m -o "$test_dir/video-page-metrics-tests"
 "$test_dir/video-page-metrics-tests"
+xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
+    DYYYMessageListMetrics.m Tests/DYYYMessageListMetricsTests.m -o "$test_dir/message-list-metrics-tests"
+"$test_dir/message-list-metrics-tests"

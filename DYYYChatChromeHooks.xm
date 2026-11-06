@@ -122,6 +122,11 @@
 %end
 %group DYYYChatChromeHostHooks
 %hook AWEIMMessageBaseViewController
+- (void)viewWillAppear:(BOOL)animated {
+    [DYYYChatChrome prepareHost:self];
+    %orig(animated);
+    [DYYYChatChrome prepareHost:self];
+}
 - (void)viewWillDisappear:(BOOL)animated {
     [DYYYChatTransitionTrace watchController:self phase:@"chat_will_disappear"];
     // 先封住聊天自己的排队任务，再让原生启动视频/导航过渡。

@@ -1773,6 +1773,9 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
 
       NSMutableArray *sections = [NSMutableArray array];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"透明度设置" items:transparencyItems]];
+      [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"消息列表" items:@[
+          [DYYYSettingsHelper createSettingItem:@{@"identifier":@"DYYYEnableMessageListCards",@"title":@"消息列表分组卡片",@"subTitle":@"互动消息、置顶会话、普通会话分别显示为完整圆角面板",@"cellType":@37,@"imageName":@"ic_comment_outlined_20"}]
+      ]]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"缩放与大小" items:scaleItems]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"标题自定义" items:titleItems]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"图标自定义" items:iconItems]];
@@ -1884,6 +1887,7 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
       [glassTabBarItems addObject:[DYYYSettingsHelper createSettingItem:@{ @"identifier": @"DYYYEnableChatTopGlass", @"title": @"消息页顶栏玻璃", @"subTitle": @"聊天返回键与右侧按钮使用玻璃样式", @"detail": @"", @"cellType": @37, @"imageName": @"ic_module_outlined_20" }]];
 
 
+      [glassTabBarItems addObject:[DYYYSettingsHelper createSettingItem:@{@"identifier":@"DYYYEnableMessageListTopGlass",@"title":@"消息列表顶栏玻璃",@"subTitle":@"消息页菜单、搜索和加号使用悬浮玻璃",@"cellType":@37,@"imageName":@"ic_module_outlined_20"}]];
       NSArray *sections = @[[DYYYSettingsHelper createSectionWithTitle:@"液态玻璃" items:glassTabBarItems]];
       DYYYRegisterSearchSections(@"液态玻璃", sections);
       if (DYYYBuildingSettingsSearchIndex) return;

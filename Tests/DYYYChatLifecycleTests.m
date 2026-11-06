@@ -5,11 +5,17 @@ int main(void) {
     @autoreleasepool {
         DYYYChatLifecycle *chat = [DYYYChatLifecycle new];
         NSCAssert(!chat.active && ![chat acceptsGeneration:chat.generation], @"尚未显示的聊天不能启动玻璃布局");
+        [chat beginAppearance]; NSUInteger preparation = chat.generation;
+        NSCAssert(chat.canStyleTop && [chat acceptsTopGeneration:preparation], @"首帧前可准备顶栏绘制");
+        NSCAssert(!chat.active && ![chat acceptsGeneration:preparation], @"提前绘制不能启动列表或输入框布局");
+        [chat beginAppearance];
+        NSCAssert(chat.generation == preparation, @"同次willAppear前后复核幂等");
         [chat resume];
         NSUInteger queuedLayout = chat.generation;
         NSCAssert([chat acceptsGeneration:queuedLayout], @"当前聊天允许一次自然布局任务");
         [chat suspend]; // 点开群视频，导航 visibleViewController 仍可能是聊天。
         NSCAssert(![chat acceptsGeneration:queuedLayout], @"离页前已排队的修复不能重新激活聊天");
+        NSCAssert(!chat.canStyleTop && ![chat acceptsTopGeneration:preparation], @"离页同时关闭提前绘制与旧任务");
         NSCAssert(![chat acceptsGeneration:chat.generation], @"播放视频时新布局也不能启动");
         [chat resume]; // 返回或取消交互式跳转后真实 viewDidAppear。
         NSCAssert(![chat acceptsGeneration:queuedLayout], @"返回后旧任务仍失效");
