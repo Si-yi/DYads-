@@ -29,6 +29,8 @@
     [self check:[[self read:reopened account:@"a" message:@"local" server:@"123"][@"content"][@"text"] isEqual:@"original"] reason:@"重开留存库仍有真实原内容"];
     NSURL *image=[base URLByAppendingPathComponent:@"original-file-without-extension"];
     NSData *png=[[NSData alloc]initWithBase64EncodedString:@"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=" options:0];[png writeToURL:image atomically:YES];
+    NSMutableDictionary *mediaRecord=[record mutableCopy];mediaRecord[@"pathMap"]=@{@"native-file-id":image.path};
+    [self save:mediaRecord store:store];[self save:record store:store];
     dispatch_semaphore_t semaphore=dispatch_semaphore_create(0);__block NSDictionary *media;
     [store copyMediaAtPath:image.path record:record completion:^(NSDictionary *result,NSString *error){media=result;dispatch_semaphore_signal(semaphore);}];[self wait:semaphore];
     [self check:media!=nil && ![media[@"path"] isEqual:image.path] reason:@"真实图片单独复制，原缓存无扩展名仍可识别"];
@@ -36,6 +38,7 @@
     [self check:[[NSData dataWithContentsOfFile:media[@"path"]] isEqual:png] reason:@"删除抖音原缓存后独立媒体副本仍完整存在"];
     saved=[self read:reopened account:@"a" message:@"local" server:@"123"];
     [self check:[saved[@"media"] count]==1 reason:@"重开后恢复真实存在的媒体映射"];
+    [self check:[saved[@"pathMap"][@"native-file-id"] isEqual:image.path] reason:@"SDK普通更新和重开不丢失原生文件标识，可用于原路径清空后的恢复"];
     NSURL *fake=[base URLByAppendingPathComponent:@"not-real-image.jpg"];[@"not an image" writeToURL:fake atomically:YES encoding:NSUTF8StringEncoding error:nil];media=nil;semaphore=dispatch_semaphore_create(0);
     [store copyMediaAtPath:fake.path record:record completion:^(NSDictionary *result,NSString *error){media=result;dispatch_semaphore_signal(semaphore);}];[self wait:semaphore];[self check:!media reason:@"仅有图片扩展名或无法解码不能谎报保存成功"];
     semaphore=dispatch_semaphore_create(0);__block BOOL cleared=NO;

@@ -109,6 +109,7 @@
         }
         if (!old && count >= 5000) { if (completion) completion(nil, @"本账号已达5000条留存上限，原记录保留"); return; }
         [saved removeObjectForKey:@"media"];
+        if([record[@"pathMap"] isKindOfClass:NSDictionary.class] && [record[@"pathMap"] count]<=8)saved[@"pathMap"]=record[@"pathMap"];
         NSData *data = [NSJSONSerialization dataWithJSONObject:saved options:0 error:nil];
         if (!data.length || data.length > 300 * 1024 || sqlite3_prepare_v2(self.database, "INSERT INTO records(key,account,conversation,message,server,recalled,payload) VALUES(?,?,?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET server=excluded.server,recalled=excluded.recalled,payload=excluded.payload", -1, &statement, NULL) != SQLITE_OK) {
             if (completion) completion(nil, @"留存写入准备失败"); return;

@@ -26,6 +26,7 @@
 @interface DYYYRecallUIReference : NSObject
 @property (atomic, copy) NSString *account;
 @property (atomic, copy) NSDictionary *media;
+@property (atomic, copy) NSDictionary *pathMap;
 @end
 @implementation DYYYRecallUIReference @end
 
@@ -261,7 +262,7 @@
             NSNumber *value=[self number:message selector:name];NSString *setter=[NSString stringWithFormat:@"set%@%@:",[[name substringToIndex:1] uppercaseString],[name substringFromIndex:1]];
             if(value && [DYYYChatEnhancementPolicy class:cls selector:NSSelectorFromString(setter) result:'v' arguments:@"q"])((void(*)(id,SEL,long long))objc_msgSend)(clone,NSSelectorFromString(setter),value.longLongValue);
         }
-        DYYYRecallUIReference *reference=[DYYYRecallUIReference new]; reference.account=account; reference.media=record[@"media"];
+        DYYYRecallUIReference *reference=[DYYYRecallUIReference new]; reference.account=account; reference.media=record[@"media"];reference.pathMap=record[@"pathMap"];
         objc_setAssociatedObject(clone,@selector(mediaPathForUIMessage:original:),reference,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         [[self shared].uiReferences addObject:reference];
         return clone;
@@ -291,7 +292,7 @@
     if(cached)binding.record=cached;
     DYYYRecallUIReference *reference=objc_getAssociatedObject(ui,@selector(mediaPathForUIMessage:original:));
     if(!reference){reference=[DYYYRecallUIReference new];objc_setAssociatedObject(ui,@selector(mediaPathForUIMessage:original:),reference,OBJC_ASSOCIATION_RETAIN_NONATOMIC);[[self shared].uiReferences addObject:reference];}
-    reference.account=account;reference.media=cached[@"media"];
+    reference.account=account;reference.media=cached[@"media"];reference.pathMap=cached[@"pathMap"];
     [self refreshCell:cell];
     if(binding.requested)return;binding.requested=YES;
     NSDictionary *content=[DYYYRecallPolicy contentSnapshot:[self object:ui selector:@"getContentDict"]]?:[DYYYRecallPolicy contentSnapshot:[self object:ui selector:@"rawContentDict"]];
@@ -301,13 +302,21 @@
     if(content && !notice){record[@"content"]=content;record[@"uiClass"]=className;}
     if(cached[@"recalledAt"])record[@"recalledAt"]=cached[@"recalledAt"];
     else if(notice)record[@"recalledAt"]=@(NSDate.date.timeIntervalSince1970);
+    id paths=[self object:ui selector:@"awe_filePathDictionary"];
+    NSMutableDictionary *pathMap=[NSMutableDictionary dictionary];
+    if([paths isKindOfClass:NSDictionary.class])for(id key in paths){
+        id value=paths[key];
+        if([key isKindOfClass:NSString.class] && [key length]<=512 && [value isKindOfClass:NSString.class] && [value length]<=4096 && pathMap.count<8)pathMap[key]=value;
+    }
+    if([cached[@"pathMap"] isKindOfClass:NSDictionary.class] && [cached[@"pathMap"] count])record[@"pathMap"]=cached[@"pathMap"];
+    else if(pathMap.count)record[@"pathMap"]=pathMap;
+    reference.pathMap=record[@"pathMap"];
     NSUInteger generation=[self shared].generation;
     [self persist:record state:nil generation:generation];
     if(!cached)[[self shared].store recordForAccount:account conversation:cid message:mid server:server completion:^(NSDictionary *stored){
         if(generation!=[self shared].generation || !stored)return;[self cacheRecord:stored];
         dispatch_async(dispatch_get_main_queue(),^{if(objc_getAssociatedObject(cell,@selector(captureCell:))==binding){binding.record=stored;[self refreshCell:cell];}});
     }];
-    id paths=[self object:ui selector:@"awe_filePathDictionary"];
     NSMutableArray *candidates=[NSMutableArray array];
     NSString *path=[self identifier:[self object:ui selector:@"filePath"]];if(path)[candidates addObject:path];
     if([paths isKindOfClass:NSDictionary.class])for(id value in [paths allValues]){if([value isKindOfClass:NSString.class] && candidates.count<8)[candidates addObject:value];}
@@ -320,7 +329,7 @@
             [self shared].status=@"已另存实际媒体文件副本";
             [[self shared].store recordForAccount:account conversation:cid message:mid server:server completion:^(NSDictionary *saved){
                 if(generation!=[self shared].generation || !saved)return;
-                [self cacheRecord:saved];reference.media=saved[@"media"];
+                [self cacheRecord:saved];reference.media=saved[@"media"];reference.pathMap=saved[@"pathMap"];
             }];
         }
         else if(error.length)[self shared].status=error;
@@ -350,17 +359,34 @@
     [cell.contentView bringSubviewToFront:binding.label];
 }
 + (id)mediaPathForUIMessage:(id)message original:(id)original {
-    if(![self enabled] || ![original isKindOfClass:NSString.class])return original;
+    if(![self enabled])return original;
     DYYYRecallUIReference *reference=objc_getAssociatedObject(message,@selector(mediaPathForUIMessage:original:));
     if(![reference.account isEqual:[self shared].account])return original;
-    NSString *saved=reference.media[[original stringByStandardizingPath]];
-    return [saved isKindOfClass:NSString.class]?saved:original;
+    if([original isKindOfClass:NSString.class] && [original length]){
+        NSString *saved=reference.media[[original stringByStandardizingPath]];
+        return [saved isKindOfClass:NSString.class]?saved:original;
+    }
+    // 原生已清掉路径时，只在已确认的消息种类中选唯一匹配的真实副本，不把视频封面当视频。
+    NSString *type=NSStringFromClass(object_getClass(message));NSArray *extensions=nil;
+    if([type containsString:@"ImageMessage"])extensions=@[@"jpg",@"jpeg",@"png",@"gif",@"webp",@"heic"];
+    else if([type containsString:@"AudioMessage"])extensions=@[@"m4a",@"mp3",@"aac",@"amr",@"wav",@"caf"];
+    else if([type containsString:@"VideoMessage"])extensions=@[@"mp4",@"mov"];
+    NSString *only=nil;
+    for(NSString *path in reference.media.allValues)if([extensions containsObject:path.pathExtension.lowercaseString]){if(only && ![only isEqual:path])return original;only=path;}
+    return only?:original;
 }
 + (id)mediaPathsForUIMessage:(id)message original:(id)original {
-    if(![self enabled] || ![original isKindOfClass:NSDictionary.class])return original;
+    if(![self enabled] || (original && ![original isKindOfClass:NSDictionary.class]))return original;
+    DYYYRecallUIReference *reference=objc_getAssociatedObject(message,@selector(mediaPathForUIMessage:original:));
+    if(![reference.account isEqual:[self shared].account])return original;
     NSMutableDictionary *result=nil;
     for(id key in original){id value=original[key];id saved=[self mediaPathForUIMessage:message original:value];if(saved!=value){if(!result)result=[original mutableCopy];result[key]=saved;}}
-    return result?:original;
+    // 仅恢复原生曾提供过的fileID到路径映射；没有原生键名时保持未知，不编造文件标识。
+    for(NSString *key in reference.pathMap){
+        NSString *source=reference.pathMap[key];NSString *saved=reference.media[source.stringByStandardizingPath];
+        if(saved && !original[key]){if(!result)result=[original mutableCopy]?:[NSMutableDictionary dictionary];result[key]=saved;}
+    }
+    return result.count?result:original;
 }
 + (void)mediaDownloadCompleted:(id)model {
     if(![self enabled])return;
