@@ -138,14 +138,28 @@
         if(!supported || !CGAffineTransformIsIdentity(native)){[self restoreInsets:state];return;}
         [components addObject:view];
     }
+    NSMutableArray *placements=[NSMutableArray array];
     for(UIView *view in components){
         NSDictionary *old=[state.translations objectForKey:view];
         if(old && !CGAffineTransformEqualToTransform(view.transform,[old[@"applied"] CGAffineTransformValue])){[state.translations removeObjectForKey:view];old=nil;}
         // UIView 的 center/bounds 不随 transform 平移；由这两者取得原生矩形，不能再次扣 tx。
         CGRect rect=CGRectMake(view.center.x-view.bounds.size.width/2,view.center.y-view.bounds.size.height/2,view.bounds.size.width,view.bounds.size.height);
-        BOOL trailing=view!=avatar && rect.origin.x>=cell.bounds.size.width*0.6;
-        NSDictionary *plan=[DYYYMessageListMetrics contentPlacementForX:rect.origin.x width:rect.size.width rowWidth:cell.bounds.size.width trailing:trailing];
-        if(!plan.count)continue;
+        BOOL trailing=view!=avatar && ![view isKindOfClass:NSClassFromString(@"AWEIMConsecutiveChatDaysWrapper")] && rect.origin.x>=cell.bounds.size.width*0.6;
+        CGFloat rightLimit=cell.bounds.size.width-16;
+        if(!trailing)for(UIView *other in components){
+            if(other==view || other==avatar || [other isKindOfClass:NSClassFromString(@"AWEIMConsecutiveChatDaysWrapper")])continue;
+            CGRect tail=CGRectMake(other.center.x-other.bounds.size.width/2,other.center.y-other.bounds.size.height/2,other.bounds.size.width,other.bounds.size.height);
+            if(tail.origin.x<cell.bounds.size.width*0.6 || CGRectGetMaxY(tail)<=CGRectGetMinY(rect) || CGRectGetMinY(tail)>=CGRectGetMaxY(rect))continue;
+            CGFloat gap=MAX(0,MIN(12,tail.origin.x-CGRectGetMaxX(rect)));
+            rightLimit=MIN(rightLimit,tail.origin.x-gap);
+        }
+        NSDictionary *plan=[DYYYMessageListMetrics contentPlacementForX:rect.origin.x width:rect.size.width rowWidth:cell.bounds.size.width trailing:trailing nativeRightLimit:rightLimit];
+        if(!plan.count || (!trailing && [plan[@"visibleWidth"] doubleValue]<rect.size.width && ![view isKindOfClass:NSClassFromString(@"IESIMAsyncDrawableView")])){[self restoreInsets:state];return;}
+        [placements addObject:@{@"view":view,@"plan":plan}];
+    }
+    for(NSDictionary *placement in placements){
+        UIView *view=placement[@"view"];NSDictionary *plan=placement[@"plan"];
+        NSDictionary *old=[state.translations objectForKey:view];
         CGAffineTransform native=old?[old[@"native"] CGAffineTransformValue]:view.transform;
         CGAffineTransform applied=CGAffineTransformTranslate(native,[plan[@"translation"] doubleValue],0);
         if(!CGAffineTransformEqualToTransform(view.transform,applied))view.transform=applied;
