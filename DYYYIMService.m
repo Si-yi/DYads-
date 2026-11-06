@@ -4,7 +4,6 @@
 #import "DYYYIMShareParser.h"
 #import "DYYYIMConversationStore.h"
 #import "DYYYIMSendLedger.h"
-#import "DYYYUnreadExpiry.h"
 
 @interface DYYYIMService ()
 @property (nonatomic, strong) NSMapTable *services;
@@ -176,11 +175,6 @@
                 completion(@[], @[], @"扫描时登录账户已变化，请重新扫描");
                 return;
             }
-            for (NSUInteger index = 0; index < queries.count; index++) {
-                unsigned long long count = [(TIMXOConversation *)requests[index][@"conversation"] unreadCount];
-                queries[index][@"unreadAfterScan"] = @(count);
-                queries[index][@"unreadChangedDuringScan"] = @(count != [requests[index][@"unread"] unsignedLongLongValue]);
-            }
             state[@"queries"] = queries;
             state[@"failedConversationCount"] = @(failed);
             state[@"sharedVideoCount"] = @([NSSet setWithArray:[rows valueForKey:@"itemID"]].count);
@@ -222,9 +216,6 @@
     NSHashTable *instances = s.instances[role];
     if (!instances) { instances = [NSHashTable weakObjectsHashTable]; s.instances[role] = instances; }
     [instances addObject:service];
-#if !DYYY_UNREAD_EXPERIMENTS_SUSPENDED
-    [DYYYUnreadExpiry servicesChanged];
-#endif
 }
 
 + (id)serviceForRole:(NSString *)role root:(id)root {

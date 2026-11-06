@@ -37,9 +37,8 @@ include $(THEOS)/makefiles/common.mk
 TWEAK_NAME = DYads-
 
 DYads-_FILES = DYYY.xm DYYYFloatClearButton.xm DYYYFloatSpeedButton.m DYYYSettings.xm DYYYAutoMessageHooks.xm DYYYABTestHook.xm DYYYLongPressPanel.xm DYYYGlassTabBar.xm DYYYProfileClean.xm DYYYPlusIcon.m DKTabBarIcons.m DKTabBarIconDraw.m DKIconCropper.m DYYYSettingsHelper.m DYYYAutoMessage.m DYYYAutoMessagePanel.m DYYYBackupTools.m DYYYDebugInspector.m DKDebugCapture.m DKClassDump.m DKZipWriter.m DYYYImagePickerDelegate.m DYYYBackupPickerDelegate.m DYYYBottomAlertView.m DYYYCustomInputView.m DYYYOptionsSelectionView.m DYYYIconOptionsDialogView.m DYYYAboutDialogView.m DYYYKeywordListView.m DYYYFilterSettingsView.m DYYYConfirmCloseView.m DYYYToast.m DYYYManager.m DYYYUtils.m CityManager.m AWMSafeDispatchTimer.m
-DYads-_FILES += DYYYUnreadExpiry.m DYYYUnreadExpiryPolicy.m DYYYUnreadReadLearning.m DYYYUnreadExpiryHooks.xm
-DYads-_FILES += DYYYUnreadProbe.m DYYYUnreadProbeHooks.xm
 DYads-_FILES += DYYYRecallMarkerMetrics.m DYYYRecallPolicy.m DYYYRecallStore.m DYYYRecallCoordinator.m DYYYRecallHooks.xm
+DYads-_FILES += DYYYChatLifecycle.m DYYYChatTransitionTrace.m
 DYads-_FILES += DYYYChatEnhancements.m DYYYChatEnhancementPolicy.m DYYYChatEnhancementHooks.xm
 DYads-_FILES += DYYYHomeDailyFilter.m DYYYHomeDailyFilterHooks.xm
 DYads-_FILES += DYYYAutoMessageEditor.m DYYYAutoMessageQuietHoursPanel.m DYYYAutoMessageBatch.m
@@ -59,7 +58,7 @@ DYads-_FILES += DYYYChatChrome.m DYYYChatChromeHooks.xm
 DYads-_FILES += DYYYCommentVideoLayout.m DYYYCommentVideoHooks.xm
 DYads-_FILES += DYYYChatInputGlass.m DYYYChatInputGlassHooks.xm DYYYChatInputList.m DYYYChatInputMetrics.m
 DYads-_FILES += DYYYFeedTagGlass.m DYYYAvatarRing.m DYYYSameStyleVisibility.m DYYYFeedDecorationsHooks.xm
-DYads-_CFLAGS = -fobjc-arc -w -DDYYY_UNREAD_EXPERIMENTS_SUSPENDED=1
+DYads-_CFLAGS = -fobjc-arc -w
 ifeq ($(GITHUB_ACTIONS),true)
 DYads-_CFLAGS += -DDYYY_REQUIRE_GLASS_TAB_BAR=1
 endif

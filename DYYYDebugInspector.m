@@ -10,8 +10,6 @@
 #import "DYYYFriendShareService.h"
 #import "DYYYAvatarRing.h"
 #import "DYYYHomeDailyFilter.h"
-#import "DYYYUnreadProbe.h"
-#import "DYYYUnreadExpiry.h"
 #import "DYYYChatEnhancements.h"
 #import "DYYYRecallCoordinator.h"
 #import "DYYYFriendShareBadgeView.h"
@@ -19,6 +17,7 @@
 #import "DYYYChatInputGlass.h"
 #import "DYYYChatInputList.h"
 #import "DYYYChatChrome.h"
+#import "DYYYChatTransitionTrace.h"
 #import "DYYYGroupChatToolbar.h"
 #import "DYYYCommentVideoLayout.h"
 #import "DKDebugCapture.h"
@@ -358,8 +357,6 @@ static NSDictionary *DYYYDebugMetadata(void) {
         @"panelBlur": [DYYYPanelBlur diagnostics],
         @"avatarRing": [DYYYAvatarRing diagnostics],
         @"homeDailyFilter": [DYYYHomeDailyFilter diagnostics],
-        @"unreadProbe": [DYYYUnreadProbe diagnostics],
-        @"unreadExpiry": [DYYYUnreadExpiry diagnostics],
         @"chatEnhancements": [DYYYChatEnhancements diagnostics],
         @"messageRecall": [DYYYRecallCoordinator diagnostics],
         @"friendShareBadgeLayout": [DYYYFriendShareBadgeView diagnostics],
@@ -367,6 +364,7 @@ static NSDictionary *DYYYDebugMetadata(void) {
         @"chatInputGlass": [DYYYChatInputGlass diagnostics],
         @"chatInputList": [DYYYChatInputList diagnostics],
         @"chatChrome": [DYYYChatChrome diagnostics],
+        @"chatTransition": [DYYYChatTransitionTrace diagnostics],
             @"groupChatToolbar": [DYYYGroupChatToolbar diagnostics],
         @"commentVideoLayout": [DYYYCommentVideoLayout diagnostics],
         @"loadedPluginImages": pluginImages,
@@ -433,16 +431,14 @@ static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *wi
             @"AWEIMMessageListViewController", @"AWEIMReusableCommonCell", @"AWEIMMessageComponentContext", @"IESIMInputViewController",
             @"AWEIMInputStateManager", @"AWEIMActiveUserUploader", @"AWEIMAudioMessageTranslateManager", @"AWEIMAudioMessage", @"AWEIMEncryptAudioMessageV2",
             @"AWEIMWatchOnceMessageManager", @"AWEIMWatchOnceDataManager", @"AWEIMWatchOnceImageMessage", @"AWEIMWatchOnceVideoMessage",
-            @"AWEIMMessageViewModel", @"TIMXOModel", @"TIMXMessageMarkAsReadOperator", @"TIMXOMessageReadReceiptFlushDataManager",
-            @"AWEIMChatCellViewModel", @"AWEIMChatListControllerViewModel", @"AWEIMChatListHintProviderComponentBase",
-            @"AWEIMBaseUnreadMessagesConsumer", @"AWEIMChatListCommonCell", @"DUXBadge", @"AWENormalModeTabBarBadgeContainerView",
+            @"AWEIMMessageViewModel", @"TIMXOModel",
+            @"AWEIMChatCellViewModel", @"AWEIMChatListControllerViewModel",
             @"AWEIMMessageListNaviBarChatDetailComponent", @"AWEIMMessageListNaviBarGroupZoneToggleComponent",
             @"AWEIMGroupZoneConversationComponent", @"AWEIMComponentManager",
             @"AWEIMFeedVideoCachePool", @"AWEIMUserDBManager", @"AWEIMUserManager", @"AWEIMSDKManager", @"AWEIMService",
             @"TIMXOSendMessage", @"TIMXSenderMessageTemplate", @"TIMXOMessageManager",
             @"TIMXOConversationManager", @"TIMXOConversation", @"TIMXOMessage", @"TIMXOUser",
-            @"TIMXMessageReadManager", @"TIMXOConversationAuditUnreadManager", @"AWEIMMessageReadIndexComponent",
-            @"IESIMSendMessageModel", @"IESIMMessageSender", @"IESIMConversationDataManager",
+            @"IESIMSendMessageModel", @"IESIMMessageSender",
             @"IESIMService", @"AWEUserModel", @"AWEUser", @"AWEAwemeModel",
             @"HTSService", @"HTSServiceCenter", @"TIMXSDKInstance", @"TIMXContext", @"TIMXConfig", @"TIMXSingletonsPage", @"AWEIMUser", @"IMUser", @"AWEURLModel",
             @"AWEHotListDataController", @"AWEListDataController", @"AWEFeedTableViewController",
@@ -454,18 +450,10 @@ static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *wi
         for (NSString *name in priority) {
             if (NSClassFromString(name)) [names addObject:name]; else [missing addObject:name];
         }
-        // 实际原生调用里出现的类型优先，不能继续被字母序排在前的广告/音频类挤出。
-        for (NSString *name in [DYYYUnreadProbe observedClassNames]) {
-            if (names.count >= 72) break;
-            if (![name hasPrefix:@"AWEIM"] && ![name hasPrefix:@"TIMX"] && ![name hasPrefix:@"IESIM"]) continue;
-            if (NSClassFromString(name)) [names addObject:name];
-        }
-        NSArray *unreadPriority = names.array.copy;
         unsigned int classCount = 0;
         Class *classes = objc_copyClassList(&classCount);
         NSMutableArray<NSString *> *candidates = [NSMutableArray array];
         NSMutableArray<NSString *> *mediaCandidates = [NSMutableArray array];
-        NSMutableArray<NSString *> *unreadCandidates = [NSMutableArray array];
         NSMutableArray<NSString *> *detailCandidates = [NSMutableArray array];
         NSArray<NSString *> *terms = @[@"message", @"conversation", @"contact", @"user", @"sender", @"sdk", @"session", @"account"];
         for (unsigned int index = 0; index < classCount; index++) {
@@ -478,10 +466,6 @@ static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *wi
             }
             if (![name hasPrefix:@"TIMX"] && ![name hasPrefix:@"IESIM"] && ![name hasPrefix:@"AWEIM"]) continue;
             if (DKClassNameIsRuntimeGenerated(name)) continue;
-            NSString *probeName = name.lowercaseString;
-            if ([probeName containsString:@"unread"] || [probeName containsString:@"readindex"] ||
-                [probeName containsString:@"readcursor"] || [probeName containsString:@"conversationcore"] ||
-                [probeName containsString:@"chatlisthint"]) [unreadCandidates addObject:name];
             if ([name containsString:@"View"] || [name containsString:@"Controller"] || [name containsString:@"Cell"]) continue;
             NSString *lower = name.lowercaseString;
             if ([lower containsString:@"image"] || [lower containsString:@"photo"] || [lower containsString:@"picture"] || [lower containsString:@"upload"])
@@ -491,23 +475,6 @@ static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *wi
             }
         }
         free(classes);
-        [unreadCandidates sortUsingSelector:@selector(compare:)];
-        NSUInteger unreadAdded = 0;
-        for (NSString *name in unreadCandidates) {
-            if ([names containsObject:name]) continue;
-            if (unreadAdded >= 32 || names.count >= 112) break;
-            [names addObject:name]; unreadAdded++;
-        }
-        // 补已选中未读模型的原生父类声明，最多两级，不执行实例方法。
-        for (NSString *name in names.array.copy) {
-            Class parent = class_getSuperclass(NSClassFromString(name));
-            for (NSUInteger depth = 0; parent && depth < 2 && names.count < 128; depth++) {
-                NSString *parentName = NSStringFromClass(parent);
-                if (![parentName hasPrefix:@"AWEIM"] && ![parentName hasPrefix:@"TIMX"] && ![parentName hasPrefix:@"IESIM"]) break;
-                [names addObject:parentName]; parent = class_getSuperclass(parent);
-            }
-        }
-        NSArray *unreadCollected = names.array.copy;
         [detailCandidates sortUsingSelector:@selector(compare:)];
         for (NSString *name in detailCandidates) {
             if (names.count >= 140) break;
@@ -542,13 +509,10 @@ static void DYYYDebugExportCurrentPage(UIViewController *presenter, UIWindow *wi
         writeJSON(@"im-interfaces/index.json", @{ @"formatVersion":@1, @"classes":written,
             @"missingPriorityClasses":missing, @"unavailableClasses":unavailable,
             @"matchingClassCount":@(matchingCount), @"classLimit":@160,
-            @"unreadPriorityClasses":unreadPriority, @"unreadCollectedClasses":unreadCollected,
-            @"unreadMatchingClassCount":@(unreadCandidates.count), @"unreadAddedClassCount":@(unreadAdded),
             @"collection":@"runtime-declarations-only" });
         NSMutableArray *protocols = [NSMutableArray array];
-        for (NSString *name in @[ @"AWEIMUnreadMessageConsumerPotocol", @"AWEIMUnreadMessagesConsumerDelegate",
-            @"IESIMMessageProtocol", @"IESIMConversationDataManagerProtocol", @"IESIMReusableCell",
-            @"AWEIMMessageReadIndexInterface", @"AWEIMMessageListDataAction", @"AWEIMMessageTableViewAction" ]) {
+        for (NSString *name in @[ @"IESIMMessageProtocol", @"IESIMReusableCell",
+            @"AWEIMMessageListDataAction", @"AWEIMMessageTableViewAction" ]) {
             Protocol *protocol = objc_getProtocol(name.UTF8String);
             if (!protocol) { [protocols addObject:@{ @"name":name, @"available":@NO }]; continue; }
             NSMutableArray *methods = [NSMutableArray array];
@@ -709,7 +673,6 @@ void DYYYDebugInspectorRefreshOverlay(void) {
         dispatch_async(dispatch_get_main_queue(), ^{ DYYYDebugInspectorRefreshOverlay(); });
         return;
     }
-    [DYYYUnreadProbe installHooks];
     if (DYYYDebugOverlayRefreshing) return;
     DYYYDebugOverlayRefreshing = YES;
     @try {

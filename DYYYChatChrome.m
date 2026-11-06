@@ -26,6 +26,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 #import "DYYYChatChrome.h"
+#import "DYYYChatLifecycle.h"
 #import "DYYYUtils.h"
 #import "DYYYChatInputList.h"
 #import "DYYYChatInputGlass.h"
@@ -259,14 +260,16 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey, kDYYYChatMaterialKey;
     if (!NSThread.isMainThread) return;
     AWENavigationBar *bar = [self barForView:view];
     DYYYChatTopState *state = [self topState:bar create:NO];
-    if (!state || state.pending || state.suspended || !bar.window) return;
+    if (!state || state.pending || state.suspended || !bar.window || ![self isHostActive:state.host]) return;
+    DYYYChatLifecycle *lifecycle = [self lifecycleForHost:state.host create:NO];
+    NSUInteger generation = lifecycle.generation;
     state.pending = YES;
     __weak DYYYChatTopState *weakState = state;
     dispatch_async(dispatch_get_main_queue(), ^{
         DYYYChatTopState *current = weakState;
-        if (!current) return;
+        if (!current || ![lifecycle acceptsGeneration:generation]) return;
         current.pending = NO;
-        if (!current.suspended) [self synchronizeBar:current.bar];
+        if (!current.suspended && [self isHostActive:current.host]) [self synchronizeBar:current.bar];
     });
 }
 + (void)synchronizeBar:(UIView *)candidate {
@@ -291,7 +294,7 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey, kDYYYChatMaterialKey;
     // 不在这里排队；外层原生 layout 已安排一次复核，避免未就绪状态自调度循环。
 }
 + (BOOL)interceptsNativePaint:(DYYYChatTopState *)state bar:(UIView *)bar {
-    return NSThread.isMainThread && state.active && !state.busy && !state.suspended && bar.window && [self topEnabled];
+    return NSThread.isMainThread && state.active && !state.busy && !state.suspended && bar.window && [self topEnabled] && [self isHostActive:state.host];
 }
 + (UIColor *)nativeBackgroundColor:(UIColor *)color forBar:(UIView *)bar {
     DYYYChatTopState *state = [self topState:(id)bar create:NO];
@@ -314,6 +317,7 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey, kDYYYChatMaterialKey;
     DYYYChatTopState *state = [self topState:bar create:NO];
     if (state.busy || state.depth) return;
     UIViewController *host = [self chatForController:[self controllerForView:bar]];
+    if (host && ![self isHostActive:host]) return;
     if (![self topEnabled] || state.suspended || !host || !bar.window || ![self visible:bar inRoot:host.viewIfLoaded]) {
         state.lastDecision = @"disabled_or_outside_visible_chat";
         [self restoreTop:state]; return;
@@ -409,7 +413,7 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey, kDYYYChatMaterialKey;
 + (id)beginTopUpdate:(UIView *)view {
     if (!NSThread.isMainThread) return nil;
     AWENavigationBar *bar = [self barForView:view];
-    if (!bar) return nil;
+    if (!bar || ![self isHostActive:[self chatForController:[self controllerForView:bar]]]) return nil;
     DYYYChatTopState *state = [self topState:bar create:NO];
     if (!state && [self topEnabled] && [self chatForController:[self controllerForView:bar]]) state = [self topState:bar create:YES];
     if (!state || state.busy) return nil;
@@ -492,6 +496,7 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey, kDYYYChatMaterialKey;
     for (NSUInteger depth = 0; owner && depth < 10; depth++, owner = owner.parentViewController)
         if (inputClass && [owner isKindOfClass:inputClass]) { input = owner; break; }
     UIViewController *host = [self chatForController:input];
+    if (host && ![self isHostActive:host]) return;
     BOOL shown = panel.window && [self visible:panel inRoot:input.viewIfLoaded] &&
         CGRectGetHeight(CGRectIntersection([panel convertRect:panel.bounds toView:panel.window], panel.window.bounds)) > 1;
     if (![self enabled] || !host || !shown || CGRectGetWidth(panel.bounds) < 200 || CGRectGetHeight(panel.bounds) < 120 ||
@@ -546,7 +551,7 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey, kDYYYChatMaterialKey;
     } @finally { state.busy = NO; }
 }
 + (void)synchronizeInput:(UIViewController *)input {
-    if (!NSThread.isMainThread || !input) return;
+    if (!NSThread.isMainThread || !input || ![self isHostActive:[self chatForController:input]]) return;
     BOOL cached = NO;
     for (DYYYChatPanelState *state in [self panelStates].allObjects) if (state.input == input) {
         [self synchronizePanel:state.panel];
@@ -568,15 +573,37 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey, kDYYYChatMaterialKey;
         if (queue.count + view.subviews.count <= 128) [queue addObjectsFromArray:view.subviews];
     }
 }
-+ (void)synchronizeHost:(UIViewController *)host {
-    if (!NSThread.isMainThread || [self chatForController:host] != host) return;
++ (DYYYChatLifecycle *)lifecycleForHost:(UIViewController *)host create:(BOOL)create {
+    DYYYChatLifecycle *lifecycle = objc_getAssociatedObject(host, @selector(resumeHost:));
+    if (!lifecycle && create && host) {
+        lifecycle = [DYYYChatLifecycle new];
+        objc_setAssociatedObject(host, @selector(resumeHost:), lifecycle, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    return lifecycle;
+}
++ (BOOL)isHostActive:(UIViewController *)host {
+    if (!NSThread.isMainThread || !host || ![self lifecycleForHost:host create:NO].active ||
+        !host.viewIfLoaded.window || host.viewIfLoaded.hidden || host.viewIfLoaded.alpha <= 0.01) return NO;
     UIViewController *visible = host.navigationController.visibleViewController;
-    if (visible && visible != host) return;
+    if (visible && visible != host) return NO;
+    // present 视频时导航 visible 仍是聊天，必须同时验证宿主及容器的 presented 链。
+    UIViewController *ancestor = host;
+    for (NSUInteger depth = 0; ancestor && depth < 16; depth++, ancestor = ancestor.parentViewController)
+        if (ancestor.presentedViewController) return NO;
+    return YES;
+}
++ (void)resumeHost:(UIViewController *)host {
+    if (!NSThread.isMainThread || [self chatForController:host] != host) return;
+    [[self lifecycleForHost:host create:YES] resume];
+    for (DYYYChatTopState *state in [self topStates].allObjects) if (state.host == host) state.suspended = NO;
+    [self synchronizeHost:host];
+}
++ (void)synchronizeHost:(UIViewController *)host {
+    if (!NSThread.isMainThread || [self chatForController:host] != host || ![self isHostActive:host]) return;
     [DYYYGroupChatToolbar synchronizeHost:host];
     for (UIView *view in host.viewIfLoaded.subviews)
         if ([view isKindOfClass:NSClassFromString(@"AWENavigationBar")]) {
             DYYYChatTopState *state = [self topState:(id)view create:[self topEnabled]];
-            state.suspended = NO;
             [self synchronizeBar:view];
             [self scheduleTopSynchronization:view];
         }
@@ -588,7 +615,14 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey, kDYYYChatMaterialKey;
 }
 + (void)restoreHost:(UIViewController *)host {
     if (!NSThread.isMainThread) return;
-    for (DYYYChatTopState *state in [self topStates].allObjects) if (state.host == host && !state.busy) { state.suspended = YES; state.lastDecision = @"host_disappeared"; [self restoreTop:state]; }
+    [[self lifecycleForHost:host create:YES] suspend];
+    [DYYYChatInputList suspendHost:host];
+    for (UIViewController *child in host.childViewControllers)
+        if ([child isKindOfClass:NSClassFromString(@"IESIMInputViewController")]) [DYYYChatInputGlass restoreController:child];
+    for (DYYYChatTopState *state in [self topStates].allObjects) if (state.host == host) {
+        state.suspended = YES; state.pending = NO; state.lastDecision = @"host_disappeared";
+        if (!state.busy) [self restoreTop:state];
+    }
     for (DYYYChatPanelState *state in [self panelStates].allObjects) if (state.host == host && !state.busy) [self restorePanel:state];
 }
 + (void)refreshVisibleViews {
@@ -600,7 +634,7 @@ static char kDYYYChatTopKey, kDYYYChatPanelKey, kDYYYChatMaterialKey;
     if (!NSThread.isMainThread) return @{};
     NSMutableArray *tops = [NSMutableArray array], *panels = [NSMutableArray array];
     for (DYYYChatTopState *state in [self topStates].allObjects) if (state.bar.window)
-        [tops addObject:@{ @"active": @(state.active), @"lastDecision": state.lastDecision ?: @"", @"nativePaintWrites": @(state.nativePaintWrites), @"deferredLayouts": @(state.deferredLayouts), @"pending": @(state.pending), @"back": NSStringFromCGRect(state.backFrame), @"actions": NSStringFromCGRect(state.rightFrame) }];
+        [tops addObject:@{ @"active": @(state.active), @"hostActive": @([self isHostActive:state.host]), @"lifecycleGeneration": @([self lifecycleForHost:state.host create:NO].generation), @"lastDecision": state.lastDecision ?: @"", @"nativePaintWrites": @(state.nativePaintWrites), @"deferredLayouts": @(state.deferredLayouts), @"pending": @(state.pending), @"back": NSStringFromCGRect(state.backFrame), @"actions": NSStringFromCGRect(state.rightFrame) }];
     for (DYYYChatPanelState *state in [self panelStates].allObjects) if (state.panel.window)
         [panels addObject:@{ @"active": @(state.active), @"radius": @(state.radius), @"frame": NSStringFromCGRect(state.carrier.frame),
             @"inputType": @([state.input respondsToSelector:@selector(currentInputType)] ? ((IESIMInputViewController *)state.input).currentInputType : -1),

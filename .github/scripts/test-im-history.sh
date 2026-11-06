@@ -43,12 +43,6 @@ xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
     DYYYHomeDailyFilter.m Tests/DYYYHomeDailyFilterTests.m -o "$test_dir/home-daily-filter-tests"
 "$test_dir/home-daily-filter-tests"
 xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
-    DYYYUnreadProbe.m Tests/DYYYUnreadProbeTests.m -o "$test_dir/unread-probe-tests"
-"$test_dir/unread-probe-tests"
-xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
-    DYYYUnreadExpiryPolicy.m Tests/DYYYUnreadExpiryPolicyTests.m -o "$test_dir/unread-expiry-tests"
-"$test_dir/unread-expiry-tests"
-xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
     DYYYPlaybackCatalogStore.m Tests/DYYYPlaybackCatalogStoreTests.m -o "$test_dir/playback-catalog-tests"
 "$test_dir/playback-catalog-tests"
 xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
@@ -58,15 +52,8 @@ xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
     DYYYTabBarMetrics.m Tests/DYYYTabBarMetricsTests.m -o "$test_dir/tabbar-metrics-tests"
 "$test_dir/tabbar-metrics-tests"
 xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
-    DYYYUnreadExpiryPolicy.m DYYYUnreadReadLearning.m Tests/DYYYUnreadReadLearningTests.m -o "$test_dir/unread-learning-tests"
-"$test_dir/unread-learning-tests"
-xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
     DYYYChatEnhancementPolicy.m Tests/DYYYChatEnhancementPolicyTests.m -o "$test_dir/chat-enhancement-tests"
 "$test_dir/chat-enhancement-tests"
-# 用生产隔离宏验证：即使旧偏好仍开着，未读探针也必须完全暂停。
-xcrun clang -fobjc-arc -fblocks -DDYYY_UNREAD_EXPERIMENTS_SUSPENDED=1 -framework Foundation -I. \
-    DYYYUnreadProbe.m Tests/DYYYUnreadIsolationTests.m -o "$test_dir/unread-isolation-tests"
-"$test_dir/unread-isolation-tests"
 xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
     DYYYFriendShareBadgeMetrics.m Tests/DYYYFriendShareBadgeMetricsTests.m -o "$test_dir/friend-share-badge-tests"
 "$test_dir/friend-share-badge-tests"
@@ -79,3 +66,6 @@ xcrun clang -fobjc-arc -fblocks -framework Foundation -framework ImageIO -framew
 xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
     DYYYRecallMarkerMetrics.m Tests/DYYYRecallMarkerMetricsTests.m -o "$test_dir/recall-marker-tests"
 "$test_dir/recall-marker-tests"
+xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
+    DYYYChatLifecycle.m Tests/DYYYChatLifecycleTests.m -o "$test_dir/chat-lifecycle-tests"
+"$test_dir/chat-lifecycle-tests"

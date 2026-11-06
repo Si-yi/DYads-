@@ -2399,7 +2399,6 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 + (instancetype)instanceWithRootObject:(id)root pbModel:(id)model;
 + (instancetype)instanceWithRootObject:(id)root modelORM:(id)model;
 + (instancetype)instanceWithRootObject:(id)root identifier:(id)identifier modelProtocol:(id)model coreInfo:(id)core settingsInfo:(id)settings;
-- (void)setUnreadCount:(unsigned long long)count;
 - (id)sendMessage:(id)model error:(void *)error;
 - (id)sendMessage:(id)model isSaveDB:(BOOL)saveDB error:(void *)error;
 + (instancetype)instanceWithRootObject:(id)root identifier:(id)identifier;
@@ -2410,11 +2409,6 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @property (nonatomic, readonly) BOOL isCurrentUserAParticipant;
 @property (nonatomic, readonly, strong) TIMXOMessage *lastMessage;
 @property (nonatomic, readonly) unsigned long long unreadCount;
-@property (nonatomic, copy) NSString *firstUnreadMessageID;
-- (void)markAllMessagesBeforeMessage:(id)message asReadWithMode:(unsigned long long)mode completion:(id)completion;
-// 只观察原生自然调用，用于区分正常已读路径和主动标未读；本插件不发起这些操作。
-- (void)markAllMessagesAsReadWithMode:(unsigned long long)mode completion:(id)completion;
-- (void)markAsUnreadWithMode:(unsigned long long)mode unreadCount:(long long)count completion:(id)completion;
 - (BOOL)is1to1Chat;
 - (BOOL)isGroupChat;
 @end
@@ -2466,7 +2460,6 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @end
 
 @interface TIMXOMessageManager : NSObject
-- (void)asyncGetUnreadMessagesForHintType:(long long)hint inConversation:(id)identifier limit:(unsigned long long)limit completion:(id)completion;
 - (void)asyncGetUnreadMessagesFromSender:(long long)sender inConversation:(id)identifier limit:(unsigned long long)limit completion:(id)completion;
 - (id)earliestMessagesInConversationWithIdentifier:(id)identifier limit:(long long)limit;
 - (id)initWithRootObject:(id)root;
@@ -2554,24 +2547,6 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 - (void)dyyy_syncFloatingBackground;
 @end
 
-// 39.5 导出确认的未读提示与列表渲染入口，仅供被动类型诊断。
-@interface AWEIMBaseUnreadMessagesConsumer : NSObject
-- (id)generateHintModelForConversation:(id)conversation filterOptions:(id)options;
-- (id)targetFilterOptionsForUnreadMessagesInChat:(id)chat;
-@end
-@interface AWEIMChatListCommonCell : UITableViewCell
-- (void)renderWithHolder:(id)holder;
-@end
-
-// 39.5 完整导出确认：原生已读操作与总数通知。时限功能只调用原生边界操作。
-@interface IESIMConversationDataManager : NSObject
-- (void)markAllMessagesBeforeMessage:(id)message asReadWithMode:(unsigned long long)mode ofConversation:(id)conversation completion:(id)completion;
-- (void)markAllMessagesAsReadWithMode:(unsigned long long)mode ofConversation:(id)conversation completion:(id)completion;
-@end
-@interface AWEIMGeneralTotalUnreadCountObserver : NSObject
-- (void)unreadCountForUser:(long long)user changeTo:(int)count cidToUnreadCountDict:(id)counts;
-- (void)unreadCountForUser:(long long)user changeTo:(int)count cidToUnreadCountDict:(id)counts boxType:(int)box;
-@end
 @interface AWEIMChatListViewController : UIViewController
 @end
 @interface TIMXConfig : NSObject

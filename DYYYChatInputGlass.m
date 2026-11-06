@@ -15,6 +15,7 @@ static char kDYYYChatGlassStateKey;
 @property (nonatomic, strong) UIVisualEffectView *glass;
 @property (nonatomic, strong) UIVisualEffect *material;
 @property (nonatomic) BOOL pendingRepair;
+@property (nonatomic) NSUInteger repairGeneration;
 @property (nonatomic, strong) UIColor *color;
 @property (nonatomic, assign) BOOL opaque;
 @property (nonatomic, assign) BOOL clips;
@@ -246,8 +247,15 @@ static char kDYYYChatGlassStateKey;
         if (state.glass.superview != slot) [slot addSubview:state.glass];
     } @finally { state.busy = NO; }
 }
++ (BOOL)activeController:(UIViewController *)controller {
+    UIViewController *host = controller;
+    Class chat = NSClassFromString(@"AWEIMMessageBaseViewController");
+    for (NSUInteger depth = 0; host && depth < 12; depth++, host = host.parentViewController)
+        if (chat && [host isKindOfClass:chat]) return [DYYYChatChrome isHostActive:host];
+    return NO;
+}
 + (void)synchronizeController:(UIViewController *)controller {
-    if (!NSThread.isMainThread || !controller) return;
+    if (!NSThread.isMainThread || !controller || ![self activeController:controller]) return;
     DYYYChatGlassState *state = [self state:controller create:[NSUserDefaults.standardUserDefaults boolForKey:@"DYYYEnableFloatingChatInput"]];
     [UIView performWithoutAnimation:^{ [self applyState:state]; }];
     if (!state.depth && !state.busy) {
@@ -256,7 +264,7 @@ static char kDYYYChatGlassStateKey;
     }
 }
 + (void)beginUpdate:(UIViewController *)controller {
-    if (!NSThread.isMainThread) return;
+    if (!NSThread.isMainThread || ![self activeController:controller]) return;
     DYYYChatGlassState *state = [self state:controller create:[NSUserDefaults.standardUserDefaults boolForKey:@"DYYYEnableFloatingChatInput"]];
     if (!state || state.busy) return;
     if (state.depth++ == 0) {
@@ -268,19 +276,21 @@ static char kDYYYChatGlassStateKey;
     if (!NSThread.isMainThread) return;
     DYYYChatGlassState *state = [self state:controller create:NO];
     if (state.depth) state.depth--;
+    if (![self activeController:controller]) return;
     [self synchronizeController:controller];
     if (!state || state.pendingRepair || state.depth) return;
     state.pendingRepair = YES;
+    NSUInteger generation = state.repairGeneration;
     __weak DYYYChatGlassState *weakState = state;
     dispatch_async(dispatch_get_main_queue(), ^{
         DYYYChatGlassState *current = weakState;
-        if (!current) return;
+        if (!current || generation != current.repairGeneration) return;
         current.pendingRepair = NO;
         [self repairController:current.controller];
     });
 }
 + (void)repairController:(UIViewController *)controller {
-    if (!NSThread.isMainThread || !controller.viewIfLoaded.window || controller.viewIfLoaded.hidden) return;
+    if (!NSThread.isMainThread || ![self activeController:controller]) return;
     UIViewController *host = controller;
     Class chat = NSClassFromString(@"AWEIMMessageBaseViewController");
     for (NSUInteger i = 0; host && i < 12 && ![host isKindOfClass:chat]; i++) host = host.parentViewController;
@@ -296,7 +306,9 @@ static char kDYYYChatGlassStateKey;
 + (void)restoreController:(UIViewController *)controller {
     if (!NSThread.isMainThread) return;
     DYYYChatGlassState *state = [self state:controller create:NO];
-    if (!state || state.busy) return;
+    if (!state) return;
+    state.repairGeneration++; state.pendingRepair = NO;
+    if (state.busy) return;
     state.busy = YES;
     @try { [self restoreState:state]; } @finally { state.busy = NO; }
     [DYYYChatInputList synchronizeInputController:controller active:NO];

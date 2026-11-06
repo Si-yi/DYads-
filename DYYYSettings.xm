@@ -24,7 +24,6 @@
 #import "DYYYBackupTools.h"
 #import "DYYYDebugInspector.h"
 #import "DYYYAutoMessage.h"
-#import "DYYYUnreadExpiry.h"
 #import "DYYYChatEnhancements.h"
 #import "DYYYRecallCoordinator.h"
 #import "DYYYSearchClean.h"
@@ -2914,11 +2913,6 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
     AWESettingItemModel *autoMessageEntry = DYYYMakePageEntry(rootVC, @"自动消息", @"ic_comment_outlined_20", @"增强设置 · 自动消息", @[ autoMessageSections.firstObject ]);
     AWESettingItemModel *friendShareEntry = DYYYMakePageEntry(rootVC, @"好友分享进推荐", @"ic_video_outlined_20", @"增强设置 · 好友分享进推荐", @[ autoMessageSections.lastObject ]);
 
-    AWESettingSectionModel *expirySection = [DYYYSettingsHelper createSectionWithTitle:@"超时未读处理"
-        footerTitle:@"隔离对照期间已暂停超时未读处理、已读方式学习和未读探针；本页原设置保留但不生效。抖音正常已读、未读计数和聊天记录仍由原生处理。"
-        items:[DYYYUnreadExpiry settingsItems]];
-    AWESettingItemModel *expiryEntry = DYYYMakePageEntry(rootVC, @"超时未读处理", @"ic_clock_outlined_20", @"增强设置 · 超时未读处理", @[expirySection]);
-
     AWESettingSectionModel *chatEnhancementsSection = [DYYYSettingsHelper createSectionWithTitle:@"聊天增强"
         footerTitle:@"各项默认关闭，独立重做并使用抖音原生界面与动作。未适配的接口保持原生处理。请关闭其他插件中的同名功能，避免重复接管。阅后即焚目前仅适配本机标记，原生消费回调保持不变。本页不包含单向已读回执。"
         items:[DYYYChatEnhancements settingsItems]];
@@ -3916,7 +3910,7 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
       // 创建并组织所有section
       NSMutableArray *sections = [NSMutableArray array];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"自动消息" items:@[ autoMessageEntry, friendShareEntry ]]];
-      [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"消息处理" items:@[ recallEntry, chatEnhancementsEntry, expiryEntry ]]];
+      [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"消息处理" items:@[ recallEntry, chatEnhancementsEntry ]]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"长按面板设置" items:longPressItems]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"媒体保存" items:downloadItems]];
       [sections addObject:[DYYYSettingsHelper createSectionWithTitle:@"交互增强" items:interactionItems]];

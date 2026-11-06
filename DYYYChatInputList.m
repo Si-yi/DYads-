@@ -54,6 +54,7 @@ static char kDYYYChatListStateKey;
 @property (nonatomic) NSUInteger depth;
 @property (nonatomic) NSUInteger tableDepth;
 @property (nonatomic) BOOL pending;
+@property (nonatomic) NSUInteger generation;
 @property (nonatomic) BOOL appliedTopWanted;
 @property (nonatomic) BOOL appliedBottomWanted;
 @property (nonatomic) CGRect hostBounds;
@@ -135,8 +136,18 @@ static char kDYYYChatListStateKey;
     }
     return bottom;
 }
++ (void)suspendHost:(UIViewController *)host {
+    if (!NSThread.isMainThread) return;
+    DYYYChatListState *state = [self stateForHost:(id)host create:NO];
+    if (!state) return;
+    state.generation++; state.pending = NO; state.topActive = NO; state.glassActive = NO;
+    if (state.busy || state.depth || state.tableDepth || state.table.hasUncommittedUpdates || state.table.dragging || state.table.decelerating) return;
+    BOOL busy = state.busy; state.busy = YES;
+    @try { [UIView performWithoutAnimation:^{ [self restoreState:state]; }]; }
+    @finally { state.busy = busy; }
+}
 + (void)applyState:(DYYYChatListState *)state {
-    if (!state || state.busy || state.depth || state.tableDepth || state.table.dragging ||
+    if (!state || ![DYYYChatChrome isHostActive:state.host] || state.busy || state.depth || state.tableDepth || state.table.dragging ||
         state.table.decelerating || state.table.hasUncommittedUpdates) return;
     state.busy = YES;
     @try {
@@ -240,7 +251,7 @@ static char kDYYYChatListStateKey;
     if (!NSThread.isMainThread || ![component respondsToSelector:@selector(context)]) return nil;
     id context = ((AWEIMComponentBase *)component).context;
     UIViewController *host = [context respondsToSelector:@selector(hostViewController)] ? [context hostViewController] : nil;
-    if (!host || ![host isKindOfClass:NSClassFromString(@"AWEIMMessageBaseViewController")]) return nil;
+    if (!host || ![host isKindOfClass:NSClassFromString(@"AWEIMMessageBaseViewController")] || ![DYYYChatChrome isHostActive:host]) return nil;
     DYYYChatListState *state = [self stateForHost:(id)host create:[NSUserDefaults.standardUserDefaults boolForKey:@"DYYYEnableFloatingChatInput"]];
     if (!state || state.busy) return nil;
     if (state.depth++ == 0 && !state.tableDepth && !state.table.dragging && !state.table.decelerating && !state.table.hasUncommittedUpdates) {
@@ -262,18 +273,19 @@ static char kDYYYChatListStateKey;
     if (!state.depth) [self scheduleState:state];
 }
 + (void)scheduleState:(DYYYChatListState *)state {
-    if (!state || state.pending || state.busy || state.depth || state.tableDepth || state.table.dragging ||
+    if (!state || ![DYYYChatChrome isHostActive:state.host] || state.pending || state.busy || state.depth || state.tableDepth || state.table.dragging ||
         state.table.decelerating || state.table.hasUncommittedUpdates) return;
     state.pending = YES;
+    NSUInteger generation = state.generation;
     __weak DYYYChatListState *weakState = state;
     dispatch_async(dispatch_get_main_queue(), ^{
         DYYYChatListState *current = weakState;
-        if (!current) return;
+        if (!current || generation != current.generation) return;
         current.pending = NO;
+        if (![DYYYChatChrome isHostActive:current.host]) return;
         [UIView performWithoutAnimation:^{ [self applyState:current]; }];
         if (!current.depth && !current.tableDepth && !current.table.dragging && !current.table.decelerating && !current.table.hasUncommittedUpdates) {
             [DYYYChatInputGlass repairController:current.input];
-            [DYYYChatChrome synchronizeHost:current.host];
         }
     });
 }
@@ -314,7 +326,7 @@ static char kDYYYChatListStateKey;
     NSMutableArray *result = [NSMutableArray array];
     for (DYYYChatListState *state in [self states].allObjects) {
         if (!state.host.viewIfLoaded.window) continue;
-        [result addObject:@{ @"extension": @(state.extension), @"topExtension": @(state.topExtension), @"tableUpdateDepth": @(state.tableDepth), @"pending": @(state.pending), @"listFrame": NSStringFromCGRect(state.container.frame),
+        [result addObject:@{ @"hostActive": @([DYYYChatChrome isHostActive:state.host]), @"generation": @(state.generation), @"extension": @(state.extension), @"topExtension": @(state.topExtension), @"tableUpdateDepth": @(state.tableDepth), @"pending": @(state.pending), @"listFrame": NSStringFromCGRect(state.container.frame),
             @"tableFrame": NSStringFromCGRect(state.table.frame), @"bottomInset": @(state.table.contentInset.bottom),
             @"inputType": @([state.input respondsToSelector:@selector(currentInputType)] ? state.input.currentInputType : -1) }];
     }

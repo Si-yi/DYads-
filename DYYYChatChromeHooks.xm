@@ -1,4 +1,5 @@
 #import "DYYYChatChrome.h"
+#import "DYYYChatTransitionTrace.h"
 #import "AwemeHeaders.h"
 
 %group DYYYChatChromeNavigationHooks
@@ -120,17 +121,41 @@
 %end
 %group DYYYChatChromeHostHooks
 %hook AWEIMMessageBaseViewController
+- (void)viewWillDisappear:(BOOL)animated {
+    [DYYYChatTransitionTrace watchController:self phase:@"chat_will_disappear"];
+    // 先封住聊天自己的排队任务，再让原生启动视频/导航过渡。
+    [DYYYChatChrome restoreHost:self];
+    %orig(animated);
+}
 - (void)viewDidLayoutSubviews {
     %orig;
     [DYYYChatChrome synchronizeHost:self];
 }
 - (void)viewDidAppear:(BOOL)animated {
     %orig(animated);
-    [DYYYChatChrome synchronizeHost:self];
+    [DYYYChatChrome resumeHost:self];
+    [DYYYChatTransitionTrace recordController:self phase:@"chat_did_appear"];
 }
 - (void)viewDidDisappear:(BOOL)animated {
     %orig(animated);
     [DYYYChatChrome restoreHost:self];
+}
+%end
+%end
+
+%group DYYYChatVideoAppearanceHooks
+%hook AWEAwemeIMDetailTableViewController
+- (void)viewWillAppear:(BOOL)animated {
+    [DYYYChatTransitionTrace recordController:self phase:@"video_will_appear"];
+    %orig(animated);
+}
+- (void)viewDidAppear:(BOOL)animated {
+    %orig(animated);
+    [DYYYChatTransitionTrace watchController:self phase:@"video_did_appear"];
+}
+- (void)viewWillDisappear:(BOOL)animated {
+    [DYYYChatTransitionTrace recordController:self phase:@"video_will_disappear"];
+    %orig(animated);
 }
 %end
 %end
@@ -143,6 +168,8 @@
     }
     [self preparePreferences];
     static BOOL nav, configuration, unread, unreadSubclass, title, panel, theme, host;
+    static BOOL video;
+    if (!video && NSClassFromString(@"AWEAwemeIMDetailTableViewController")) { %init(DYYYChatVideoAppearanceHooks); video = YES; }
     if (!nav && NSClassFromString(@"AWENavigationBar")) { %init(DYYYChatChromeNavigationHooks); nav = YES; }
     Class navClass = NSClassFromString(@"AWENavigationBar");
     if (!configuration && [navClass instancesRespondToSelector:@selector(addRightNaviBarBtnView:)] &&

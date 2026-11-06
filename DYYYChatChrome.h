@@ -12,6 +12,8 @@
 + (void)synchronizePanel:(UIView *)panel;
 + (void)synchronizeInput:(UIViewController *)input;
 + (void)synchronizeHost:(UIViewController *)host;
++ (BOOL)isHostActive:(UIViewController *)host;
++ (void)resumeHost:(UIViewController *)host;
 + (void)restoreHost:(UIViewController *)host;
 + (void)refreshVisibleViews;
 + (NSDictionary *)diagnostics;
