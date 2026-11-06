@@ -1762,6 +1762,14 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @property(nonatomic, weak, readwrite) AWEIMGiphyMessage *message;
 @end
 
+// BC0DA5B0 / 39.5.0：用于定位原生消息气泡，整行contentTargetView不能替代。
+@interface AWEIMMessageBubbleGradientView : UIView
+@end
+@interface AWEIMGestureView : UIView
+@end
+@interface AWEIMMessageAvatarView : UIView
+@end
+
 @interface AWEIMReusableCommonCell : UITableViewCell
 @property(nonatomic, weak, readwrite) id currentContext;
 @end

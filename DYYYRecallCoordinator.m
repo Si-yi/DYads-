@@ -1,5 +1,6 @@
 #import "DYYYRecallCoordinator.h"
 #import "DYYYRecallPolicy.h"
+#import "DYYYRecallMarkerMetrics.h"
 #import "DYYYRecallStore.h"
 #import "DYYYChatEnhancementPolicy.h"
 #import "DYYYIMService.h"
@@ -38,6 +39,7 @@
 @property (nonatomic, copy) NSDictionary *record;
 @property (nonatomic, strong) UILabel *label;
 @property (nonatomic, assign) BOOL requested;
+@property (nonatomic, copy) NSDictionary *markerGeometry;
 @end
 @implementation DYYYRecallCellBinding @end
 
@@ -336,6 +338,67 @@
         }];
     }
 }
+#pragma mark - 标记只占用当前Cell的空白，原生气泡和行高不变
++ (NSDictionary *)rectData:(CGRect)frame {
+    return @{@"x":@(CGRectGetMinX(frame)),@"y":@(CGRectGetMinY(frame)),@"width":@(CGRectGetWidth(frame)),@"height":@(CGRectGetHeight(frame))};
+}
++ (CGRect)visibleRect:(UIView *)view root:(UIView *)root {
+    CGRect frame=[view convertRect:view.bounds toView:root];
+    for(UIView *parent=view;parent;parent=parent.superview){
+        if(parent.hidden||parent.alpha<=0.01)return CGRectNull;
+        if(parent.clipsToBounds||parent==root)frame=CGRectIntersection(frame,[parent convertRect:parent.bounds toView:root]);
+        if(CGRectIsNull(frame)||CGRectIsEmpty(frame))return CGRectNull;
+        if(parent==root)return frame;
+    }
+    return CGRectNull;
+}
++ (NSDictionary *)markerInputsForCell:(UITableViewCell *)cell label:(UILabel *)label {
+    UIView *root=cell.contentView;NSMutableArray<UIView *> *queue=[NSMutableArray arrayWithObject:root];
+    NSMutableArray *occupied=[NSMutableArray array];CGRect bubble=CGRectNull;CGFloat area=0;
+    Class gradient=NSClassFromString(@"AWEIMMessageBubbleGradientView"),yy=NSClassFromString(@"YYLabel");
+    for(NSUInteger index=0;index<queue.count&&index<128;index++){
+        UIView *view=queue[index];if(view==label||view.hidden||view.alpha<=0.01)continue;
+        CGRect frame=[self visibleRect:view root:root];if(CGRectIsNull(frame)||CGRectIsEmpty(frame))continue;
+        BOOL isBubble=gradient&&[view isKindOfClass:gradient];
+        if(isBubble&&frame.size.width*frame.size.height>area){bubble=frame;area=frame.size.width*frame.size.height;}
+        NSString *name=NSStringFromClass(object_getClass(view));
+        BOOL drawing=isBubble||[view isKindOfClass:UILabel.class]||[view isKindOfClass:UIImageView.class]||[view isKindOfClass:UIControl.class]||
+            (yy&&[view isKindOfClass:yy])||[name isEqual:@"IESIMTextKitLabel"]||[name isEqual:@"AWEIMUserInteractionLabel"];
+        if(drawing)[occupied addObject:[self rectData:frame]];
+        if([view isKindOfClass:UIVisualEffectView.class])continue;
+        for(UIView *child in view.subviews){if(queue.count>=128)break;[queue addObject:child];}
+    }
+    if(CGRectIsNull(bubble)){
+        UIView *target=[self object:cell selector:@"contentTargetView"];
+        if([target isKindOfClass:UIView.class]&&[target isDescendantOfView:root]){
+            CGRect frame=[self visibleRect:target root:root];
+            // BC0DA5B0的contentTargetView是整行，不能当作气泡使用。
+            if(!CGRectIsNull(frame)&&frame.origin.x>=40&&frame.size.width<root.bounds.size.width-40&&frame.size.height>=28)bubble=frame;
+        }
+    }
+    if(CGRectIsNull(bubble)){
+        // 39.5图片/表情可没有Gradient底板：只在已确认的原生手势容器内，
+        // 用头像确定消息列，合并同一条消息的直接正文包装层，避免落到头像或昵称上。
+        Class gesture=NSClassFromString(@"AWEIMGestureView"),avatar=NSClassFromString(@"AWEIMMessageAvatarView");
+        for(UIView *container in queue){
+            if(!gesture||![container isKindOfClass:gesture])continue;
+            CGFloat column=0;
+            for(UIView *view in container.subviews)if(avatar&&[view isKindOfClass:avatar]){
+                CGRect frame=[view convertRect:view.bounds toView:root];
+                if(frame.size.width>0&&frame.size.width<root.bounds.size.width*0.25)column=MAX(column,CGRectGetMaxX(frame));
+            }
+            if(column<=0)continue;
+            for(UIView *view in container.subviews){
+                if(object_getClass(view)!=UIView.class)continue;
+                CGRect frame=[self visibleRect:view root:root];
+                if(CGRectIsNull(frame)||frame.size.width<28||frame.size.height<28||frame.origin.x<column+4||frame.size.width>=root.bounds.size.width-column)continue;
+                bubble=CGRectIsNull(bubble)?frame:CGRectUnion(bubble,frame);
+            }
+        }
+    }
+    if(CGRectIsNull(bubble))return @{@"occupied":occupied};
+    return @{@"bubble":[self rectData:bubble],@"occupied":occupied};
+}
 + (void)refreshCell:(UITableViewCell *)cell {
     DYYYRecallCellBinding *binding=objc_getAssociatedObject(cell,@selector(captureCell:));
     if(!binding)return;
@@ -346,15 +409,19 @@
     static NSDateFormatter *format;static dispatch_once_t once;dispatch_once(&once,^{format=[NSDateFormatter new];format.dateFormat=@"HH:mm:ss";});
     NSString *time=[format stringFromDate:[NSDate dateWithTimeIntervalSince1970:[binding.record[@"recalledAt"] doubleValue]]];
     BOOL available=[binding.record[@"content"] isKindOfClass:NSDictionary.class] && [binding.record[@"content"] count]>0;
-    binding.label.text=[NSString stringWithFormat:@"对方已撤回 · %@%@",time,available?@"":@" · 原内容未取得"];
-    CGSize size=[binding.label sizeThatFits:CGSizeMake(MAX(0,cell.bounds.size.width-32),12)];
-    CGFloat x=16,y=MAX(0,cell.contentView.bounds.size.height-12);
-    UIView *target=[self object:cell selector:@"contentTargetView"];
-    if([target isKindOfClass:UIView.class] && [target isDescendantOfView:cell.contentView]){
-        CGRect bubble=[target convertRect:target.bounds toView:cell.contentView];
-        x=MAX(16,CGRectGetMinX(bubble));if(CGRectGetMaxY(bubble)+14<=CGRectGetHeight(cell.contentView.bounds))y=CGRectGetMaxY(bubble)+2;
+    NSString *fullText=[NSString stringWithFormat:@"对方已撤回 · %@%@",time,available?@"":@" · 原内容未取得"];
+    binding.label.numberOfLines=1;binding.label.font=[UIFont systemFontOfSize:10];binding.label.text=fullText;
+    CGSize size=[binding.label sizeThatFits:CGSizeMake(CGFLOAT_MAX,12)];
+    NSDictionary *inputs=[self markerInputsForCell:cell label:binding.label];
+    NSDictionary *layout=[DYYYRecallMarkerMetrics layoutForWidth:cell.contentView.bounds.size.width height:cell.contentView.bounds.size.height bubble:inputs[@"bubble"] occupied:inputs[@"occupied"] idealWidth:ceil(size.width)];
+    binding.markerGeometry=@{@"layout":layout,@"bubble":inputs[@"bubble"]?:@{},@"cellWidth":@(cell.contentView.bounds.size.width),@"cellHeight":@(cell.contentView.bounds.size.height)};
+    BOOL hidden=[layout[@"style"] isEqual:@"hidden"];binding.label.hidden=hidden;if(hidden)return;
+    if([layout[@"style"] isEqual:@"compact"]){
+        binding.label.numberOfLines=2;binding.label.font=[UIFont systemFontOfSize:9];
+        binding.label.text=[NSString stringWithFormat:@"已撤回\n%@",time.length>=5?[time substringToIndex:5]:time];
     }
-    CGRect frame=CGRectMake(x,y,MIN(size.width,MAX(0,cell.bounds.size.width-x-16)),12);
+    binding.label.accessibilityLabel=fullText;
+    CGRect frame=CGRectMake([layout[@"x"] doubleValue],[layout[@"y"] doubleValue],[layout[@"width"] doubleValue],[layout[@"height"] doubleValue]);
     if(!CGRectEqualToRect(binding.label.frame,frame))binding.label.frame=frame;
     [cell.contentView bringSubviewToFront:binding.label];
 }
@@ -420,6 +487,8 @@
 + (NSDictionary *)diagnostics {
     if(!NSThread.isMainThread)return @{};
     DYYYRecallCoordinator *coordinator=[self shared];
-    return @{@"enabled":@(coordinator.active),@"hooks":[coordinator.hooks copy],@"status":coordinator.status?:@"",@"statistics":coordinator.statistics?:@{},@"savedSnapshots":@(coordinator.savedSnapshots),@"protectedModels":@(coordinator.protectedModels),@"nativeReadHooks":@NO,@"historyQueries":@0,@"mediaLimitMB":@512,@"recordLimit":@5000};
+    NSMutableArray *markers=[NSMutableArray array];
+    for(UITableViewCell *cell in coordinator.cells){DYYYRecallCellBinding *binding=objc_getAssociatedObject(cell,@selector(captureCell:));if(binding.markerGeometry&&cell.window){[markers addObject:binding.markerGeometry];if(markers.count>=8)break;}}
+    return @{@"markers":markers,@"enabled":@(coordinator.active),@"hooks":[coordinator.hooks copy],@"status":coordinator.status?:@"",@"statistics":coordinator.statistics?:@{},@"savedSnapshots":@(coordinator.savedSnapshots),@"protectedModels":@(coordinator.protectedModels),@"nativeReadHooks":@NO,@"historyQueries":@0,@"mediaLimitMB":@512,@"recordLimit":@5000};
 }
 @end
