@@ -30,6 +30,10 @@
 
 %group DYYYChatVideoBackdropLayout
 %hook AWEPlayVideoViewController
+- (void)viewDidAppear:(BOOL)animated {
+    %orig(animated);
+    [DYYYChatVideoLayout syncPlayerBackdrop:self];
+}
 - (void)viewDidLayoutSubviews {
     %orig;
     [DYYYChatVideoLayout syncPlayerBackdrop:self];

@@ -7,4 +7,5 @@
 + (void)removePlayerBackdrop:(UIViewController *)controller;
 + (void)refresh;
 + (BOOL)ownsReplyBackground:(UIView *)view;
++ (NSDictionary *)diagnostics;
 @end

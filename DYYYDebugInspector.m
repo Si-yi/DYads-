@@ -18,6 +18,7 @@
 #import "DYYYChatInputList.h"
 #import "DYYYChatChrome.h"
 #import "DYYYChatTransitionTrace.h"
+#import "DYYYChatVideoLayout.h"
 #import "DYYYGroupChatToolbar.h"
 #import "DYYYCommentVideoLayout.h"
 #import "DKDebugCapture.h"
@@ -365,6 +366,7 @@ static NSDictionary *DYYYDebugMetadata(void) {
         @"chatInputList": [DYYYChatInputList diagnostics],
         @"chatChrome": [DYYYChatChrome diagnostics],
         @"chatTransition": [DYYYChatTransitionTrace diagnostics],
+        @"chatVideoPaint": [DYYYChatVideoLayout diagnostics],
             @"groupChatToolbar": [DYYYGroupChatToolbar diagnostics],
         @"commentVideoLayout": [DYYYCommentVideoLayout diagnostics],
         @"loadedPluginImages": pluginImages,
