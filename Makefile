@@ -64,7 +64,7 @@ ifeq ($(GITHUB_ACTIONS),true)
 DYads-_CFLAGS += -DDYYY_REQUIRE_GLASS_TAB_BAR=1
 endif
 DYads-_LDFLAGS = -weak_framework AVFAudio -lz -lsqlite3
-DYads-_FRAMEWORKS = CoreAudio PhotosUI AVFoundation ImageIO CoreMedia
+DYads-_FRAMEWORKS = CoreAudio PhotosUI AVFoundation ImageIO CoreMedia CoreGraphics
 CXXFLAGS += -std=c++11
 CCFLAGS += -std=c++11
 DYads-_LOGOS_DEFAULT_GENERATOR = internal

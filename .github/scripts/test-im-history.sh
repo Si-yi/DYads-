@@ -73,6 +73,6 @@ xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
 xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
     DYYYRecallPolicy.m Tests/DYYYRecallPolicyTests.m -o "$test_dir/recall-policy-tests"
 "$test_dir/recall-policy-tests"
-xcrun clang -fobjc-arc -fblocks -framework Foundation -framework ImageIO -framework AVFoundation -framework CoreMedia -lsqlite3 -I. \
+xcrun clang -fobjc-arc -fblocks -framework Foundation -framework ImageIO -framework CoreGraphics -framework AVFoundation -framework CoreMedia -lsqlite3 -I. \
     DYYYRecallPolicy.m DYYYRecallStore.m Tests/DYYYRecallStoreTests.m -o "$test_dir/recall-store-tests"
 "$test_dir/recall-store-tests"

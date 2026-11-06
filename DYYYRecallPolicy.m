@@ -1,7 +1,15 @@
 #import "DYYYRecallPolicy.h"
 #include <math.h>
+#import <CommonCrypto/CommonDigest.h>
 
 @implementation DYYYRecallPolicy
++ (NSString *)fingerprint:(NSDictionary *)record {
+    NSData *data=[NSJSONSerialization dataWithJSONObject:record options:NSJSONWritingSortedKeys error:nil];
+    if(!data)return nil;
+    unsigned char digest[CC_SHA256_DIGEST_LENGTH];CC_SHA256(data.bytes,(CC_LONG)data.length,digest);
+    return [[NSData dataWithBytes:digest length:sizeof(digest)] base64EncodedStringWithOptions:0];
+}
+
 + (id)copyJSON:(id)value depth:(NSUInteger)depth budget:(NSUInteger *)budget {
     if (!*budget || depth > 12) return nil;
     (*budget)--;

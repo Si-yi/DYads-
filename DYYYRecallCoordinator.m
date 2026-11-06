@@ -12,13 +12,13 @@
 
 @interface DYYYRecallModelState : NSObject
 @property (atomic, weak) id root;
-@property (atomic, copy) NSDictionary *content;
+@property (nonatomic, copy) NSString *cacheKey;
+@property (atomic, weak) NSDictionary *content;
 @property (atomic, copy) NSDictionary *identity;
-@property (atomic, copy) NSDictionary *media;
 @property (atomic, assign) BOOL recalled;
 @property (atomic, assign) NSTimeInterval recalledAt;
 @property (atomic, assign) BOOL pending;
-@property (atomic, copy) NSDictionary *lastScheduled;
+@property (atomic, copy) NSString *lastSignature;
 @end
 @implementation DYYYRecallModelState @end
 
@@ -46,6 +46,7 @@
 @property (nonatomic, strong) dispatch_queue_t queue;
 @property (nonatomic, strong) DYYYRecallStore *store;
 @property (nonatomic, strong) NSCache<NSString *, NSDictionary *> *cache;
+@property (nonatomic, strong) NSCache<NSString *, NSDictionary *> *contents;
 @property (nonatomic, strong) NSHashTable<UITableViewCell *> *cells;
 @property (nonatomic, strong) NSHashTable<DYYYRecallUIReference *> *uiReferences;
 @property (atomic, assign) NSUInteger savedSnapshots;
@@ -62,7 +63,8 @@
     dispatch_once(&once, ^{
         instance = [DYYYRecallCoordinator new];
         instance.queue = dispatch_queue_create("com.dyads.recall.capture", DISPATCH_QUEUE_SERIAL);
-        instance.cache = [NSCache new]; instance.cache.countLimit = 1024;
+        instance.cache = [NSCache new]; instance.cache.countLimit = 1024; instance.cache.totalCostLimit=8*1024*1024;
+        instance.contents=[NSCache new];instance.contents.countLimit=256;instance.contents.totalCostLimit=8*1024*1024;
         instance.cells = [NSHashTable weakObjectsHashTable]; instance.uiReferences=[NSHashTable weakObjectsHashTable]; instance.hooks = [NSMutableDictionary dictionary];
         NSURL *base = [NSFileManager.defaultManager URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask].firstObject;
         instance.store = [[DYYYRecallStore alloc] initWithDirectory:[base URLByAppendingPathComponent:@"DYads/MessageRetention" isDirectory:YES]];
@@ -96,10 +98,15 @@
     if (!state && create) {
         @synchronized(model) {
             state=objc_getAssociatedObject(model,@selector(bindModel:root:));
-            if (!state) { state=[DYYYRecallModelState new]; objc_setAssociatedObject(model,@selector(bindModel:root:),state,OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
+            if (!state) { state=[DYYYRecallModelState new];state.cacheKey=NSUUID.UUID.UUIDString; objc_setAssociatedObject(model,@selector(bindModel:root:),state,OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
         }
     }
     return state;
+}
++ (void)retainContent:(NSDictionary *)content state:(DYYYRecallModelState *)state {
+    if(!content || !state)return;
+    NSUInteger cost=[NSJSONSerialization dataWithJSONObject:content options:0 error:nil].length;
+    [[self shared].contents setObject:content forKey:state.cacheKey cost:cost];state.content=content;
 }
 + (void)recordHook:(NSString *)name installed:(BOOL)installed { if(NSThread.isMainThread)[self shared].hooks[name]=@(installed); }
 + (void)settingsChanged {
@@ -126,7 +133,7 @@
     if(!snapshot)return;
     DYYYRecallModelState *state=[self state:model create:YES];
     if([state.content isEqual:snapshot])return;
-    if(!state.recalled || !state.content.count) state.content=snapshot;
+    if(!state.recalled || !state.content.count) [self retainContent:snapshot state:state];
     [self scheduleModel:model];
 }
 + (void)observeRecalled:(BOOL)recalled model:(id)model {
@@ -167,17 +174,18 @@
             if(nativeRecalled){state.recalled=YES;if(!state.recalledAt)state.recalledAt=NSDate.date.timeIntervalSince1970;}
             if(!state.recalled || !state.content) {
                 NSDictionary *snapshot=[DYYYRecallPolicy contentSnapshot:[self object:current selector:@"content"]];
-                if(snapshot)state.content=snapshot;
+                if(snapshot)[self retainContent:snapshot state:state];
             }
-            if(!state.content) state.content=[DYYYRecallPolicy contentSnapshot:[self object:current selector:@"recalledContent"]];
+            if(!state.content) [self retainContent:[DYYYRecallPolicy contentSnapshot:[self object:current selector:@"recalledContent"]] state:state];
             NSMutableDictionary *record=[state.identity mutableCopy];
             if(state.content)record[@"content"]=state.content;
             record[@"recalled"]=@(state.recalled); if(state.recalledAt)record[@"recalledAt"]=@(state.recalledAt);
-            if([state.lastScheduled isEqual:record])return;
-            state.lastScheduled=[record copy];
+            NSString *signature=[DYYYRecallPolicy fingerprint:record];
+            if([state.lastSignature isEqual:signature])return;
+            state.lastSignature=signature;
             [coordinator.store recordForAccount:account conversation:conversation message:message server:server completion:^(NSDictionary *old){
                 if(generation!=coordinator.generation || !coordinator.active)return;
-                if(!state.content && old[@"content"])state.content=old[@"content"];
+                if(!state.content && old[@"content"])[self retainContent:old[@"content"] state:state];
                 if([old[@"recalled"] boolValue]){state.recalled=YES;state.recalledAt=[old[@"recalledAt"] doubleValue];}
                 if(state.content)record[@"content"]=state.content;
                 record[@"recalled"]=@(state.recalled);if(state.recalledAt)record[@"recalledAt"]=@(state.recalledAt);
@@ -191,7 +199,7 @@
     if(!record)return;
     for(NSString *message in @[record[@"message"]?:@"",record[@"server"]?:@""]){
         NSString *key=[DYYYRecallPolicy keyForAccount:record[@"account"] conversation:record[@"conversation"] message:message];
-        if(key)[[self shared].cache setObject:record forKey:key];
+        if(key)[[self shared].cache setObject:record forKey:key cost:[NSJSONSerialization dataWithJSONObject:record options:0 error:nil].length];
     }
 }
 + (void)persist:(NSDictionary *)record state:(DYYYRecallModelState *)state generation:(NSUInteger)generation {
