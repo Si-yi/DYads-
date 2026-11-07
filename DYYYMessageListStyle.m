@@ -70,6 +70,14 @@
 @property (nonatomic, strong) UIVisualEffectView *actions;
 @property (nonatomic, weak) UILabel *redundantTitle;
 @property (nonatomic) BOOL titleHidden;
+@property (nonatomic, strong) NSMapTable<UIView *, NSNumber *> *hiddenViews;
+@property (nonatomic, weak) UIView *bar;
+@property (nonatomic, weak) UIView *plate;
+@property (nonatomic, weak) UIView *noticeActions;
+@property (nonatomic) CGAffineTransform plateNativeTransform;
+@property (nonatomic) CGAffineTransform plateAppliedTransform;
+@property (nonatomic) BOOL plateApplied;
+@property (nonatomic) BOOL auxiliary;
 @property (nonatomic, strong) NSMapTable<UIView *, id> *fills;
 @property (nonatomic, weak) UIView *line;
 @property (nonatomic) BOOL notice;
@@ -419,7 +427,7 @@
 + (DYYYMessageHeaderState *)headerState:(UIView *)bar create:(BOOL)create {
     DYYYMessageHeaderState *state=objc_getAssociatedObject(bar,@selector(synchronizeBar:));
     if(!state && create){
-        state=[DYYYMessageHeaderState new];state.fills=[NSMapTable weakToStrongObjectsMapTable];state.nativeOpaque=bar.opaque;
+        state=[DYYYMessageHeaderState new];state.bar=bar;state.hiddenViews=[NSMapTable weakToStrongObjectsMapTable];state.fills=[NSMapTable weakToStrongObjectsMapTable];state.nativeOpaque=bar.opaque;
         state.left=[DYYYChatChrome glassBackgroundWithIdentifier:@"DYads.MessageListLeftGlass"];
         state.right=[DYYYChatChrome glassBackgroundWithIdentifier:@"DYads.MessageListRightGlass"];
         state.actions=[DYYYChatChrome glassBackgroundWithIdentifier:@"DYads.NoticeActionsGlass"];
@@ -430,6 +438,8 @@
 + (void)restoreHeader:(UIView *)bar state:(DYYYMessageHeaderState *)state {
     if(!state || state.busy)return;
     state.busy=YES;
+    [self restoreNoticePlate:state];
+    for(UIView *view in state.hiddenViews.keyEnumerator.allObjects)if(view.hidden)view.hidden=[[state.hiddenViews objectForKey:view] boolValue];
     [NSLayoutConstraint deactivateConstraints:state.constraints];
     [state.left removeFromSuperview];[state.right removeFromSuperview];[state.actions removeFromSuperview];
     if(state.redundantTitle.hidden)state.redundantTitle.hidden=state.titleHidden;
@@ -486,12 +496,94 @@
     if(![items isKindOfClass:NSArray.class] || index<0 || (NSUInteger)index>=items.count)return nil;
     UIView *item=items[(NSUInteger)index];return [item isKindOfClass:UIView.class] && [item isDescendantOfView:plate]?item:nil;
 }
++ (void)hideHeaderView:(UIView *)view state:(DYYYMessageHeaderState *)state {
+    if(!view)return;if(![state.hiddenViews objectForKey:view])[state.hiddenViews setObject:@(view.hidden) forKey:view];if(!view.hidden)view.hidden=YES;
+}
++ (AWENavigationBar *)outerNoticeBarForFansBar:(UIView *)bar {
+    if(![self owner:bar named:@"AWEIMFansContainerViewController"])return nil;
+    UIViewController *merge=[self owner:bar named:@"AWEIMFansAndInteractMergeViewController"];
+    for(UIView *view in merge.viewIfLoaded.subviews)if(view!=bar && [view isKindOfClass:NSClassFromString(@"AWENavigationBar")]){
+        for(UIView *item in ((AWENavigationBar *)view).contentView.subviews)if([item isKindOfClass:NSClassFromString(@"AWEIMFansAndInteractMergeViewControllerNaviBar")])return (id)view;
+    }return nil;
+}
++ (UIView *)fansActionsForOuterBar:(UIView *)bar {
+    UIViewController *merge=[self owner:bar named:@"AWEIMFansAndInteractMergeViewController"];
+    NSMutableArray *pending=[NSMutableArray arrayWithArray:merge.childViewControllers?:@[]];NSUInteger visited=0;
+    while(pending.count && visited++<12){UIViewController *controller=pending.lastObject;[pending removeLastObject];
+        if([controller isKindOfClass:NSClassFromString(@"AWEIMFansContainerViewController")]){
+            for(UIView *view in controller.viewIfLoaded.subviews)if([view isKindOfClass:NSClassFromString(@"AWENavigationBar")]){
+                UIView *actions=((AWENavigationBar *)view).rightBtnsContainerView;
+                if(actions.window==bar.window && !actions.hidden && actions.bounds.size.width>0 && actions.bounds.size.width<=120)return actions;
+            }
+        }else if(pending.count+controller.childViewControllers.count<=12)[pending addObjectsFromArray:controller.childViewControllers];
+    }return nil;
+}
++ (void)synchronizeFansBar:(AWENavigationBar *)bar outer:(AWENavigationBar *)outer {
+    DYYYMessageHeaderState *state=[self headerState:bar create:NO];if(state.busy)return;
+    UIView *carrier=bar.contentView,*actions=bar.rightBtnsContainerView;
+    if(![self topEnabled] || !outer.window || !bar.window || actions.superview!=carrier || actions.bounds.size.width<=0 || actions.bounds.size.width>120){[self restoreHeader:bar state:state];return;}
+    state=[self headerState:bar create:YES];state.busy=YES;state.auxiliary=YES;state.notice=YES;
+    @try {
+        [self clearHeaderFill:bar state:state];[self clearHeaderFill:carrier state:state];[self clearHeaderFill:actions state:state];if(bar.opaque)bar.opaque=NO;
+        // 关注子页另有 titleView/默认 titleLabel 和返回。只保留外层双标签与返回。
+        for(UIView *view in carrier.subviews)if([view isKindOfClass:UILabel.class] || [view isKindOfClass:NSClassFromString(@"AWEIMNavigationUnreadView")])[self hideHeaderView:view state:state];
+        UIView *title=bar.titleView;if([title isKindOfClass:UILabel.class] && title!=carrier && [title isDescendantOfView:carrier])[self hideHeaderView:title state:state];
+        [self hideHeaderView:bar.bottomLineView state:state];
+        CGRect rect=[actions convertRect:actions.bounds toView:carrier];rect.origin.y=(carrier.bounds.size.height-40)/2;rect.size.height=40;
+        [DYYYChatChrome placeGlassBackground:state.actions frame:rect inView:carrier];
+        state.rightAnchor=actions;
+    } @finally {state.busy=NO;}
+    [self synchronizeBar:outer];[self scheduleBarSynchronization:outer];
+}
++ (void)restoreNoticePlate:(DYYYMessageHeaderState *)state {
+    if(state.plateApplied && CGAffineTransformEqualToTransform(state.plate.transform,state.plateAppliedTransform))state.plate.transform=state.plateNativeTransform;
+    if(objc_getAssociatedObject(state.plate,@selector(beginNoticePlateFrame:))==state)objc_setAssociatedObject(state.plate,@selector(beginNoticePlateFrame:),nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    state.plateApplied=NO;state.plate=nil;state.noticeActions=nil;
+}
++ (id)beginNoticePlateFrame:(UIView *)plate {
+    if(!NSThread.isMainThread)return nil;DYYYMessageHeaderState *state=objc_getAssociatedObject(plate,@selector(beginNoticePlateFrame:));if(!state || state.busy)return nil;
+    state.busy=YES;if(state.plateApplied && CGAffineTransformEqualToTransform(plate.transform,state.plateAppliedTransform))plate.transform=state.plateNativeTransform;state.plateApplied=NO;return state;
+}
++ (void)endNoticePlateFrame:(id)token {
+    if(![token isKindOfClass:DYYYMessageHeaderState.class])return;DYYYMessageHeaderState *state=token;state.busy=NO;
+    if([self headerState:state.bar create:NO]==state)[self synchronizeBar:state.bar];
+}
++ (CGFloat)noticeTitleLeft:(UIView *)plate carrier:(UIView *)carrier {
+    NSArray *items=((AWEIMFansAndInteractMergeViewControllerNaviBar *)plate).itemViews;UIView *first=items.firstObject;
+    if(![first isKindOfClass:UIView.class])return NAN;
+    NSMutableArray *pending=[NSMutableArray arrayWithObject:first];NSUInteger visited=0;CGFloat left=CGFLOAT_MAX;
+    while(pending.count && visited++<48){UIView *view=pending.lastObject;[pending removeLastObject];if(view.hidden || view.alpha<=0.01)continue;
+        if([view isKindOfClass:UILabel.class] && view.bounds.size.width>20)left=MIN(left,CGRectGetMinX([view convertRect:view.bounds toView:carrier]));
+        if(pending.count+view.subviews.count<=48)[pending addObjectsFromArray:view.subviews];
+    }return left==CGFLOAT_MAX?NAN:left;
+}
++ (void)positionNoticePlate:(UIView *)plate carrier:(UIView *)carrier leftRect:(CGRect)leftRect state:(DYYYMessageHeaderState *)state {
+    if(state.plate!=plate){[self restoreNoticePlate:state];state.plate=plate;state.plateNativeTransform=plate.transform;}
+    else if(!state.plateApplied || !CGAffineTransformEqualToTransform(plate.transform,state.plateAppliedTransform))state.plateNativeTransform=plate.transform;
+    AWEIMFansAndInteractMergeViewControllerNaviBar *tabs=(id)plate;
+    UIView *actions=tabs.currentSelectedIndex==1?[self fansActionsForOuterBar:state.bar]:nil;
+    CGFloat oldShift=state.plateApplied?state.plateAppliedTransform.tx-state.plateNativeTransform.tx:0;
+    UIView *selected=[self selectedNoticeItem:plate];CGRect selectedRect=[selected convertRect:selected.bounds toView:carrier];
+    CGFloat actionsLeft=actions?CGRectGetMinX([actions convertRect:actions.bounds toView:carrier]):carrier.bounds.size.width;
+    NSDictionary *plan=[DYYYMessageListMetrics noticeHeaderShiftForBackRight:CGRectGetMaxX(leftRect) titleLeft:[self noticeTitleLeft:plate carrier:carrier]-oldShift selectedCenter:CGRectGetMidX(selectedRect)-oldShift glassWidth:116 actionsLeft:actionsLeft width:carrier.bounds.size.width];
+    CGFloat shift=actions?[plan[@"translationX"] doubleValue]:0;
+    CGAffineTransform applied=state.plateNativeTransform;applied.tx+=shift;
+    state.plateAppliedTransform=applied;state.plateApplied=YES;state.noticeActions=actions;
+    objc_setAssociatedObject(plate,@selector(beginNoticePlateFrame:),state,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    [UIView performWithoutAnimation:^{if(!CGAffineTransformEqualToTransform(plate.transform,applied))plate.transform=applied;}];
+}
++ (BOOL)passThroughNoticeActions:(CGPoint)point bar:(UIView *)bar {
+    if(!NSThread.isMainThread)return NO;DYYYMessageHeaderState *state=[self headerState:bar create:NO];UIView *actions=state.noticeActions;
+    return state.notice && !state.auxiliary && actions.window==bar.window && actions.window && !actions.hidden && actions.userInteractionEnabled && CGRectContainsPoint(actions.bounds,[bar convertPoint:point toView:actions]);
+}
 + (void)synchronizeBar:(UIView *)candidate {
     if(!NSThread.isMainThread || ![candidate isKindOfClass:NSClassFromString(@"AWENavigationBar")])return;
     AWENavigationBar *bar=(id)candidate;
     DYYYMessageHeaderState *state=[self headerState:bar create:NO];
     if(state.busy)return;
     if(![self topEnabled] || ![self hasTopOwner:bar] || !bar.window){[self restoreHeader:bar state:state];return;}
+    AWENavigationBar *outer=[self outerNoticeBarForFansBar:bar];
+    if(outer){[self synchronizeFansBar:bar outer:outer];return;}
     BOOL notice=[self owner:bar named:@"AWEIMFansAndInteractMergeViewController"]!=nil;
     UIView *carrier=bar.contentView,*left=nil,*right=notice?nil:bar.rightBtnsContainerView;
     if(!carrier || carrier.bounds.size.height<32 || carrier.bounds.size.height>64){[self restoreHeader:bar state:state];return;}
@@ -513,9 +605,9 @@
         // 玻璃的约束依赖原生按钮容器的实际边界；不会把布局中途的零宽当作最终尺寸。
         // 背景留在外层，不进入原生按钮数组/子视图，避免参与原生按钮宽度测量。
         CGFloat height=MIN(44,carrier.bounds.size.height);
-        UIView *selected=notice?[self selectedNoticeItem:right]:nil;
-        UIView *rightAnchor=selected?:right;
         CGRect leftRect=notice?[self noticeBackFrame:left carrier:carrier]:CGRectMake(left.frame.origin.x,(carrier.bounds.size.height-height)/2,height,height);
+        if(notice)[self positionNoticePlate:right carrier:carrier leftRect:leftRect state:state];
+        UIView *selected=notice?[self selectedNoticeItem:right]:nil;UIView *rightAnchor=selected?:right;
         CGRect rightRect=CGRectMake(right.frame.origin.x,(carrier.bounds.size.height-height)/2,right.bounds.size.width,height);
         if(selected){CGRect item=[selected convertRect:selected.bounds toView:carrier];CGFloat width=MIN(116,MAX(0,item.size.width-16));rightRect=CGRectMake(CGRectGetMidX(item)-width/2,(carrier.bounds.size.height-36)/2,width,36);}
         BOOL rebind=state.notice!=notice || state.leftAnchor!=left || state.rightAnchor!=rightAnchor || state.left.superview!=carrier || state.right.superview!=carrier || !CGSizeEqualToSize(state.leftRect.size,leftRect.size) || (notice && !CGRectEqualToRect(state.leftRect,leftRect));
@@ -632,7 +724,7 @@
     NSMutableArray *headers=[NSMutableArray array];
     for(UIView *bar in [self bars].allObjects)if(bar.window && headers.count<4){
         DYYYMessageHeaderState *s=[self headerState:bar create:NO];
-        [headers addObject:@{@"transparent":@(!bar.backgroundColor || CGColorGetAlpha(bar.backgroundColor.CGColor)==0),@"leftGlassWidth":@(s.left.bounds.size.width),@"rightGlassWidth":@(s.right.bounds.size.width),@"rightMounted":@(s.right.superview!=nil),@"selectedTabOnly":@(s.notice)}];
+        [headers addObject:@{@"transparent":@(!bar.backgroundColor || CGColorGetAlpha(bar.backgroundColor.CGColor)==0),@"leftGlassWidth":@(s.left.bounds.size.width),@"rightGlassWidth":@(s.auxiliary?s.actions.bounds.size.width:s.right.bounds.size.width),@"rightMounted":@(s.auxiliary?s.actions.superview!=nil:s.right.superview!=nil),@"auxiliaryFansBar":@(s.auxiliary),@"hiddenNativeHeaderViews":@(s.hiddenViews.count),@"tabTranslationX":@(s.plateApplied && CGAffineTransformEqualToTransform(s.plate.transform,s.plateAppliedTransform)?s.plateAppliedTransform.tx-s.plateNativeTransform.tx:0),@"selectedTabOnly":@(s.notice)}];
     }
     return @{@"viewport":[DYYYMessageListViewport diagnostics],@"cardsEnabled":@([self cardsEnabled]),@"topEnabled":@([self topEnabled]),@"adapterReady":@([self adapterReady]),@"visibleRowsByGroup":groups,@"insetRows":@(insets),@"contentScale":@0.92,@"contentDecisions":decisions,@"contentContainers":content,@"contentAdapterReady":@([self contentAdapterReady]),@"backgroundMasks":@(backgroundMasks),@"compactLightInteractionViews":@([self lightViews].allObjects.count),@"headers":headers,@"nativeRowGeometry":@YES,@"unreadMutation":@NO};
 }

@@ -49,4 +49,11 @@
     if(width<160 || rootHeight<=width || listTop<32 || listTop>180 || fabs(listTop-headerBottom)>1 || fabs(y)>1 || height<200 || fabs(listTop+height-rootHeight)>1)return @{};
     return @{@"extension":@(listTop),@"y":@(y-listTop),@"height":@(height+listTop)};
 }
++ (NSDictionary *)noticeHeaderShiftForBackRight:(double)backRight titleLeft:(double)titleLeft selectedCenter:(double)center glassWidth:(double)glassWidth actionsLeft:(double)actionsLeft width:(double)width {
+    for(NSNumber *value in @[@(backRight),@(titleLeft),@(center),@(glassWidth),@(actionsLeft),@(width)])if(!isfinite(value.doubleValue))return @{};
+    if(width<160 || glassWidth<=0 || actionsLeft>width || actionsLeft<width/2 || center<0 || center>width || backRight<0)return @{};
+    double shift=MIN(0,actionsLeft-8-center-glassWidth/2);
+    if(shift< -44 || titleLeft+shift<backRight+8)return @{};
+    return @{@"translationX":@(shift)};
+}
 @end

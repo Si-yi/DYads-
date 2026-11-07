@@ -55,6 +55,11 @@
 }
 + (NSHashTable *)fansControllers {static NSHashTable *t;static dispatch_once_t once;dispatch_once(&once,^{t=[NSHashTable weakObjectsHashTable];});return t;}
 + (BOOL)isFansCell:(UIView *)cell {
+    // 4BFF6DCA 已确认具体关注行与真实父控制器；不只依赖首次扫描的弱绑定。
+    if([cell isKindOfClass:NSClassFromString(@"AWEIMNewFansTableViewCell")]){
+        UIViewController *controller=[DYYYUtils firstAvailableViewControllerFromView:cell];
+        for(NSUInteger i=0;controller && i<8;i++,controller=controller.parentViewController)if([controller isKindOfClass:NSClassFromString(@"AWEIMFansContainerViewController")])return YES;
+    }
     UIView *list=[self listForCell:cell];NSHashTable *roots=objc_getAssociatedObject(list,@selector(synchronizeFansController:));
     UIViewController *host=roots.anyObject;
     return host.isViewLoaded && [list isDescendantOfView:host.viewIfLoaded] && [host isKindOfClass:NSClassFromString(@"AWEIMFansContainerViewController")];
@@ -162,11 +167,14 @@
         s.background.segment=@{@"x":@0,@"y":@0,@"width":@(bounds.size.width),@"height":@(bounds.size.height),@"radius":@0,@"first":@NO,@"last":@NO};
         if(!CGRectEqualToRect(s.background.frame,bounds))s.background.frame=bounds;
         if(s.background.superview!=content)[content insertSubview:s.background atIndex:0];
-        for(UIView *body in content.subviews)if(body.class==UIView.class && body.subviews.count<=32){
-            for(UIView *line in body.subviews)if(line.class==UIView.class && !line.subviews.count && !line.layer.contents && line.bounds.size.height>0 && line.bounds.size.height<=1 && line.bounds.size.width>bounds.size.width/2 && CGRectGetMaxY(line.frame)>=bounds.size.height-1){
-                if(![s.lines objectForKey:line])[s.lines setObject:@(line.hidden) forKey:line];
-                if(!line.hidden)line.hidden=YES;
-            }
+        // 关注行的原生细线直接挂在 contentView，不在内部 body 下；两层都要检查。
+        NSMutableArray *lineCandidates=[NSMutableArray arrayWithArray:content.subviews.count<=64?content.subviews:@[]];
+        for(UIView *body in content.subviews)if(body.class==UIView.class && body.subviews.count<=32 && lineCandidates.count+body.subviews.count<=128)[lineCandidates addObjectsFromArray:body.subviews];
+        for(UIView *line in lineCandidates)if(line.class==UIView.class && !line.subviews.count && !line.layer.contents && line.bounds.size.height>=0.1 && line.bounds.size.height<=1 && line.bounds.size.width>bounds.size.width/2){
+            CGRect frame=[line convertRect:line.bounds toView:content];
+            if(CGRectGetMaxY(frame)<bounds.size.height-1)continue;
+            if(![s.lines objectForKey:line])[s.lines setObject:@(line.hidden) forKey:line];
+            if(!line.hidden)line.hidden=YES;
         }
         CGRect panelRect=CGRectMake([segment[@"x"] doubleValue],[segment[@"y"] doubleValue],[segment[@"width"] doubleValue],[segment[@"height"] doubleValue]);
         CGRect maskRect=[cell convertRect:panelRect toView:content];
@@ -184,8 +192,8 @@
 + (void)refresh { if(!NSThread.isMainThread)return;for(UIViewController *controller in [self fansControllers].allObjects)[self synchronizeFansController:controller];for(UIView *cell in [self cells].allObjects)[self synchronizeCell:cell]; }
 + (NSDictionary *)diagnostics {
     if(!NSThread.isMainThread)return @{};
-    NSUInteger active=0,fans=0;
-    for(UIView *cell in [self cells].allObjects)if(cell.window){DYYYNoticeCardState *s=[self state:cell];if(s.applied && [self contentForCell:cell].layer.mask==s.mask && s.background.superview==[self contentForCell:cell] && [self backgroundForCell:cell]==s.panel && CGAffineTransformEqualToTransform([self contentForCell:cell].transform,s.appliedTransform)){active++;if([self isFansCell:cell])fans++;}}
-    return @{@"enabled":@([DYYYMessageListStyle cardsEnabled]),@"roundedVisibleCells":@(active),@"followersVisibleCells":@(fans),@"layout":@"section_groups"};
+    NSUInteger active=0,fans=0,nativeLines=0;
+    for(UIView *cell in [self cells].allObjects)if(cell.window){DYYYNoticeCardState *s=[self state:cell];for(UIView *line in s.lines.keyEnumerator.allObjects)if(line.hidden)nativeLines++;if(s.applied && [self contentForCell:cell].layer.mask==s.mask && s.background.superview==[self contentForCell:cell] && [self backgroundForCell:cell]==s.panel && CGAffineTransformEqualToTransform([self contentForCell:cell].transform,s.appliedTransform)){active++;if([self isFansCell:cell])fans++;}}
+    return @{@"enabled":@([DYYYMessageListStyle cardsEnabled]),@"roundedVisibleCells":@(active),@"followersVisibleCells":@(fans),@"hiddenNativeDividers":@(nativeLines),@"layout":@"section_groups"};
 }
 @end

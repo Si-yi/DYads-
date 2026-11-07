@@ -46,6 +46,14 @@ int main(void) {
         NSCAssert(![DYYYMessageListMetrics viewportForListTop:106 headerBottom:106 tableY:0 width:956 height:334 rootHeight:440].count,@"横屏与特殊布局保留原生");
         NSCAssert(![DYYYMessageListMetrics viewportForListTop:106 headerBottom:90 tableY:0 width:440 height:850 rootHeight:956].count,@"导航栏和列表边界不匹配时不猜");
         NSCAssert(![DYYYMessageListMetrics viewportForListTop:NAN headerBottom:106 tableY:0 width:440 height:850 rootHeight:956].count,@"非法布局跳过");
+        // 4BFF6DCA 两套导航栏：父栏标签仍17pt，只平移原生标签组让出子页按钮。
+        NSDictionary *header=[DYYYMessageListMetrics noticeHeaderShiftForBackRight:64.333 titleLeft:101.333 selectedCenter:300 glassWidth:116 actionsLeft:346 width:440];
+        double shift=[header[@"translationX"] doubleValue];
+        NSCAssert(shift== -20 && 300+shift+58+8==346,@"选中玻璃与原生右按钮之间留8pt，不再重叠");
+        NSCAssert(101.333+shift>64.333+8,@"互动标签不挤到返回角标");
+        for(NSUInteger i=0;i<1000;i++)NSCAssert([[DYYYMessageListMetrics noticeHeaderShiftForBackRight:64.333 titleLeft:101.333 selectedCenter:300 glassWidth:116 actionsLeft:346 width:440] isEqual:header],@"标签整体只平移一次，字体与宽度不缩放");
+        NSCAssert(![DYYYMessageListMetrics noticeHeaderShiftForBackRight:90 titleLeft:100 selectedCenter:280 glassWidth:116 actionsLeft:300 width:320].count,@"空间不足不把标题移进返回区域");
+        NSCAssert(![DYYYMessageListMetrics noticeHeaderShiftForBackRight:64 titleLeft:NAN selectedCenter:300 glassWidth:116 actionsLeft:346 width:440].count,@"未知标题位置不猜");
         // 80C4F15D 真实平铺行：头像、时间、摘要与角标都由相同映射保留相对间距。
         NSDictionary *avatar=[DYYYMessageListMetrics contentTransformForX:16 y:8 width:56 height:56 rowWidth:440 rowHeight:72];
         NSDictionary *time=[DYYYMessageListMetrics contentTransformForX:363 y:16 width:61 height:15 rowWidth:440 rowHeight:72];

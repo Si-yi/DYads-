@@ -83,6 +83,7 @@
 %end
 %group DYYYMessageListBarHooks
 %hook AWENavigationBar
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {if([DYYYMessageListStyle passThroughNoticeActions:point bar:(UIView *)self])return nil;return %orig(point,event);}
 - (void)setBackgroundColor:(UIColor *)color { %orig([DYYYMessageListStyle nativeBackgroundColor:color forBar:self]); }
 - (void)setOpaque:(BOOL)opaque { %orig([DYYYMessageListStyle nativeOpaque:opaque forBar:self]); }
 - (void)layoutSubviews { %orig; [DYYYInteractionNoticeStyle installHooks]; [DYYYMessageListStyle synchronizeBar:self]; [DYYYMessageListStyle scheduleBarSynchronization:self]; }
@@ -102,6 +103,7 @@
 %end
 %group DYYYNoticeTabSelectionHooks
 %hook AWEIMFansAndInteractMergeViewControllerNaviBar
+- (void)setFrame:(CGRect)frame {id token=[DYYYMessageListStyle beginNoticePlateFrame:(UIView *)self];@try {%orig(frame);}@finally {[DYYYMessageListStyle endNoticePlateFrame:token];}}
 - (void)setSelectedIndex:(long long)index { %orig(index); [DYYYMessageListStyle synchronizeHeaderForView:(UIView *)self]; }
 %end
 %end
