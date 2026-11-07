@@ -22,10 +22,32 @@
 %end
 %group DYYYMessageListCellHooks
 %hook AWEIMChatListCommonCell
-- (void)layoutSubviews { [DYYYMessageListStyle prepareCellLayout:self]; %orig; [DYYYMessageListStyle synchronizeCell:self]; }
+- (void)layoutSubviews { %orig; [DYYYMessageListStyle synchronizeCell:self]; }
 - (void)didMoveToWindow { %orig; if(self.window)[DYYYMessageListStyle synchronizeCell:self];else [DYYYMessageListStyle resetCell:self]; }
 - (void)prepareForReuse { [DYYYMessageListStyle resetCell:self]; %orig; }
-- (void)renderWithHolder:(id)holder { [DYYYMessageListStyle resetCell:self]; %orig(holder); [DYYYMessageListStyle synchronizeCell:self]; }
+- (void)renderWithHolder:(id)holder { %orig(holder); [DYYYMessageListStyle synchronizeCell:self]; }
+%end
+%end
+%group DYYYMessageContentGeometryHooks
+// 仅接管已关联消息列表状态的 contentView；其他 Cell 原样透传。
+%hook UITableViewCellContentView
+- (void)setFrame:(CGRect)frame {
+    CGRect native=[DYYYMessageListStyle nativeContentFrame:frame forView:self];
+    id token=[DYYYMessageListStyle beginContentGeometry:self];
+    @try { %orig(native); } @finally { [DYYYMessageListStyle endContentGeometry:token]; }
+}
+- (void)setBounds:(CGRect)bounds {
+    id token=[DYYYMessageListStyle beginContentGeometry:self];
+    @try { %orig(bounds); } @finally { [DYYYMessageListStyle endContentGeometry:token]; }
+}
+- (void)setCenter:(CGPoint)center {
+    id token=[DYYYMessageListStyle beginContentGeometry:self];
+    @try { %orig(center); } @finally { [DYYYMessageListStyle endContentGeometry:token]; }
+}
+- (void)setTransform:(CGAffineTransform)transform {
+    %orig([DYYYMessageListStyle nativeContentTransform:transform forView:self]);
+    [DYYYMessageListStyle didSetContentTransform:self];
+}
 %end
 %end
 %group DYYYMessageListBarHooks
@@ -49,6 +71,7 @@
 %end
 %ctor {
     [DYYYMessageListStyle preparePreferences];
+    if([DYYYMessageListStyle contentAdapterReady]) { %init(DYYYMessageContentGeometryHooks); }
     Class list=NSClassFromString(@"AWEIMChatListViewController"),cell=NSClassFromString(@"AWEIMChatListCommonCell");
     if([list isSubclassOfClass:UIViewController.class] &&
         [DYYYChatEnhancementPolicy class:list selector:@selector(tableView) result:'@' arguments:@""] &&

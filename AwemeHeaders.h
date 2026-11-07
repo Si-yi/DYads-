@@ -2564,6 +2564,8 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @interface AWEIMChatCellViewModel : NSObject
 @property (nonatomic, strong) AWEIMChatModel *chat;
 @end
+@interface UITableViewCellContentView : UIView
+@end
 @interface AWEIMChatListCommonCell : UITableViewCell
 @property (nonatomic, weak) AWEIMChatCellViewModel *cellViewModel;
 @property (nonatomic, strong) UIView *avatarContainer;

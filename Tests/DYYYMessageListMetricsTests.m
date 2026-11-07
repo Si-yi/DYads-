@@ -37,6 +37,22 @@ int main(void) {
         NSCAssert(![DYYYMessageListMetrics contentTransformForX:438 y:8 width:40 height:56 rowWidth:440 rowHeight:72].count,@"未知越界组件不接管");
         NSCAssert(![DYYYMessageListMetrics contentTransformForX:0 y:0 width:0 height:0 rowWidth:440 rowHeight:72].count,@"未完成布局不接管");
         NSCAssert(![DYYYMessageListMetrics contentTransformForX:NAN y:8 width:56 height:56 rowWidth:440 rowHeight:72].count,@"非法几何安全跳过");
+        // 统一容器：UIKit 可能传入绝对原生 frame，侧滑也可能从当前显示 frame 派生移动。
+        NSDictionary *native=@{@"x":@0,@"y":@0,@"width":@440,@"height":@72};
+        NSDictionary *displayed=[DYYYMessageListMetrics contentTransformForX:0 y:0 width:440 height:72 rowWidth:440 rowHeight:72];
+        NSCAssert([native isEqual:[DYYYMessageListMetrics nativeFrameForRequest:native previousNative:native previousDisplayed:displayed]],@"原生绝对布局原样处理，不能把92%当作原生宽度");
+        NSMutableDictionary *swipe=[displayed mutableCopy];swipe[@"x"]=@([displayed[@"x"] doubleValue]-100);
+        NSDictionary *unscaled=[DYYYMessageListMetrics nativeFrameForRequest:swipe previousNative:native previousDisplayed:displayed];
+        NSCAssert(fabs([unscaled[@"x"] doubleValue]+100)<0.001 && [unscaled[@"width"] doubleValue]==440 && [unscaled[@"height"] doubleValue]==72,@"侧滑只移动100pt，不把显示宽度写成下一轮原生宽度");
+        swipe[@"width"]=@405;swipe[@"height"]=@66;
+        NSDictionary *rounded=[DYYYMessageListMetrics nativeFrameForRequest:swipe previousNative:native previousDisplayed:displayed];
+        NSCAssert([rounded[@"width"] doubleValue]==440 && [rounded[@"height"] doubleValue]==72,@"显示 frame 的半点内像素取整不能导致下一轮继续缩小");
+        NSMutableDictionary *resized=[native mutableCopy];resized[@"width"]=@400;resized[@"height"]=@80;
+        NSCAssert([resized isEqual:[DYYYMessageListMetrics nativeFrameForRequest:resized previousNative:native previousDisplayed:displayed]],@"原生真实尺寸更新保留");
+        for(NSUInteger i=0;i<1000;i++){
+            NSDictionary *again=[DYYYMessageListMetrics nativeFrameForRequest:displayed previousNative:native previousDisplayed:displayed];
+            NSCAssert([again[@"width"] doubleValue]==440 && [again[@"height"] doubleValue]==72,@"原生刷新复用不积累92%缩放");
+        }
         for(NSUInteger i=0;i<1000;i++) NSCAssert([avatar isEqual:[DYYYMessageListMetrics contentTransformForX:16 y:8 width:56 height:56 rowWidth:440 rowHeight:72]],@"始终用原生center/bounds映射，反复布局不继续缩小");
         for(NSUInteger i=0;i<100;i++) NSCAssert([only isEqual:[DYYYMessageListMetrics segmentForKind:@"regular" previous:nil next:nil width:440 height:72]],@"复用和重复布局不累加");
         NSLog(@"DYYYMessageListMetrics regression tests passed");

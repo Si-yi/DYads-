@@ -18,4 +18,21 @@
     return @{@"scale":@(scale),@"translationX":@(tx),@"translationY":@(ty),
         @"x":@(rowWidth/2+(x-rowWidth/2)*scale),@"y":@(rowHeight/2+(y-rowHeight/2)*scale),@"width":@(width*scale),@"height":@(height*scale)};
 }
++ (NSDictionary *)nativeFrameForRequest:(NSDictionary *)request previousNative:(NSDictionary *)native previousDisplayed:(NSDictionary *)displayed {
+    for(NSDictionary *frame in @[request?:@{},native?:@{},displayed?:@{}]){
+        for(NSString *key in @[@"x",@"y",@"width",@"height"])
+            if(![frame[key] isKindOfClass:NSNumber.class] || !isfinite([frame[key] doubleValue]))return request;
+        if([frame[@"width"] doubleValue]<=0 || [frame[@"height"] doubleValue]<=0)return request;
+    }
+    NSMutableDictionary *result=[request mutableCopy];
+    NSArray *sizes=@[@"width",@"height"],*origins=@[@"x",@"y"];
+    for(NSUInteger axis=0;axis<2;axis++){
+        NSString *size=sizes[axis],*origin=origins[axis];
+        if(fabs([request[size] doubleValue]-[displayed[size] doubleValue])<=0.5 && fabs([native[size] doubleValue]-[displayed[size] doubleValue])>0.5){
+            result[size]=native[size];
+            result[origin]=@([request[origin] doubleValue]-([displayed[origin] doubleValue]-[native[origin] doubleValue]));
+        }
+    }
+    return result;
+}
 @end

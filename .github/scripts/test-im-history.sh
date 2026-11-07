@@ -75,3 +75,6 @@ xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
 xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
     DYYYMessageListMetrics.m Tests/DYYYMessageListMetricsTests.m -o "$test_dir/message-list-metrics-tests"
 "$test_dir/message-list-metrics-tests"
+xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
+    DYYYMessageListUpdateState.m Tests/DYYYMessageListUpdateStateTests.m -o "$test_dir/message-list-update-tests"
+"$test_dir/message-list-update-tests"

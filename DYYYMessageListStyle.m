@@ -1,6 +1,9 @@
 #import "DYYYMessageListStyle.h"
 #import "DYYYMessageListCardView.h"
 #import "DYYYMessageListMetrics.h"
+#import "DYYYMessageListUpdateState.h"
+#include <string.h>
+#include <math.h>
 #import "DYYYChatChrome.h"
 #import "DYYYChatEnhancementPolicy.h"
 #import "DYYYUtils.h"
@@ -14,14 +17,35 @@
 @property (nonatomic, strong) DYYYMessageListCardView *selected;
 @property (nonatomic, strong) NSMapTable<UIView *, id> *fills;
 @property (nonatomic, strong) NSMapTable<UIView *, NSDictionary *> *masks;
-@property (nonatomic, strong) NSMapTable<UIView *, NSDictionary *> *translations;
 @property (nonatomic, weak) UIView *line;
 @property (nonatomic) BOOL lineHidden;
 @property (nonatomic) BOOL busy;
 @property (nonatomic, copy) NSString *kind;
-@property (nonatomic, copy) NSString *contentDecision;
 @end
 @implementation DYYYMessageCardState @end
+
+@interface DYYYMessageContentState : NSObject
+@property (nonatomic, weak) UIView *view;
+@property (nonatomic, weak) UITableViewCell *cell;
+@property (nonatomic, strong) DYYYMessageListUpdateState *updates;
+@property (nonatomic) CGAffineTransform nativeTransform;
+@property (nonatomic) CGAffineTransform appliedTransform;
+@property (nonatomic) CGRect nativeFrame;
+@property (nonatomic) CGRect displayedFrame;
+@property (nonatomic) CGFloat scale;
+@property (nonatomic) BOOL active;
+@property (nonatomic) BOOL applied;
+@property (nonatomic) BOOL busy;
+@property (nonatomic, copy) NSString *decision;
+@end
+@implementation DYYYMessageContentState @end
+@interface DYYYMessageContentToken : NSObject
+@property (nonatomic, strong) DYYYMessageContentState *state;
+@property (nonatomic, weak) UIView *view;
+@property (nonatomic) NSUInteger generation;
+@end
+@implementation DYYYMessageContentToken @end
+
 
 @interface DYYYMessageHeaderState : NSObject
 @property (nonatomic, strong) UIVisualEffectView *left;
@@ -85,12 +109,104 @@
     }
     [state.masks removeAllObjects];
 }
-+ (void)restoreInsets:(DYYYMessageCardState *)state {
-    for(UIView *view in state.translations.keyEnumerator.allObjects){
-        NSDictionary *saved=[state.translations objectForKey:view];
-        if(CGAffineTransformEqualToTransform(view.transform,[saved[@"applied"] CGAffineTransformValue]))view.transform=[saved[@"native"] CGAffineTransformValue];
++ (NSHashTable *)contentViews { static NSHashTable *t;static dispatch_once_t once;dispatch_once(&once,^{t=[NSHashTable weakObjectsHashTable];});return t; }
++ (BOOL)contentAdapterReady {
+    static BOOL ready;if(ready)return YES;
+    Class cls=NSClassFromString(@"UITableViewCellContentView");
+    if(![cls isSubclassOfClass:UIView.class])return NO;
+    NSDictionary *types=@{NSStringFromSelector(@selector(setFrame:)):[NSString stringWithUTF8String:@encode(CGRect)],NSStringFromSelector(@selector(setBounds:)):[NSString stringWithUTF8String:@encode(CGRect)],NSStringFromSelector(@selector(setCenter:)):[NSString stringWithUTF8String:@encode(CGPoint)],NSStringFromSelector(@selector(setTransform:)):[NSString stringWithUTF8String:@encode(CGAffineTransform)]};
+    for(NSString *name in types){
+        NSMethodSignature *signature=[cls instanceMethodSignatureForSelector:NSSelectorFromString(name)];
+        if(!signature || signature.numberOfArguments!=3 || strcmp(signature.methodReturnType,@encode(void)) || strcmp([signature getArgumentTypeAtIndex:2],[types[name] UTF8String]))return NO;
     }
-    [state.translations removeAllObjects];
+    ready=YES;return YES;
+}
++ (DYYYMessageContentState *)contentState:(UIView *)view {
+    if(!NSThread.isMainThread)return nil;
+    DYYYMessageContentState *state=objc_getAssociatedObject(view,@selector(beginContentGeometry:));
+    return state.active && state.cell.contentView==view?state:nil;
+}
++ (NSDictionary *)valuesForFrame:(CGRect)frame {
+    return @{@"x":@(frame.origin.x),@"y":@(frame.origin.y),@"width":@(frame.size.width),@"height":@(frame.size.height)};
+}
++ (CGRect)nativeContentFrame:(CGRect)frame forView:(UIView *)view {
+    DYYYMessageContentState *state=[self contentState:view];
+    if(!state || state.busy || state.updates.depth || !state.applied)return frame;
+    NSDictionary *native=[DYYYMessageListMetrics nativeFrameForRequest:[self valuesForFrame:frame] previousNative:[self valuesForFrame:state.nativeFrame] previousDisplayed:[self valuesForFrame:state.displayedFrame]];
+    return CGRectMake([native[@"x"] doubleValue],[native[@"y"] doubleValue],[native[@"width"] doubleValue],[native[@"height"] doubleValue]);
+}
++ (void)applyContent:(DYYYMessageContentState *)state {
+    UIView *view=state.view;
+    if(!view || !state.active || state.busy || state.updates.depth)return;
+    NSDictionary *plan=[DYYYMessageListMetrics contentTransformForX:0 y:0 width:view.bounds.size.width height:view.bounds.size.height rowWidth:view.bounds.size.width rowHeight:view.bounds.size.height];
+    if(!plan.count){state.decision=@"unready_bounds";return;}
+    state.scale=[plan[@"scale"] doubleValue];
+    state.nativeFrame=view.frame;
+    state.nativeTransform=view.transform;
+    state.appliedTransform=CGAffineTransformScale(state.nativeTransform,state.scale,state.scale);
+    state.busy=YES;
+    @try {[UIView performWithoutAnimation:^{view.transform=state.appliedTransform;}];}
+    @finally {state.busy=NO;}
+    state.displayedFrame=view.frame;state.applied=YES;state.decision=@"container_applied";
+}
++ (id)beginContentGeometry:(UIView *)view {
+    DYYYMessageContentState *state=[self contentState:view];
+    if(!state || state.busy)return nil;
+    BOOL outer=state.updates.depth==0;
+    NSUInteger generation=[state.updates beginUpdate];
+    if(outer && state.applied){
+        state.busy=YES;
+        @try {if(CGAffineTransformEqualToTransform(view.transform,state.appliedTransform))[UIView performWithoutAnimation:^{view.transform=state.nativeTransform;}];}
+        @finally {state.busy=NO;}
+        state.applied=NO;
+    }
+    DYYYMessageContentToken *token=[DYYYMessageContentToken new];token.state=state;token.view=view;token.generation=generation;
+    return token;
+}
++ (void)endContentGeometry:(id)candidate {
+    if(!NSThread.isMainThread || ![candidate isKindOfClass:DYYYMessageContentToken.class])return;
+    DYYYMessageContentToken *token=candidate;
+    if([self contentState:token.view]!=token.state)return;
+    if([token.state.updates endUpdate:token.generation])[self applyContent:token.state];
+}
++ (CGAffineTransform)nativeContentTransform:(CGAffineTransform)transform forView:(UIView *)view {
+    DYYYMessageContentState *state=[self contentState:view];
+    if(!state || state.busy)return transform;
+    if(state.applied && !state.updates.depth && CGAffineTransformEqualToTransform(transform,state.appliedTransform))return transform;
+    state.nativeTransform=transform;
+    if(state.updates.depth || !state.applied)return transform;
+    state.appliedTransform=CGAffineTransformScale(transform,state.scale,state.scale);
+    return state.appliedTransform;
+}
++ (void)didSetContentTransform:(UIView *)view {
+    DYYYMessageContentState *state=[self contentState:view];
+    if(!state || state.busy || state.updates.depth || !state.applied || state.scale<=0)return;
+    state.displayedFrame=view.frame;
+    // 原生变换与均匀缩放共用中心；反算只用于识别之后由显示 frame 派生的原生移动。
+    CGRect rect=view.frame;CGFloat xInset=rect.size.width*(1/state.scale-1)/2,yInset=rect.size.height*(1/state.scale-1)/2;
+    state.nativeFrame=CGRectInset(rect,-xInset,-yInset);
+}
++ (void)resetContentView:(UIView *)view {
+    DYYYMessageContentState *state=objc_getAssociatedObject(view,@selector(beginContentGeometry:));
+    if(!state || state.busy)return;
+    [state.updates invalidate];state.active=NO;state.busy=YES;
+    @try {if(state.applied && CGAffineTransformEqualToTransform(view.transform,state.appliedTransform))[UIView performWithoutAnimation:^{view.transform=state.nativeTransform;}];}
+    @finally {state.busy=NO;}
+    objc_setAssociatedObject(view,@selector(beginContentGeometry:),nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    [[self contentViews] removeObject:view];
+}
++ (void)synchronizeContent:(UITableViewCell *)cell {
+    UIView *view=cell.contentView;
+    if(![self contentAdapterReady] || ![view isKindOfClass:NSClassFromString(@"UITableViewCellContentView")])return;
+    DYYYMessageContentState *state=[self contentState:view];
+    if(state){
+        if(state.busy || state.updates.depth)return;
+        if(state.applied && CGAffineTransformEqualToTransform(view.transform,state.appliedTransform)){[self didSetContentTransform:view];return;}
+    } else {
+        state=[DYYYMessageContentState new];state.view=view;state.cell=cell;state.active=YES;state.updates=[DYYYMessageListUpdateState new];
+        objc_setAssociatedObject(view,@selector(beginContentGeometry:),state,OBJC_ASSOCIATION_RETAIN_NONATOMIC);[[self contentViews] addObject:view];
+    }
+    [self applyContent:state];
 }
 + (void)maskBackground:(UIView *)view state:(DYYYMessageCardState *)state {
     NSDictionary *saved=[state.masks objectForKey:view];
@@ -106,48 +222,10 @@
     CGRect rect=view.bounds;
     if(!CGRectEqualToRect(mask.frame,rect)){[CATransaction begin];[CATransaction setDisableActions:YES];mask.frame=rect;[CATransaction commit];}
 }
-+ (void)prepareCellLayout:(UITableViewCell *)cell {
++ (void)resetCard:(UITableViewCell *)cell {
     if(!NSThread.isMainThread)return;
     DYYYMessageCardState *state=objc_getAssociatedObject(cell,@selector(synchronizeCell:));
     if(!state || state.busy)return;
-    state.busy=YES;
-    [self restoreInsets:state];
-    [self restoreMasks:state];
-    state.busy=NO;
-}
-+ (void)insetContent:(AWEIMChatListCommonCell *)cell state:(DYYYMessageCardState *)state {
-    // 异步平铺分支不保证 avatarContainer 属性就是已挂载的头像容器。
-    // 只枚举已显示的直接内容组件，同一行统一缩放，保持原生内容和动作。
-    if(!CGPointEqualToPoint(cell.contentView.bounds.origin,CGPointZero) || cell.contentView.subviews.count>64){state.contentDecision=@"unsupported_container";[self restoreInsets:state];return;}
-    NSMutableArray *placements=[NSMutableArray array];
-    for(UIView *view in cell.contentView.subviews){
-        NSDictionary *mask=[state.masks objectForKey:view];
-        if(view==state.line || [mask[@"background"] boolValue] || view.hidden || view.alpha<=0.01 || view.bounds.size.width<=0 || view.bounds.size.height<=0)continue;
-        NSDictionary *old=[state.translations objectForKey:view];
-        BOOL owns=old && CGAffineTransformEqualToTransform(view.transform,[old[@"applied"] CGAffineTransformValue]);
-        CGAffineTransform native=owns?[old[@"native"] CGAffineTransformValue]:view.transform;
-        if(!CGAffineTransformIsIdentity(native) || !CGPointEqualToPoint(view.layer.anchorPoint,CGPointMake(0.5,0.5))){state.contentDecision=@"native_transform_or_anchor";[self restoreInsets:state];return;}
-        // center/bounds 不随 transform 改变，不能按已缩过的 frame 重算或再次扣偏移。
-        CGRect rect=CGRectMake(view.center.x-view.bounds.size.width/2,view.center.y-view.bounds.size.height/2,view.bounds.size.width,view.bounds.size.height);
-        NSDictionary *plan=[DYYYMessageListMetrics contentTransformForX:rect.origin.x y:rect.origin.y width:rect.size.width height:rect.size.height rowWidth:cell.bounds.size.width rowHeight:cell.bounds.size.height];
-        if(!plan.count){state.contentDecision=@"unsupported_geometry";[self restoreInsets:state];return;}
-        [placements addObject:@{@"view":view,@"plan":plan,@"native":[NSValue valueWithCGAffineTransform:native]}];
-    }
-    if(!placements.count){state.contentDecision=@"empty";[self restoreInsets:state];return;}
-    for(NSDictionary *placement in placements){
-        UIView *view=placement[@"view"];NSDictionary *plan=placement[@"plan"];
-        CGFloat scale=[plan[@"scale"] doubleValue];
-        CGAffineTransform applied=CGAffineTransformMake(scale,0,0,scale,[plan[@"translationX"] doubleValue],[plan[@"translationY"] doubleValue]);
-        if(!CGAffineTransformEqualToTransform(view.transform,applied))view.transform=applied;
-        [state.translations setObject:@{@"native":placement[@"native"],@"applied":[NSValue valueWithCGAffineTransform:applied]} forKey:view];
-    }
-    state.contentDecision=@"applied";
-}
-+ (void)resetCell:(UITableViewCell *)cell {
-    if(!NSThread.isMainThread)return;
-    DYYYMessageCardState *state=objc_getAssociatedObject(cell,@selector(synchronizeCell:));
-    if(!state || state.busy)return;
-    [self prepareCellLayout:cell];
     state.busy=YES;
     if(cell.backgroundView==state.background)cell.backgroundView=state.nativeBackground;
     if(cell.selectedBackgroundView==state.selected)cell.selectedBackgroundView=state.nativeSelected;
@@ -158,6 +236,10 @@
     objc_setAssociatedObject(cell,@selector(synchronizeCell:),nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     [[self cells] removeObject:cell];
 }
++ (void)resetCell:(UITableViewCell *)cell {
+    if(!NSThread.isMainThread)return;
+    [self resetContentView:cell.contentView];[self resetCard:cell];
+}
 + (void)synchronizeCell:(UITableViewCell *)base {
     if(!NSThread.isMainThread || ![base isKindOfClass:NSClassFromString(@"AWEIMChatListCommonCell")])return;
     AWEIMChatListCommonCell *cell=(id)base;
@@ -165,20 +247,21 @@
     if(state.busy)return;
     AWEIMChatListViewController *owner=(id)[self owner:cell named:@"AWEIMChatListViewController"];
     if(![self cardsEnabled] || !owner || !cell.window || ![self adapterReady]){[self resetCell:cell];return;}
+    [self synchronizeContent:cell];
     UITableView *table=owner.tableView;
     NSIndexPath *index=[table indexPathForCell:cell];
     NSArray *chats=owner.chatList;
     if(![table isKindOfClass:UITableView.class] || ![chats isKindOfClass:NSArray.class] || !index || index.row>=chats.count ||
         [table numberOfRowsInSection:index.section]!=chats.count || table.hasUncommittedUpdates)return;
     AWEIMChatModel *chat=cell.cellViewModel.chat;
-    if(chats[index.row]!=chat){[self resetCell:cell];return;}
+    if(chats[index.row]!=chat){[self resetCard:cell];return;}
     NSString *kind=[self kindForChat:chat],*previous=index.row?[self kindForChat:chats[index.row-1]]:nil;
     NSString *next=index.row+1<chats.count?[self kindForChat:chats[index.row+1]]:nil;
     NSDictionary *segment=[DYYYMessageListMetrics segmentForKind:kind previous:previous next:next width:cell.bounds.size.width height:cell.bounds.size.height];
-    if(!segment.count){[self resetCell:cell];return;}
+    if(!segment.count){[self resetCard:cell];return;}
     if(!state){
         state=[DYYYMessageCardState new];state.nativeBackground=cell.backgroundView;state.nativeSelected=cell.selectedBackgroundView;
-        state.fills=[NSMapTable weakToStrongObjectsMapTable];state.masks=[NSMapTable weakToStrongObjectsMapTable];state.translations=[NSMapTable weakToStrongObjectsMapTable];state.background=[[DYYYMessageListCardView alloc] initWithFrame:cell.bounds];state.selected=[[DYYYMessageListCardView alloc] initWithFrame:cell.bounds];
+        state.fills=[NSMapTable weakToStrongObjectsMapTable];state.masks=[NSMapTable weakToStrongObjectsMapTable];state.background=[[DYYYMessageListCardView alloc] initWithFrame:cell.bounds];state.selected=[[DYYYMessageListCardView alloc] initWithFrame:cell.bounds];
         state.background.accessibilityIdentifier=@"DYads.MessageGroupBackground";state.selected.accessibilityIdentifier=@"DYads.MessageGroupSelection";
         objc_setAssociatedObject(cell,@selector(synchronizeCell:),state,OBJC_ASSOCIATION_RETAIN_NONATOMIC);[[self cells] addObject:cell];
     }
@@ -200,7 +283,6 @@
         UIView *line=cell.horizontalLine;
         if(line!=state.line){state.line=line;state.lineHidden=line.hidden;}
         if(!line.hidden)line.hidden=YES;
-        [self insetContent:cell state:state];
     } @finally {state.busy=NO;}
 }
 + (void)synchronizeController:(UIViewController *)controller {
@@ -323,7 +405,10 @@
 }
 + (void)refresh {
     if(!NSThread.isMainThread)return;
-    if(![self cardsEnabled])for(UITableViewCell *cell in [self cells].allObjects)[self resetCell:cell];
+    if(![self cardsEnabled]){
+        for(UIView *view in [self contentViews].allObjects)[self resetContentView:view];
+        for(UITableViewCell *cell in [self cells].allObjects)[self resetCell:cell];
+    }
     for(UIViewController *controller in [self controllers].allObjects)[self synchronizeController:controller];
     for(UIView *bar in [self bars].allObjects)[self synchronizeBar:bar];
 }
@@ -335,15 +420,34 @@
     for(UITableViewCell *cell in [self cells].allObjects)if(cell.window){
         DYYYMessageCardState *s=objc_getAssociatedObject(cell,@selector(synchronizeCell:));
         if(s.kind)groups[s.kind]=@([groups[s.kind] unsignedIntegerValue]+1);
-        if(s.contentDecision)decisions[s.contentDecision]=@([decisions[s.contentDecision] unsignedIntegerValue]+1);
-        if(s.translations.count)insets++;
         for(UIView *view in s.masks.keyEnumerator.allObjects){NSDictionary *mask=[s.masks objectForKey:view];if([mask[@"background"] boolValue] && view.layer.mask==mask[@"applied"])backgroundMasks++;}
+    }
+    NSMutableArray *content=[NSMutableArray array];
+    for(UIView *view in [self contentViews].allObjects)if(view.window){
+        DYYYMessageContentState *state=[self contentState:view];if(!state)continue;
+        BOOL matches=state.applied && !state.updates.depth && CGAffineTransformEqualToTransform(view.transform,state.appliedTransform);
+        if(matches)insets++;
+        NSString *decision=matches?@"container_matches":state.decision?:@"matrix_changed";
+        if(state.applied && !matches)decision=@"matrix_changed";
+        decisions[decision]=@([decisions[decision] unsignedIntegerValue]+1);
+        if(content.count>=3)continue;
+        NSMutableDictionary *sample=[@{@"scaleX":@(hypot(view.transform.a,view.transform.b)),@"visualFrame":[self valuesForFrame:[view convertRect:view.bounds toView:state.cell]],@"matrixMatches":@(matches),@"updateDepth":@(state.updates.depth)} mutableCopy];
+        for(UIView *child in view.subviews){
+            if([child isKindOfClass:NSClassFromString(@"IESIMAsyncDrawableView")] && !sample[@"textFrame"] && !child.hidden)
+                sample[@"textFrame"]=[self valuesForFrame:[child convertRect:child.bounds toView:state.cell]];
+            if(child.subviews.count>8)continue;
+            for(UIView *leaf in child.subviews)if([leaf isKindOfClass:NSClassFromString(@"AWEIMChatCellAvatarView")])
+                sample[@"avatarFrame"]=[self valuesForFrame:[leaf convertRect:leaf.bounds toView:state.cell]];
+        }
+        CALayer *presentation=view.layer.presentationLayer;
+        if(presentation){CGAffineTransform transform=presentation.affineTransform;sample[@"presentationScaleX"]=@(hypot(transform.a,transform.b));}
+        [content addObject:sample];
     }
     NSMutableArray *headers=[NSMutableArray array];
     for(UIView *bar in [self bars].allObjects)if(bar.window && headers.count<4){
         DYYYMessageHeaderState *s=[self headerState:bar create:NO];
         [headers addObject:@{@"transparent":@(!bar.backgroundColor || CGColorGetAlpha(bar.backgroundColor.CGColor)==0),@"leftGlassWidth":@(s.left.bounds.size.width),@"rightGlassWidth":@(s.right.bounds.size.width),@"rightMounted":@(s.right.superview!=nil)}];
     }
-    return @{@"cardsEnabled":@([self cardsEnabled]),@"topEnabled":@([self topEnabled]),@"adapterReady":@([self adapterReady]),@"visibleRowsByGroup":groups,@"insetRows":@(insets),@"contentScale":@0.92,@"contentDecisions":decisions,@"backgroundMasks":@(backgroundMasks),@"headers":headers,@"nativeRowGeometry":@YES,@"unreadMutation":@NO};
+    return @{@"cardsEnabled":@([self cardsEnabled]),@"topEnabled":@([self topEnabled]),@"adapterReady":@([self adapterReady]),@"visibleRowsByGroup":groups,@"insetRows":@(insets),@"contentScale":@0.92,@"contentDecisions":decisions,@"contentContainers":content,@"contentAdapterReady":@([self contentAdapterReady]),@"backgroundMasks":@(backgroundMasks),@"headers":headers,@"nativeRowGeometry":@YES,@"unreadMutation":@NO};
 }
 @end
