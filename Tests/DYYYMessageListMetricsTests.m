@@ -54,6 +54,16 @@ int main(void) {
         for(NSUInteger i=0;i<1000;i++)NSCAssert([[DYYYMessageListMetrics noticeHeaderShiftForBackRight:64.333 titleLeft:101.333 selectedCenter:300 glassWidth:116 actionsLeft:346 width:440] isEqual:header],@"标签整体只平移一次，字体与宽度不缩放");
         NSCAssert(![DYYYMessageListMetrics noticeHeaderShiftForBackRight:90 titleLeft:100 selectedCenter:280 glassWidth:116 actionsLeft:300 width:320].count,@"空间不足不把标题移进返回区域");
         NSCAssert(![DYYYMessageListMetrics noticeHeaderShiftForBackRight:64 titleLeft:NAN selectedCenter:300 glassWidth:116 actionsLeft:346 width:440].count,@"未知标题位置不猜");
+        // 透明顶栏露出原生空闲 Header：106pt inset 抵消 -106pt offset，不能当成下拉。
+        NSCAssert(![DYYYMessageListMetrics showRefreshIndicator:NO dragging:NO offsetY:-106 insetTop:106],@"空闲时加载图不可常驻顶栏");
+        NSCAssert(![DYYYMessageListMetrics showRefreshIndicator:NO dragging:YES offsetY:-106 insetTop:106],@"仅按住列表不算下拉");
+        NSCAssert([DYYYMessageListMetrics showRefreshIndicator:NO dragging:YES offsetY:-118 insetTop:106],@"真实下拉仍显示原生提示");
+        NSCAssert([DYYYMessageListMetrics showRefreshIndicator:YES dragging:NO offsetY:-106 insetTop:106],@"松手后的真实刷新仍显示，不能一律隐藏");
+        NSCAssert(![DYYYMessageListMetrics showRefreshIndicator:NO dragging:NO offsetY:-118 insetTop:106],@"刷新结束后即使还在回弹也收起");
+        NSCAssert(![DYYYMessageListMetrics showRefreshIndicator:NO dragging:YES offsetY:-106.333 insetTop:106],@"亚像素抖动不误判刷新");
+        NSCAssert(![DYYYMessageListMetrics showRefreshIndicator:NO dragging:YES offsetY:NAN insetTop:106],@"非法几何不判定有效下拉");
+        NSCAssert(![DYYYMessageListMetrics showRefreshIndicator:NO dragging:NO offsetY:0 insetTop:0],@"互动页无顶部inset时同样空闲隐藏");
+        NSCAssert([DYYYMessageListMetrics showRefreshIndicator:NO dragging:YES offsetY:-12 insetTop:0],@"互动页下拉提示保持");
         // 80C4F15D 真实平铺行：头像、时间、摘要与角标都由相同映射保留相对间距。
         NSDictionary *avatar=[DYYYMessageListMetrics contentTransformForX:16 y:8 width:56 height:56 rowWidth:440 rowHeight:72];
         NSDictionary *time=[DYYYMessageListMetrics contentTransformForX:363 y:16 width:61 height:15 rowWidth:440 rowHeight:72];

@@ -4,6 +4,7 @@
 #import "DYYYMessageListUpdateState.h"
 #import "DYYYInteractionNoticeStyle.h"
 #import "DYYYMessageListViewport.h"
+#import "DYYYRefreshIndicatorStyle.h"
 #import "DYYYMessageListStateStore.h"
 #include <string.h>
 #include <math.h>
@@ -695,6 +696,7 @@
     }
     for(UIView *bar in [self bars].allObjects)[self synchronizeBar:bar];
     [DYYYInteractionNoticeStyle refresh];
+    [DYYYRefreshIndicatorStyle refresh];
     [DYYYMessageListViewport refresh];
 }
 + (NSDictionary *)diagnostics {

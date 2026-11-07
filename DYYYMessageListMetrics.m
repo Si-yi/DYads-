@@ -56,4 +56,8 @@
     if(shift< -44 || titleLeft+shift<backRight+8)return @{};
     return @{@"translationX":@(shift)};
 }
++ (BOOL)showRefreshIndicator:(BOOL)refreshing dragging:(BOOL)dragging offsetY:(double)offset insetTop:(double)inset {
+    if(!isfinite(offset) || !isfinite(inset) || inset<0)return NO;
+    return refreshing || (dragging && offset+inset< -0.5);
+}
 @end

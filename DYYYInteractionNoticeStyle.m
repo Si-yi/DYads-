@@ -1,5 +1,6 @@
 #import "DYYYInteractionNoticeStyle.h"
 #import "DYYYMessageListStyle.h"
+#import "DYYYRefreshIndicatorStyle.h"
 #import "DYYYMessageListCardView.h"
 #import "DYYYMessageListMetrics.h"
 #import "DYYYMessageListUpdateState.h"
@@ -229,6 +230,6 @@ static NSUInteger DYYYFansBeforeWindowApplications;
     if(!NSThread.isMainThread)return @{};
     NSUInteger active=0,fans=0,nativeLines=0;
     for(UIView *cell in [self cells].allObjects)if(cell.window){DYYYNoticeCardState *s=[self state:cell];for(UIView *line in s.lines.keyEnumerator.allObjects)if(line.hidden)nativeLines++;if(s.applied && [self contentForCell:cell].layer.mask==s.mask && s.background.superview==[self contentForCell:cell] && [self backgroundForCell:cell]==s.panel && CGAffineTransformEqualToTransform([self contentForCell:cell].transform,s.appliedTransform)){active++;if([self isFansCell:cell])fans++;}}
-    return @{@"enabled":@([DYYYMessageListStyle cardsEnabled]),@"roundedVisibleCells":@(active),@"followersVisibleCells":@(fans),@"hiddenNativeDividers":@(nativeLines),@"bindingEvents":@(DYYYFansBindingEvents),@"beforeWindowApplications":@(DYYYFansBeforeWindowApplications),@"hooks":[self hookDiagnostics],@"layout":@"section_groups"};
+    return @{@"enabled":@([DYYYMessageListStyle cardsEnabled]),@"roundedVisibleCells":@(active),@"followersVisibleCells":@(fans),@"hiddenNativeDividers":@(nativeLines),@"bindingEvents":@(DYYYFansBindingEvents),@"beforeWindowApplications":@(DYYYFansBeforeWindowApplications),@"hooks":[self hookDiagnostics],@"refreshIndicator":[DYYYRefreshIndicatorStyle diagnostics],@"layout":@"section_groups"};
 }
 @end

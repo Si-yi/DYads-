@@ -2,6 +2,7 @@
 #import "DYYYMessageListStyle.h"
 #import "DYYYInteractionNoticeStyle.h"
 #import "DYYYMessageListViewport.h"
+#import "DYYYRefreshIndicatorStyle.h"
 #import "DYYYChatEnhancementPolicy.h"
 
 %group DYYYMessageListControllerHooks
@@ -86,7 +87,7 @@
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {if([DYYYMessageListStyle passThroughNoticeActions:point bar:(UIView *)self])return nil;return %orig(point,event);}
 - (void)setBackgroundColor:(UIColor *)color { %orig([DYYYMessageListStyle nativeBackgroundColor:color forBar:self]); }
 - (void)setOpaque:(BOOL)opaque { %orig([DYYYMessageListStyle nativeOpaque:opaque forBar:self]); }
-- (void)layoutSubviews { %orig; [DYYYInteractionNoticeStyle installHooks]; [DYYYMessageListStyle synchronizeBar:self]; [DYYYMessageListStyle scheduleBarSynchronization:self]; }
+- (void)layoutSubviews { %orig; [DYYYInteractionNoticeStyle installHooks]; [DYYYRefreshIndicatorStyle installHooks]; [DYYYMessageListStyle synchronizeBar:self]; [DYYYMessageListStyle scheduleBarSynchronization:self]; }
 - (void)didMoveToWindow { %orig; [DYYYMessageListStyle synchronizeBar:self]; [DYYYMessageListStyle scheduleBarSynchronization:self]; }
 %end
 %end

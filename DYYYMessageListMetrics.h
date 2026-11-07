@@ -7,4 +7,5 @@
 + (NSDictionary *)paddingForKind:(NSString *)kind previous:(NSString *)previous next:(NSString *)next nativeHeight:(double)height;
 + (NSDictionary *)viewportForListTop:(double)listTop headerBottom:(double)headerBottom tableY:(double)y width:(double)width height:(double)height rootHeight:(double)rootHeight;
 + (NSDictionary *)noticeHeaderShiftForBackRight:(double)backRight titleLeft:(double)titleLeft selectedCenter:(double)center glassWidth:(double)glassWidth actionsLeft:(double)actionsLeft width:(double)width;
++ (BOOL)showRefreshIndicator:(BOOL)refreshing dragging:(BOOL)dragging offsetY:(double)offset insetTop:(double)inset;
 @end

@@ -2572,6 +2572,15 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @interface UITableViewCellContentView : UIView
 @end
 // 关注列表控制器名称由原生合并页属性确认；Cell 类型在该根视图内验证后绑定。
+@interface AWERefreshHeader : UIView
+@property (nonatomic, readonly) UIScrollView *scrollView;
+@property (nonatomic, weak) UIView *loading;
+@property (nonatomic, readonly, getter=isRefreshing) BOOL refreshing;
+- (void)placeSubviews;
+- (void)setState:(long long)state;
+- (void)setPullingPercent:(double)percent;
+- (void)scrollViewPanStateDidChange:(id)change;
+@end
 @interface AWEIMNewFansTableViewCell : UITableViewCell
 @end
 @interface AWEIMFansNewViewController : UIViewController
