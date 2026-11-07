@@ -507,15 +507,14 @@
     }return nil;
 }
 + (UIView *)fansActionsForOuterBar:(UIView *)bar {
-    UIViewController *merge=[self owner:bar named:@"AWEIMFansAndInteractMergeViewController"];
-    NSMutableArray *pending=[NSMutableArray arrayWithArray:merge.childViewControllers?:@[]];NSUInteger visited=0;
-    while(pending.count && visited++<12){UIViewController *controller=pending.lastObject;[pending removeLastObject];
-        if([controller isKindOfClass:NSClassFromString(@"AWEIMFansContainerViewController")]){
-            for(UIView *view in controller.viewIfLoaded.subviews)if([view isKindOfClass:NSClassFromString(@"AWENavigationBar")]){
-                UIView *actions=((AWENavigationBar *)view).rightBtnsContainerView;
-                if(actions.window==bar.window && !actions.hidden && actions.bounds.size.width>0 && actions.bounds.size.width<=120)return actions;
-            }
-        }else if(pending.count+controller.childViewControllers.count<=12)[pending addObjectsFromArray:controller.childViewControllers];
+    UIViewController *owner=[self owner:bar named:@"AWEIMFansAndInteractMergeViewController"];
+    if(![DYYYChatEnhancementPolicy class:owner.class selector:@selector(fansViewController) result:'@' arguments:@""])return nil;
+    // 直接读取原生关注页。不能让互动页的深层控制器耗尽遍历预算而漏掉同级关注页。
+    UIViewController *fans=((AWEIMFansAndInteractMergeViewController *)owner).fansViewController;
+    if(![fans isKindOfClass:NSClassFromString(@"AWEIMFansContainerViewController")] || !fans.isViewLoaded)return nil;
+    for(UIView *view in fans.viewIfLoaded.subviews)if([view isKindOfClass:NSClassFromString(@"AWENavigationBar")]){
+        UIView *actions=((AWENavigationBar *)view).rightBtnsContainerView;
+        if(actions.window==bar.window && !actions.hidden && actions.bounds.size.width>0 && actions.bounds.size.width<=120)return actions;
     }return nil;
 }
 + (void)synchronizeFansBar:(AWENavigationBar *)bar outer:(AWENavigationBar *)outer {
@@ -564,13 +563,21 @@
     UIView *actions=tabs.currentSelectedIndex==1?[self fansActionsForOuterBar:state.bar]:nil;
     CGFloat oldShift=state.plateApplied?state.plateAppliedTransform.tx-state.plateNativeTransform.tx:0;
     UIView *selected=[self selectedNoticeItem:plate];CGRect selectedRect=[selected convertRect:selected.bounds toView:carrier];
-    CGFloat actionsLeft=actions?CGRectGetMinX([actions convertRect:actions.bounds toView:carrier]):carrier.bounds.size.width;
+    CGFloat actionsLeft=carrier.bounds.size.width;
+    if(actions){
+        // 同宽原生子导航栏的最终栏位不随分页转场的中间 contentOffset 摆动。
+        BOOL sameCarrier=fabs(actions.superview.bounds.size.width-carrier.bounds.size.width)<0.5 && CGAffineTransformIsIdentity(actions.transform);
+        actionsLeft=sameCarrier?CGRectGetMinX(actions.frame):CGRectGetMinX([actions convertRect:actions.bounds toView:carrier]);
+    }
     NSDictionary *plan=[DYYYMessageListMetrics noticeHeaderShiftForBackRight:CGRectGetMaxX(leftRect) titleLeft:[self noticeTitleLeft:plate carrier:carrier]-oldShift selectedCenter:CGRectGetMidX(selectedRect)-oldShift glassWidth:116 actionsLeft:actionsLeft width:carrier.bounds.size.width];
     CGFloat shift=actions?[plan[@"translationX"] doubleValue]:0;
     CGAffineTransform applied=state.plateNativeTransform;applied.tx+=shift;
     state.plateAppliedTransform=applied;state.plateApplied=YES;state.noticeActions=actions;
     objc_setAssociatedObject(plate,@selector(beginNoticePlateFrame:),state,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     [UIView performWithoutAnimation:^{if(!CGAffineTransformEqualToTransform(plate.transform,applied))plate.transform=applied;}];
+}
++ (NSUInteger)actualHiddenHeaderViews:(DYYYMessageHeaderState *)state {
+    NSUInteger count=0;for(UIView *view in state.hiddenViews.keyEnumerator.allObjects)if(view.hidden)count++;return count;
 }
 + (BOOL)passThroughNoticeActions:(CGPoint)point bar:(UIView *)bar {
     if(!NSThread.isMainThread)return NO;DYYYMessageHeaderState *state=[self headerState:bar create:NO];UIView *actions=state.noticeActions;
@@ -724,7 +731,7 @@
     NSMutableArray *headers=[NSMutableArray array];
     for(UIView *bar in [self bars].allObjects)if(bar.window && headers.count<4){
         DYYYMessageHeaderState *s=[self headerState:bar create:NO];
-        [headers addObject:@{@"transparent":@(!bar.backgroundColor || CGColorGetAlpha(bar.backgroundColor.CGColor)==0),@"leftGlassWidth":@(s.left.bounds.size.width),@"rightGlassWidth":@(s.auxiliary?s.actions.bounds.size.width:s.right.bounds.size.width),@"rightMounted":@(s.auxiliary?s.actions.superview!=nil:s.right.superview!=nil),@"auxiliaryFansBar":@(s.auxiliary),@"hiddenNativeHeaderViews":@(s.hiddenViews.count),@"tabTranslationX":@(s.plateApplied && CGAffineTransformEqualToTransform(s.plate.transform,s.plateAppliedTransform)?s.plateAppliedTransform.tx-s.plateNativeTransform.tx:0),@"selectedTabOnly":@(s.notice)}];
+        [headers addObject:@{@"transparent":@(!bar.backgroundColor || CGColorGetAlpha(bar.backgroundColor.CGColor)==0),@"leftGlassWidth":@(s.left.bounds.size.width),@"rightGlassWidth":@(s.auxiliary?s.actions.bounds.size.width:s.right.bounds.size.width),@"rightMounted":@(s.auxiliary?s.actions.superview!=nil:s.right.superview!=nil),@"auxiliaryFansBar":@(s.auxiliary),@"hiddenNativeHeaderViews":@([self actualHiddenHeaderViews:s]),@"tabTranslationX":@(s.plateApplied && CGAffineTransformEqualToTransform(s.plate.transform,s.plateAppliedTransform)?s.plateAppliedTransform.tx-s.plateNativeTransform.tx:0),@"selectedTabOnly":@(s.notice)}];
     }
     return @{@"viewport":[DYYYMessageListViewport diagnostics],@"cardsEnabled":@([self cardsEnabled]),@"topEnabled":@([self topEnabled]),@"adapterReady":@([self adapterReady]),@"visibleRowsByGroup":groups,@"insetRows":@(insets),@"contentScale":@0.92,@"contentDecisions":decisions,@"contentContainers":content,@"contentAdapterReady":@([self contentAdapterReady]),@"backgroundMasks":@(backgroundMasks),@"compactLightInteractionViews":@([self lightViews].allObjects.count),@"headers":headers,@"nativeRowGeometry":@YES,@"unreadMutation":@NO};
 }

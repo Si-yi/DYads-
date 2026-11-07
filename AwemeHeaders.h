@@ -2574,6 +2574,15 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 // 关注列表控制器名称由原生合并页属性确认；Cell 类型在该根视图内验证后绑定。
 @interface AWEIMNewFansTableViewCell : UITableViewCell
 @end
+@interface AWEIMFansNewViewController : UIViewController
+@property (nonatomic, strong) UITableView *tableView;
+- (void)tableView:(UITableView *)table willDisplayCell:(UITableViewCell *)cell forRowAtIndexPath:(NSIndexPath *)path;
+@end
+@interface AWEIMFansAndInteractMergeViewController : UIViewController
+@property (nonatomic, strong) UIViewController *fansViewController;
+- (void)setCurrentSelectedIndex:(long long)index;
+- (void)slidingViewController:(id)controller didSelectIndex:(long long)index transitionType:(long long)type;
+@end
 @interface AWEIMFansContainerViewController : UIViewController
 @end
 @interface DYYYNativeFansTableCell : UITableViewCell

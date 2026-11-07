@@ -4,8 +4,20 @@
 #import "DYYYMessageListMetrics.h"
 #import "DYYYMessageListUpdateState.h"
 #import "DYYYUtils.h"
+#import "DYYYChatEnhancementPolicy.h"
+#import "AwemeHeaders.h"
 #import <QuartzCore/QuartzCore.h>
 #import <objc/runtime.h>
+
+static char kDYYYFansCellBindingKey;
+static NSUInteger DYYYFansBindingEvents;
+static NSUInteger DYYYFansBeforeWindowApplications;
+@interface DYYYFansCellBinding : NSObject
+@property (nonatomic, weak) UITableView *table;
+@property (nonatomic, weak) AWEIMFansNewViewController *controller;
+@property (nonatomic, copy) NSIndexPath *path;
+@end
+@implementation DYYYFansCellBinding @end
 
 @interface DYYYNoticeCardState : NSObject
 @property (nonatomic, weak) UIView *cell;
@@ -54,15 +66,32 @@
     return nil;
 }
 + (NSHashTable *)fansControllers {static NSHashTable *t;static dispatch_once_t once;dispatch_once(&once,^{t=[NSHashTable weakObjectsHashTable];});return t;}
++ (DYYYFansCellBinding *)fansBinding:(UIView *)cell {
+    DYYYFansCellBinding *binding=objc_getAssociatedObject(cell,&kDYYYFansCellBindingKey);
+    if(![binding isKindOfClass:DYYYFansCellBinding.class] || !binding.controller.isViewLoaded || !binding.table || binding.controller.tableView!=binding.table)return nil;
+    return binding;
+}
 + (BOOL)isFansCell:(UIView *)cell {
-    // 4BFF6DCA 已确认具体关注行与真实父控制器；不只依赖首次扫描的弱绑定。
-    if([cell isKindOfClass:NSClassFromString(@"AWEIMNewFansTableViewCell")]){
-        UIViewController *controller=[DYYYUtils firstAvailableViewControllerFromView:cell];
-        for(NSUInteger i=0;controller && i<8;i++,controller=controller.parentViewController)if([controller isKindOfClass:NSClassFromString(@"AWEIMFansContainerViewController")])return YES;
+    if(![cell isKindOfClass:NSClassFromString(@"AWEIMNewFansTableViewCell")])return NO;
+    if([self fansBinding:cell])return YES;
+    UIViewController *owner=[DYYYUtils firstAvailableViewControllerFromView:cell];
+    return [owner isKindOfClass:NSClassFromString(@"AWEIMFansNewViewController")] && ((AWEIMFansNewViewController *)owner).tableView==[self listForCell:cell];
+}
++ (void)clearFansBinding:(UIView *)cell {if(cell)objc_setAssociatedObject(cell,&kDYYYFansCellBindingKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);}
++ (void)prepareFansCell:(UIView *)cell table:(UITableView *)table indexPath:(NSIndexPath *)path controller:(UIViewController *)controller {
+    if(!NSThread.isMainThread || ![controller isKindOfClass:NSClassFromString(@"AWEIMFansNewViewController")] || ((AWEIMFansNewViewController *)controller).tableView!=table || ![cell isKindOfClass:NSClassFromString(@"AWEIMNewFansTableViewCell")] || ![path isKindOfClass:NSIndexPath.class])return;
+    DYYYFansBindingEvents++;
+    DYYYFansCellBinding *binding=[DYYYFansCellBinding new];binding.table=table;binding.controller=(id)controller;binding.path=path;
+    objc_setAssociatedObject(cell,&kDYYYFansCellBindingKey,binding,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    [self installFansCellHooksForCell:cell];[self synchronizeCell:cell];
+}
++ (void)synchronizeMergedController:(UIViewController *)controller {
+    if(!NSThread.isMainThread || ![controller isKindOfClass:NSClassFromString(@"AWEIMFansAndInteractMergeViewController")] || !controller.isViewLoaded)return;
+    if([DYYYChatEnhancementPolicy class:controller.class selector:@selector(fansViewController) result:'@' arguments:@""]){
+        UIViewController *fans=((AWEIMFansAndInteractMergeViewController *)controller).fansViewController;
+        if(fans.isViewLoaded)[self synchronizeFansController:fans];
     }
-    UIView *list=[self listForCell:cell];NSHashTable *roots=objc_getAssociatedObject(list,@selector(synchronizeFansController:));
-    UIViewController *host=roots.anyObject;
-    return host.isViewLoaded && [list isDescendantOfView:host.viewIfLoaded] && [host isKindOfClass:NSClassFromString(@"AWEIMFansContainerViewController")];
+    for(UIView *view in controller.viewIfLoaded.subviews)if([view isKindOfClass:NSClassFromString(@"AWENavigationBar")]){[DYYYMessageListStyle synchronizeBar:view];[DYYYMessageListStyle scheduleBarSynchronization:view];}
 }
 + (BOOL)inScope:(UIView *)cell {
     if([self isFansCell:cell])return YES;
@@ -71,8 +100,13 @@
     return [controller isKindOfClass:NSClassFromString(@"AWENoticeSwiftImpl.InteractionNoticeListContainerViewController")];
 }
 + (void)synchronizeFansController:(UIViewController *)controller {
-    if(!NSThread.isMainThread || ![controller isKindOfClass:NSClassFromString(@"AWEIMFansContainerViewController")] || !controller.isViewLoaded || !controller.viewIfLoaded.window)return;
+    if(!NSThread.isMainThread || (! [controller isKindOfClass:NSClassFromString(@"AWEIMFansContainerViewController")] && ![controller isKindOfClass:NSClassFromString(@"AWEIMFansNewViewController")]) || !controller.isViewLoaded || !controller.viewIfLoaded.window)return;
     [[self fansControllers] addObject:controller];
+    if([controller isKindOfClass:NSClassFromString(@"AWEIMFansNewViewController")]){
+        UITableView *table=((AWEIMFansNewViewController *)controller).tableView;
+        for(UITableViewCell *cell in table.visibleCells){NSIndexPath *path=[table indexPathForCell:cell];if(path)[self prepareFansCell:cell table:table indexPath:path controller:controller];}
+        return;
+    }
     NSMutableArray *pending=[NSMutableArray arrayWithObject:controller.viewIfLoaded];NSUInteger visited=0;
     while(pending.count && visited++<128){
         UIView *view=pending.lastObject;[pending removeLastObject];
@@ -121,7 +155,7 @@
 + (void)synchronizeCell:(UIView *)cell {
     if(!NSThread.isMainThread)return;
     DYYYNoticeCardState *s=[self state:cell];if(s.busy || s.updates.depth)return;
-    if(![DYYYMessageListStyle cardsEnabled] || !cell.window || ![self inScope:cell]){[self resetCell:cell];return;}
+    if(![DYYYMessageListStyle cardsEnabled] || (!cell.window && ![self fansBinding:cell].table.window) || ![self inScope:cell]){[self resetCell:cell];return;}
     UIView *content=[self contentForCell:cell];
     if(content.bounds.size.width<160 || content.bounds.size.height<40)return;
     for(UIView *view in content.subviews)if([view isKindOfClass:NSClassFromString(@"AWENoticeSwiftBizUI.InteractionNoticeContainerCellEditContainerView")] && view.bounds.size.width>1 && view.frame.origin.x<content.bounds.size.width){[self resetCell:cell];return;}
@@ -135,12 +169,12 @@
     }
     s.busy=YES;
     @try {
-    UIView *list=[self listForCell:cell];NSIndexPath *path=nil;NSInteger count=0;
+    DYYYFansCellBinding *binding=[self fansBinding:cell];UIView *list=[self listForCell:cell]?:binding.table;NSIndexPath *path=nil;NSInteger count=0;
     if([list isKindOfClass:UICollectionView.class]){
         UICollectionView *collection=(id)list;path=[collection indexPathForCell:(id)cell];
         if(path && path.section<collection.numberOfSections)count=[collection numberOfItemsInSection:path.section];
     }else if([list isKindOfClass:UITableView.class]){
-        UITableView *table=(id)list;path=[table indexPathForCell:(id)cell];
+        UITableView *table=(id)list;path=[table indexPathForCell:(id)cell]?:binding.path;
         if(path && path.section<table.numberOfSections)count=[table numberOfRowsInSection:path.section];
     }
     if(path && path.item<count){s.first=path.item==0;s.last=path.item+1==count;}
@@ -187,6 +221,7 @@
         if(!CGRectEqualToRect(s.divider.frame,lineRect))s.divider.frame=lineRect;
         s.divider.backgroundColor=(dark?[UIColor colorWithWhite:1 alpha:0.045]:[UIColor colorWithWhite:0 alpha:0.045]).CGColor;s.divider.hidden=s.last;
         if(content.layer.mask!=s.mask)content.layer.mask=s.mask;[CATransaction commit];
+        if(!cell.window && binding)DYYYFansBeforeWindowApplications++;
     } @finally {s.busy=NO;}
 }
 + (void)refresh { if(!NSThread.isMainThread)return;for(UIViewController *controller in [self fansControllers].allObjects)[self synchronizeFansController:controller];for(UIView *cell in [self cells].allObjects)[self synchronizeCell:cell]; }
@@ -194,6 +229,6 @@
     if(!NSThread.isMainThread)return @{};
     NSUInteger active=0,fans=0,nativeLines=0;
     for(UIView *cell in [self cells].allObjects)if(cell.window){DYYYNoticeCardState *s=[self state:cell];for(UIView *line in s.lines.keyEnumerator.allObjects)if(line.hidden)nativeLines++;if(s.applied && [self contentForCell:cell].layer.mask==s.mask && s.background.superview==[self contentForCell:cell] && [self backgroundForCell:cell]==s.panel && CGAffineTransformEqualToTransform([self contentForCell:cell].transform,s.appliedTransform)){active++;if([self isFansCell:cell])fans++;}}
-    return @{@"enabled":@([DYYYMessageListStyle cardsEnabled]),@"roundedVisibleCells":@(active),@"followersVisibleCells":@(fans),@"hiddenNativeDividers":@(nativeLines),@"layout":@"section_groups"};
+    return @{@"enabled":@([DYYYMessageListStyle cardsEnabled]),@"roundedVisibleCells":@(active),@"followersVisibleCells":@(fans),@"hiddenNativeDividers":@(nativeLines),@"bindingEvents":@(DYYYFansBindingEvents),@"beforeWindowApplications":@(DYYYFansBeforeWindowApplications),@"hooks":[self hookDiagnostics],@"layout":@"section_groups"};
 }
 @end
