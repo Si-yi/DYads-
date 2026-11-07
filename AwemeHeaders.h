@@ -2567,6 +2567,13 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @end
 @interface UITableViewCellContentView : UIView
 @end
+// 关注列表控制器名称由原生合并页属性确认；Cell 类型在该根视图内验证后绑定。
+@interface AWEIMFansContainerViewController : UIViewController
+@end
+@interface DYYYNativeFansTableCell : UITableViewCell
+@end
+@interface DYYYNativeFansCollectionCell : UICollectionViewCell
+@end
 // 实际运行时类：AWENoticeSwiftBizUI.InteractionNoticeContainerCell。
 @interface DYYYNativeInteractionNoticeCell : UICollectionViewCell
 @end
