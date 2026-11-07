@@ -4,6 +4,7 @@
 #import "DYYYMessageListUpdateState.h"
 #import "DYYYInteractionNoticeStyle.h"
 #import "DYYYMessageListViewport.h"
+#import "DYYYMessageListStateStore.h"
 #include <string.h>
 #include <math.h>
 #import "DYYYChatChrome.h"
@@ -403,13 +404,13 @@
     [[self controllers] addObject:controller];
     UITableView *table=((AWEIMChatListViewController *)controller).tableView;
     if(![table isKindOfClass:UITableView.class])return;
-    NSNumber *separator=objc_getAssociatedObject(table,@selector(synchronizeController:));
+    NSNumber *separator=[DYYYMessageListStateStore separatorForObject:table];
     if([self cardsEnabled] && [self adapterReady]){
-        if(!separator)objc_setAssociatedObject(table,@selector(synchronizeController:),@(table.separatorStyle),OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        if(!separator)[DYYYMessageListStateStore setSeparator:@(table.separatorStyle) forObject:table];
         if(table.separatorStyle!=UITableViewCellSeparatorStyleNone)table.separatorStyle=UITableViewCellSeparatorStyleNone;
     } else if(separator){
         if(table.separatorStyle==UITableViewCellSeparatorStyleNone)table.separatorStyle=separator.integerValue;
-        objc_setAssociatedObject(table,@selector(synchronizeController:),nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [DYYYMessageListStateStore setSeparator:nil forObject:table];
     }
     [DYYYMessageListViewport synchronizeController:controller];
     for(UITableViewCell *cell in table.visibleCells)[self synchronizeCell:cell];

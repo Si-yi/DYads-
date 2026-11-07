@@ -78,3 +78,9 @@ xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
 xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
     DYYYMessageListUpdateState.m Tests/DYYYMessageListUpdateStateTests.m -o "$test_dir/message-list-update-tests"
 "$test_dir/message-list-update-tests"
+xcrun clang -fobjc-arc -fblocks -framework Foundation -I. \
+    DYYYMessageListStateStore.m Tests/DYYYMessageListStateStoreTests.m -o "$test_dir/message-list-state-store-tests"
+"$test_dir/message-list-state-store-tests"
+xcrun clang -fobjc-arc -fblocks -framework Foundation -framework QuartzCore -framework CoreGraphics -I. \
+    DYYYMessageListClipState.m Tests/DYYYMessageListClipStateTests.m -o "$test_dir/message-list-clip-tests"
+"$test_dir/message-list-clip-tests"

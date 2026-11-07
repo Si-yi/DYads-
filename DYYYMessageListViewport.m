@@ -1,6 +1,8 @@
 #import "DYYYMessageListViewport.h"
 #import "DYYYMessageListStyle.h"
 #import "DYYYMessageListMetrics.h"
+#import "DYYYMessageListStateStore.h"
+#import "DYYYMessageListClipState.h"
 #import "AwemeHeaders.h"
 #import <QuartzCore/QuartzCore.h>
 #import <objc/runtime.h>
@@ -8,7 +10,7 @@
 @interface DYYYMessageViewportState : NSObject
 @property (nonatomic, weak) UITableView *table;
 @property (nonatomic, weak) UIViewController *controller;
-@property (nonatomic, strong) NSMapTable<UIView *, CAShapeLayer *> *clips;
+@property (nonatomic, strong) NSMapTable<UIView *, DYYYMessageListClipState *> *clips;
 @property (nonatomic) CGRect nativeFrame;
 @property (nonatomic) CGRect appliedFrame;
 @property (nonatomic) CGRect rootBounds;
@@ -17,6 +19,7 @@
 @property (nonatomic) CGFloat top;
 @property (nonatomic) UIScrollViewContentInsetAdjustmentBehavior nativeAdjustment;
 @property (nonatomic) BOOL busy;
+@property (nonatomic, copy) NSString *failure;
 @end
 @implementation DYYYMessageViewportState @end
 
@@ -32,9 +35,12 @@
     }return YES;
 }
 + (NSHashTable *)states {static NSHashTable *t;static dispatch_once_t once;dispatch_once(&once,^{t=[NSHashTable weakObjectsHashTable];});return t;}
-+ (DYYYMessageViewportState *)state:(UITableView *)table {return objc_getAssociatedObject(table,@selector(synchronizeController:));}
++ (DYYYMessageViewportState *)state:(UITableView *)table {id state=[DYYYMessageListStateStore viewportForObject:table];return [state isKindOfClass:DYYYMessageViewportState.class]?state:nil;}
 + (void)restore:(DYYYMessageViewportState *)s {
     if(!s || s.busy || s.top<=0)return;s.busy=YES;
+    @try {
+    for(DYYYMessageListClipState *clip in s.clips.objectEnumerator.allObjects)[clip restore];
+    [s.clips removeAllObjects];
     UITableView *table=s.table;CGFloat top=s.top;s.top=0;CGPoint offset=table.contentOffset;
     BOOL ownFrame=CGRectEqualToRect(table.frame,s.appliedFrame);
     if(ownFrame){table.frame=s.nativeFrame;offset.y+=top;}
@@ -42,10 +48,9 @@
     if(fabs(inset.top-(s.nativeInset.top+top))<0.5){inset.top=s.nativeInset.top;table.contentInset=inset;}
     UIEdgeInsets indicator=table.verticalScrollIndicatorInsets;
     if(fabs(indicator.top-(s.nativeIndicator.top+top))<0.5){indicator.top=s.nativeIndicator.top;table.verticalScrollIndicatorInsets=indicator;}
-    for(UIView *view in s.clips.keyEnumerator.allObjects)if(view.layer.mask==[s.clips objectForKey:view]){view.layer.mask=nil;if(!view.clipsToBounds)view.clipsToBounds=YES;}
     if(table.contentInsetAdjustmentBehavior==UIScrollViewContentInsetAdjustmentNever)table.contentInsetAdjustmentBehavior=s.nativeAdjustment;
-    [s.clips removeAllObjects];if(ownFrame && !CGPointEqualToPoint(table.contentOffset,offset))table.contentOffset=offset;
-    s.busy=NO;
+    if(ownFrame && !CGPointEqualToPoint(table.contentOffset,offset))table.contentOffset=offset;
+    } @finally {s.busy=NO;}
 }
 + (UIViewController *)host:(UIViewController *)controller {
     for(NSUInteger i=0;controller && i<12;i++,controller=controller.parentViewController)if([controller isKindOfClass:NSClassFromString(@"AWEIMMessageTabViewController")])return controller;
@@ -59,16 +64,9 @@
         if(pending.count+view.subviews.count<=64)[pending addObjectsFromArray:view.subviews];
     }return nil;
 }
-+ (void)updateClips:(DYYYMessageViewportState *)s {
-    for(UIView *view in s.clips.keyEnumerator.allObjects){
-        CAShapeLayer *mask=[s.clips objectForKey:view];if(view.layer.mask!=mask)continue;
-        CGRect rect=CGRectMake(view.bounds.origin.x,view.bounds.origin.y-s.top,view.bounds.size.width,view.bounds.size.height+s.top);
-        CGPathRef path=[UIBezierPath bezierPathWithRect:rect].CGPath;
-        [CATransaction begin];[CATransaction setDisableActions:YES];
-        if(!CGRectEqualToRect(mask.frame,view.bounds))mask.frame=view.bounds;
-        if(!mask.path || !CGPathEqualToPath(mask.path,path))mask.path=path;
-        if(view.clipsToBounds)view.clipsToBounds=NO;[CATransaction commit];
-    }
++ (BOOL)updateClips:(DYYYMessageViewportState *)s {
+    for(DYYYMessageListClipState *clip in s.clips.objectEnumerator.allObjects)if(![clip applyExtension:s.top])return NO;
+    return YES;
 }
 + (void)synchronizeController:(UIViewController *)controller {
     if(!NSThread.isMainThread || ![controller isKindOfClass:NSClassFromString(@"AWEIMChatListViewController")] || !controller.isViewLoaded)return;
@@ -80,7 +78,7 @@
     if(table.dragging || table.decelerating || table.hasUncommittedUpdates)return;
     UIView *bar=[self bar:root];if(!bar || bar.hidden || ![table isDescendantOfView:root]){[self restore:s];return;}
     CGFloat headerBottom=CGRectGetMaxY([bar convertRect:bar.bounds toView:root]);
-    if(s.top>0 && CGRectEqualToRect(table.frame,s.appliedFrame) && CGRectEqualToRect(root.bounds,s.rootBounds) && fabs(headerBottom-s.top)<0.5){[self updateClips:s];return;}
+    if(s.top>0 && CGRectEqualToRect(table.frame,s.appliedFrame) && CGRectEqualToRect(root.bounds,s.rootBounds) && fabs(headerBottom-s.top)<0.5){if(![self updateClips:s])[self restore:s];return;}
     [self restore:s];
     CGRect native=table.frame,global=[table convertRect:table.bounds toView:root];
     // scrollView.bounds.origin 是滚动偏移；用 frame 原点避免把阅读位置误当列表起点。
@@ -95,16 +93,23 @@
         if(view.clipsToBounds)[ancestors addObject:view];
     }
     if(view!=root)return;
-    if(!s){s=[DYYYMessageViewportState new];s.table=table;s.controller=controller;s.clips=[NSMapTable weakToStrongObjectsMapTable];objc_setAssociatedObject(table,@selector(synchronizeController:),s,OBJC_ASSOCIATION_RETAIN_NONATOMIC);[[self states] addObject:s];}
-    s.busy=YES;
+    if(!s){s=[DYYYMessageViewportState new];s.table=table;s.controller=controller;s.clips=[NSMapTable weakToStrongObjectsMapTable];[DYYYMessageListStateStore setViewport:s forObject:table];[[self states] addObject:s];}
+    s.busy=YES;BOOL success=YES;
     @try {
         CGFloat top=[plan[@"extension"] doubleValue];CGPoint offset=table.contentOffset;
         s.nativeFrame=native;s.appliedFrame=CGRectMake(native.origin.x,native.origin.y-top,native.size.width,native.size.height+top);s.nativeInset=table.contentInset;s.nativeIndicator=table.verticalScrollIndicatorInsets;s.nativeAdjustment=table.contentInsetAdjustmentBehavior;s.rootBounds=root.bounds;s.top=top;
-        for(UIView *ancestor in ancestors){CAShapeLayer *mask=[CAShapeLayer layer];mask.fillColor=UIColor.blackColor.CGColor;[s.clips setObject:mask forKey:ancestor];ancestor.layer.mask=mask;}
-        [self updateClips:s];
+        for(UIView *ancestor in ancestors){
+            DYYYMessageListClipState *clip=[[DYYYMessageListClipState alloc] initWithLayer:ancestor.layer];
+            if(!clip){s.failure=@"clip_prepare_failed";success=NO;break;}[s.clips setObject:clip forKey:ancestor];
+        }
+        if(success)success=[self updateClips:s];
+        if(!success){if(!s.failure.length)s.failure=@"clip_apply_failed";return;}
         UIEdgeInsets inset=s.nativeInset;inset.top+=top;UIEdgeInsets indicator=s.nativeIndicator;indicator.top+=top;offset.y-=top;
         [UIView performWithoutAnimation:^{table.contentInsetAdjustmentBehavior=UIScrollViewContentInsetAdjustmentNever;table.frame=s.appliedFrame;table.contentInset=inset;table.verticalScrollIndicatorInsets=indicator;if(!CGPointEqualToPoint(table.contentOffset,offset))table.contentOffset=offset;}];
-    } @finally {s.busy=NO;}
+        s.failure=nil;
+    } @catch(NSException *exception){s.failure=@"apply_exception";success=NO;} @finally {
+        s.busy=NO;if(!success)[self restore:s];
+    }
 }
 + (CGRect)nativeFrame:(CGRect)frame table:(UITableView *)table {
     if(!NSThread.isMainThread)return frame;DYYYMessageViewportState *s=[self state:table];if(!s || s.busy || s.top<=0)return frame;
@@ -130,8 +135,8 @@
 + (NSDictionary *)diagnostics {
     if(!NSThread.isMainThread)return @{};NSMutableArray *result=[NSMutableArray array];
     for(DYYYMessageViewportState *s in [self states].allObjects)if(s.table.window){
-        NSUInteger activeClips=0;for(UIView *view in s.clips.keyEnumerator.allObjects)if(view.layer.mask==[s.clips objectForKey:view] && !view.clipsToBounds)activeClips++;
-        [result addObject:@{@"topExtension":@(s.top),@"frame":NSStringFromCGRect(s.table.frame),@"nativeFrame":NSStringFromCGRect(s.nativeFrame),@"frameMatches":@(CGRectEqualToRect(s.table.frame,s.appliedFrame)),@"clipCount":@(activeClips)}];
+        NSUInteger activeClips=0;for(DYYYMessageListClipState *clip in s.clips.objectEnumerator.allObjects)if(clip.active)activeClips++;
+        [result addObject:@{@"topExtension":@(s.top),@"frame":NSStringFromCGRect(s.table.frame),@"nativeFrame":NSStringFromCGRect(s.nativeFrame),@"frameMatches":@(CGRectEqualToRect(s.table.frame,s.appliedFrame)),@"clipCount":@(activeClips),@"failure":s.failure?:@""}];
     }
     return @{@"visible":result};
 }
