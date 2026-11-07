@@ -15,6 +15,7 @@
 @property (nonatomic) UIEdgeInsets nativeInset;
 @property (nonatomic) UIEdgeInsets nativeIndicator;
 @property (nonatomic) CGFloat top;
+@property (nonatomic) UIScrollViewContentInsetAdjustmentBehavior nativeAdjustment;
 @property (nonatomic) BOOL busy;
 @end
 @implementation DYYYMessageViewportState @end
@@ -22,8 +23,8 @@
 @implementation DYYYMessageListViewport
 + (BOOL)adapterReady {
     Class cls=NSClassFromString(@"AWEIMChatTabTableView");if(![cls isSubclassOfClass:UITableView.class])return NO;
-    NSArray *names=@[@"setFrame:",@"setContentInset:",@"setVerticalScrollIndicatorInsets:"];
-    const char *types[]={@encode(CGRect),@encode(UIEdgeInsets),@encode(UIEdgeInsets)};
+    NSArray *names=@[@"setFrame:",@"setContentInset:",@"setVerticalScrollIndicatorInsets:",@"setContentInsetAdjustmentBehavior:"];
+    const char *types[]={@encode(CGRect),@encode(UIEdgeInsets),@encode(UIEdgeInsets),@encode(UIScrollViewContentInsetAdjustmentBehavior)};
     for(NSUInteger i=0;i<names.count;i++){
         Method method=class_getInstanceMethod(cls,NSSelectorFromString(names[i]));if(!method)return NO;
         NSMethodSignature *signature=[NSMethodSignature signatureWithObjCTypes:method_getTypeEncoding(method)];
@@ -42,6 +43,7 @@
     UIEdgeInsets indicator=table.verticalScrollIndicatorInsets;
     if(fabs(indicator.top-(s.nativeIndicator.top+top))<0.5){indicator.top=s.nativeIndicator.top;table.verticalScrollIndicatorInsets=indicator;}
     for(UIView *view in s.clips.keyEnumerator.allObjects)if(view.layer.mask==[s.clips objectForKey:view]){view.layer.mask=nil;if(!view.clipsToBounds)view.clipsToBounds=YES;}
+    if(table.contentInsetAdjustmentBehavior==UIScrollViewContentInsetAdjustmentNever)table.contentInsetAdjustmentBehavior=s.nativeAdjustment;
     [s.clips removeAllObjects];if(ownFrame && !CGPointEqualToPoint(table.contentOffset,offset))table.contentOffset=offset;
     s.busy=NO;
 }
@@ -85,6 +87,8 @@
     CGPoint origin=[table.superview convertPoint:native.origin toView:root];
     NSDictionary *plan=[DYYYMessageListMetrics viewportForListTop:origin.y headerBottom:headerBottom tableY:native.origin.y width:native.size.width height:native.size.height rootHeight:root.bounds.size.height];
     if(!plan.count || fabs(global.size.width-root.bounds.size.width)>1 || !CGAffineTransformIsIdentity(table.transform))return;
+    // 原始导出 adjusted/contentInset 相同。未知安全区补偿不接管，避免顶部被系统再加一遍。
+    if(!UIEdgeInsetsEqualToEdgeInsets(table.adjustedContentInset,table.contentInset))return;
     NSMutableArray *ancestors=[NSMutableArray array];UIView *view=table.superview;NSUInteger depth=0;
     for(;view && view!=root && depth++<10;view=view.superview){
         if(view.layer.mask || !CGAffineTransformIsIdentity(view.transform) || fabs(view.bounds.size.width-root.bounds.size.width)>1)return;
@@ -95,11 +99,11 @@
     s.busy=YES;
     @try {
         CGFloat top=[plan[@"extension"] doubleValue];CGPoint offset=table.contentOffset;
-        s.nativeFrame=native;s.appliedFrame=CGRectMake(native.origin.x,native.origin.y-top,native.size.width,native.size.height+top);s.nativeInset=table.contentInset;s.nativeIndicator=table.verticalScrollIndicatorInsets;s.rootBounds=root.bounds;s.top=top;
+        s.nativeFrame=native;s.appliedFrame=CGRectMake(native.origin.x,native.origin.y-top,native.size.width,native.size.height+top);s.nativeInset=table.contentInset;s.nativeIndicator=table.verticalScrollIndicatorInsets;s.nativeAdjustment=table.contentInsetAdjustmentBehavior;s.rootBounds=root.bounds;s.top=top;
         for(UIView *ancestor in ancestors){CAShapeLayer *mask=[CAShapeLayer layer];mask.fillColor=UIColor.blackColor.CGColor;[s.clips setObject:mask forKey:ancestor];ancestor.layer.mask=mask;}
         [self updateClips:s];
         UIEdgeInsets inset=s.nativeInset;inset.top+=top;UIEdgeInsets indicator=s.nativeIndicator;indicator.top+=top;offset.y-=top;
-        [UIView performWithoutAnimation:^{table.frame=s.appliedFrame;table.contentInset=inset;table.verticalScrollIndicatorInsets=indicator;if(!CGPointEqualToPoint(table.contentOffset,offset))table.contentOffset=offset;}];
+        [UIView performWithoutAnimation:^{table.contentInsetAdjustmentBehavior=UIScrollViewContentInsetAdjustmentNever;table.frame=s.appliedFrame;table.contentInset=inset;table.verticalScrollIndicatorInsets=indicator;if(!CGPointEqualToPoint(table.contentOffset,offset))table.contentOffset=offset;}];
     } @finally {s.busy=NO;}
 }
 + (CGRect)nativeFrame:(CGRect)frame table:(UITableView *)table {
@@ -116,6 +120,10 @@
     UIEdgeInsets native=indicator?s.nativeIndicator:s.nativeInset;
     if(fabs(inset.top-(native.top+s.top))<0.5)inset.top=native.top;
     if(indicator)s.nativeIndicator=inset;else s.nativeInset=inset;inset.top+=s.top;return inset;
+}
++ (UIScrollViewContentInsetAdjustmentBehavior)nativeAdjustment:(UIScrollViewContentInsetAdjustmentBehavior)behavior table:(UITableView *)table {
+    if(!NSThread.isMainThread)return behavior;DYYYMessageViewportState *s=[self state:table];if(!s || s.busy || s.top<=0)return behavior;
+    s.nativeAdjustment=behavior;return UIScrollViewContentInsetAdjustmentNever;
 }
 + (void)detachTable:(UITableView *)table {if(NSThread.isMainThread)[self restore:[self state:table]];}
 + (void)refresh {if(NSThread.isMainThread)for(DYYYMessageViewportState *s in [self states].allObjects)[self synchronizeController:s.controller];}

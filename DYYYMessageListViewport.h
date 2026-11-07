@@ -5,6 +5,7 @@
 + (void)synchronizeController:(UIViewController *)controller;
 + (CGRect)nativeFrame:(CGRect)frame table:(UITableView *)table;
 + (UIEdgeInsets)nativeInset:(UIEdgeInsets)inset table:(UITableView *)table indicator:(BOOL)indicator;
++ (UIScrollViewContentInsetAdjustmentBehavior)nativeAdjustment:(UIScrollViewContentInsetAdjustmentBehavior)behavior table:(UITableView *)table;
 + (void)detachTable:(UITableView *)table;
 + (void)refresh;
 + (NSDictionary *)diagnostics;

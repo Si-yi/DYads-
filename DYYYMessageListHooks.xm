@@ -20,6 +20,7 @@
 %group DYYYMessageViewportTableHooks
 %hook AWEIMChatTabTableView
 - (void)setFrame:(CGRect)frame { %orig([DYYYMessageListViewport nativeFrame:frame table:(UITableView *)self]); }
+- (void)setContentInsetAdjustmentBehavior:(UIScrollViewContentInsetAdjustmentBehavior)behavior { %orig([DYYYMessageListViewport nativeAdjustment:behavior table:(UITableView *)self]); }
 - (void)setContentInset:(UIEdgeInsets)inset { %orig([DYYYMessageListViewport nativeInset:inset table:(UITableView *)self indicator:NO]); }
 - (void)setVerticalScrollIndicatorInsets:(UIEdgeInsets)inset { %orig([DYYYMessageListViewport nativeInset:inset table:(UITableView *)self indicator:YES]); }
 - (void)didMoveToWindow { %orig;if(!((UIView *)self).window)[DYYYMessageListViewport detachTable:(UITableView *)self]; }
