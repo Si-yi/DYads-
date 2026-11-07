@@ -43,4 +43,10 @@
     }
     return result;
 }
+// 651F317D：原生表格起点106、高850，宿主956；只接管同宽竖屏的完整主列表。
++ (NSDictionary *)viewportForListTop:(double)listTop headerBottom:(double)headerBottom tableY:(double)y width:(double)width height:(double)height rootHeight:(double)rootHeight {
+    for(NSNumber *value in @[@(listTop),@(headerBottom),@(y),@(width),@(height),@(rootHeight)])if(!isfinite(value.doubleValue))return @{};
+    if(width<160 || rootHeight<=width || listTop<32 || listTop>180 || fabs(listTop-headerBottom)>1 || fabs(y)>1 || height<200 || fabs(listTop+height-rootHeight)>1)return @{};
+    return @{@"extension":@(listTop),@"y":@(y-listTop),@"height":@(height+listTop)};
+}
 @end

@@ -33,6 +33,19 @@ int main(void) {
         NSDictionary *firstNormal=[DYYYMessageListMetrics segmentForKind:@"regular" previous:@"pinned" next:@"regular" width:440 height:72];
         NSCAssert(72-[lastPin[@"y"] doubleValue]-[lastPin[@"height"] doubleValue]+[firstNormal[@"y"] doubleValue]==12,@"两个组之间保留12pt空隙");
         NSCAssert(![DYYYMessageListMetrics segmentForKind:@"unknown" previous:nil next:nil width:440 height:72].count,@"未知业务不猜分组");
+        NSDictionary *viewport=[DYYYMessageListMetrics viewportForListTop:106 headerBottom:106 tableY:0 width:440 height:850 rootHeight:956];
+        NSCAssert([viewport[@"y"] doubleValue]==-106 && [viewport[@"height"] doubleValue]==956,@"列表绘制范围确实延伸到顶栏，而不是只清空颜色");
+        double delta=[viewport[@"extension"] doubleValue];
+        for(NSUInteger i=0;i<1000;i++){
+            double offset=173,cellY=432;
+            NSCAssert(fabs(106+cellY-offset-(-delta+106+cellY-(offset-delta)))<0.001,@"扩展与滚动偏移补偿后，当前消息屏幕位置不跳变");
+            NSDictionary *base=@{@"x":@0,@"y":@0,@"width":@440,@"height":@850};
+            NSDictionary *shown=@{@"x":@0,@"y":@(-delta),@"width":@440,@"height":@(850+delta)};
+            NSCAssert([[DYYYMessageListMetrics nativeFrameForRequest:shown previousNative:base previousDisplayed:shown] isEqual:base],@"原生重复写当前frame不叠加顶部扩展");
+        }
+        NSCAssert(![DYYYMessageListMetrics viewportForListTop:106 headerBottom:106 tableY:0 width:956 height:334 rootHeight:440].count,@"横屏与特殊布局保留原生");
+        NSCAssert(![DYYYMessageListMetrics viewportForListTop:106 headerBottom:90 tableY:0 width:440 height:850 rootHeight:956].count,@"导航栏和列表边界不匹配时不猜");
+        NSCAssert(![DYYYMessageListMetrics viewportForListTop:NAN headerBottom:106 tableY:0 width:440 height:850 rootHeight:956].count,@"非法布局跳过");
         // 80C4F15D 真实平铺行：头像、时间、摘要与角标都由相同映射保留相对间距。
         NSDictionary *avatar=[DYYYMessageListMetrics contentTransformForX:16 y:8 width:56 height:56 rowWidth:440 rowHeight:72];
         NSDictionary *time=[DYYYMessageListMetrics contentTransformForX:363 y:16 width:61 height:15 rowWidth:440 rowHeight:72];

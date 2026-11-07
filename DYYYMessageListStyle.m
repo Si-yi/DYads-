@@ -3,6 +3,7 @@
 #import "DYYYMessageListMetrics.h"
 #import "DYYYMessageListUpdateState.h"
 #import "DYYYInteractionNoticeStyle.h"
+#import "DYYYMessageListViewport.h"
 #include <string.h>
 #include <math.h>
 #import "DYYYChatChrome.h"
@@ -410,6 +411,7 @@
         if(table.separatorStyle==UITableViewCellSeparatorStyleNone)table.separatorStyle=separator.integerValue;
         objc_setAssociatedObject(table,@selector(synchronizeController:),nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
+    [DYYYMessageListViewport synchronizeController:controller];
     for(UITableViewCell *cell in table.visibleCells)[self synchronizeCell:cell];
 }
 // 顶栏颜色与玻璃分别保存；原生后续换肤仍通过专用导航栏 setter 记录原值。
@@ -576,6 +578,7 @@
         if(!strongBar || [self headerState:strongBar create:NO]!=state)return;
         state.pending=NO;
         [self synchronizeBar:strongBar];
+        [DYYYMessageListViewport refresh];
     });
 }
 + (void)refresh {
@@ -592,6 +595,7 @@
     }
     for(UIView *bar in [self bars].allObjects)[self synchronizeBar:bar];
     [DYYYInteractionNoticeStyle refresh];
+    [DYYYMessageListViewport refresh];
 }
 + (NSDictionary *)diagnostics {
     if(!NSThread.isMainThread)return @{};
@@ -629,6 +633,6 @@
         DYYYMessageHeaderState *s=[self headerState:bar create:NO];
         [headers addObject:@{@"transparent":@(!bar.backgroundColor || CGColorGetAlpha(bar.backgroundColor.CGColor)==0),@"leftGlassWidth":@(s.left.bounds.size.width),@"rightGlassWidth":@(s.right.bounds.size.width),@"rightMounted":@(s.right.superview!=nil),@"selectedTabOnly":@(s.notice)}];
     }
-    return @{@"cardsEnabled":@([self cardsEnabled]),@"topEnabled":@([self topEnabled]),@"adapterReady":@([self adapterReady]),@"visibleRowsByGroup":groups,@"insetRows":@(insets),@"contentScale":@0.92,@"contentDecisions":decisions,@"contentContainers":content,@"contentAdapterReady":@([self contentAdapterReady]),@"backgroundMasks":@(backgroundMasks),@"compactLightInteractionViews":@([self lightViews].allObjects.count),@"headers":headers,@"nativeRowGeometry":@YES,@"unreadMutation":@NO};
+    return @{@"viewport":[DYYYMessageListViewport diagnostics],@"cardsEnabled":@([self cardsEnabled]),@"topEnabled":@([self topEnabled]),@"adapterReady":@([self adapterReady]),@"visibleRowsByGroup":groups,@"insetRows":@(insets),@"contentScale":@0.92,@"contentDecisions":decisions,@"contentContainers":content,@"contentAdapterReady":@([self contentAdapterReady]),@"backgroundMasks":@(backgroundMasks),@"compactLightInteractionViews":@([self lightViews].allObjects.count),@"headers":headers,@"nativeRowGeometry":@YES,@"unreadMutation":@NO};
 }
 @end

@@ -1,6 +1,7 @@
 #import "AwemeHeaders.h"
 #import "DYYYMessageListStyle.h"
 #import "DYYYInteractionNoticeStyle.h"
+#import "DYYYMessageListViewport.h"
 #import "DYYYChatEnhancementPolicy.h"
 
 %group DYYYMessageListControllerHooks
@@ -14,6 +15,20 @@
 - (void)tableView:(UITableView *)table didEndDisplayingCell:(UITableViewCell *)cell forRowAtIndexPath:(NSIndexPath *)path {
     [DYYYMessageListStyle resetCell:cell]; %orig(table,cell,path);
 }
+%end
+%end
+%group DYYYMessageViewportTableHooks
+%hook AWEIMChatTabTableView
+- (void)setFrame:(CGRect)frame { %orig([DYYYMessageListViewport nativeFrame:frame table:(UITableView *)self]); }
+- (void)setContentInset:(UIEdgeInsets)inset { %orig([DYYYMessageListViewport nativeInset:inset table:(UITableView *)self indicator:NO]); }
+- (void)setVerticalScrollIndicatorInsets:(UIEdgeInsets)inset { %orig([DYYYMessageListViewport nativeInset:inset table:(UITableView *)self indicator:YES]); }
+- (void)didMoveToWindow { %orig;if(!((UIView *)self).window)[DYYYMessageListViewport detachTable:(UITableView *)self]; }
+%end
+%end
+%group DYYYMessageViewportScrollHooks
+%hook AWEIMChatListViewController
+- (void)scrollViewDidEndDragging:(UIScrollView *)scroll willDecelerate:(BOOL)decelerate { %orig(scroll,decelerate);if(!decelerate)[DYYYMessageListViewport synchronizeController:(UIViewController *)self]; }
+- (void)scrollViewDidEndDecelerating:(UIScrollView *)scroll { %orig(scroll);[DYYYMessageListViewport synchronizeController:(UIViewController *)self]; }
 %end
 %end
 %group DYYYMessageListDataHooks
@@ -92,11 +107,13 @@
 %ctor {
     [DYYYMessageListStyle preparePreferences];
     if([DYYYMessageListStyle contentAdapterReady]) { %init(DYYYMessageContentGeometryHooks); }
+    if([DYYYMessageListViewport adapterReady]){%init(DYYYMessageViewportTableHooks);}
     Class list=NSClassFromString(@"AWEIMChatListViewController"),cell=NSClassFromString(@"AWEIMChatListCommonCell");
     if([list isSubclassOfClass:UIViewController.class] &&
         [DYYYChatEnhancementPolicy class:list selector:@selector(tableView) result:'@' arguments:@""] &&
         [DYYYChatEnhancementPolicy class:list selector:@selector(chatList) result:'@' arguments:@""]) {
         %init(DYYYMessageListControllerHooks);
+        if([DYYYChatEnhancementPolicy class:list selector:@selector(scrollViewDidEndDragging:willDecelerate:) result:'v' arguments:[@"@" stringByAppendingString:[NSString stringWithUTF8String:@encode(BOOL)]]] && [DYYYChatEnhancementPolicy class:list selector:@selector(scrollViewDidEndDecelerating:) result:'v' arguments:@"@"]) {%init(DYYYMessageViewportScrollHooks);}
         if([DYYYChatEnhancementPolicy class:list selector:@selector(tableView:heightForRowAtIndexPath:) result:@encode(CGFloat)[0] arguments:@"@@"]) { %init(DYYYMessageListRowHeightHooks); }
         if([DYYYChatEnhancementPolicy class:list selector:@selector(setChatList:) result:'v' arguments:@"@"]) { %init(DYYYMessageListDataHooks); }
     }

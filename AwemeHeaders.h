@@ -2550,12 +2550,16 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 - (void)dyyy_syncFloatingBackground;
 @end
 
+@interface AWEIMChatTabTableView : UITableView
+@end
 @interface AWEIMChatListViewController : UIViewController
 @property (nonatomic, strong) UITableView *tableView;
 @property (nonatomic, copy) NSArray *chatList;
 - (void)tableView:(UITableView *)table willDisplayCell:(UITableViewCell *)cell forRowAtIndexPath:(NSIndexPath *)path;
 - (void)tableView:(UITableView *)table didEndDisplayingCell:(UITableViewCell *)cell forRowAtIndexPath:(NSIndexPath *)path;
 - (CGFloat)tableView:(UITableView *)table heightForRowAtIndexPath:(NSIndexPath *)path;
+- (void)scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate;
+- (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView;
 @end
 @interface AWEIMChatModel : NSObject
 @property (nonatomic, assign) BOOL stickOnTop;
