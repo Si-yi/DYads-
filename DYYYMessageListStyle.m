@@ -237,7 +237,8 @@
                 CGRect rect=[avatar convertRect:avatar.bounds toView:state.cell];
                 CGFloat desired=(state.topPadding+state.cell.bounds.size.height-state.bottomPadding)/2;
                 state.verticalShift=desired-CGRectGetMidY(rect);
-                state.appliedTransform.ty+=state.verticalShift;view.transform=state.appliedTransform;
+                CGAffineTransform shifted=state.appliedTransform;shifted.ty+=state.verticalShift;
+                state.appliedTransform=shifted;view.transform=shifted;
             }
         }
     }];}
@@ -270,8 +271,8 @@
     if(state.applied && !state.updates.depth && CGAffineTransformEqualToTransform(transform,state.appliedTransform))return transform;
     state.nativeTransform=transform;
     if(state.updates.depth || !state.applied)return transform;
-    state.appliedTransform=CGAffineTransformScale(transform,state.scale,state.scale);
-    state.appliedTransform.ty+=state.verticalShift;
+    CGAffineTransform applied=CGAffineTransformScale(transform,state.scale,state.scale);
+    applied.ty+=state.verticalShift;state.appliedTransform=applied;
     return state.appliedTransform;
 }
 + (void)didSetContentTransform:(UIView *)view {

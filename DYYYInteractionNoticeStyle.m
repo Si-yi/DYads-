@@ -99,7 +99,7 @@
 + (NSDictionary *)diagnostics {
     if(!NSThread.isMainThread)return @{};
     NSUInteger active=0;
-    for(UICollectionViewCell *cell in [self cells].allObjects)if(cell.window){DYYYNoticeCardState *s=[self state:cell];if(s.applied && CGAffineTransformEqualToTransform(cell.contentView.transform,s.appliedTransform))active++;}
+    for(UICollectionViewCell *cell in [self cells].allObjects)if(cell.window){DYYYNoticeCardState *s=[self state:cell];if(s.applied && cell.contentView.layer.mask==s.mask && s.background.superview==cell.contentView && CGAffineTransformEqualToTransform(cell.contentView.transform,s.appliedTransform))active++;}
     return @{@"enabled":@([DYYYMessageListStyle cardsEnabled]),@"roundedVisibleCells":@(active)};
 }
 @end
