@@ -1,6 +1,7 @@
 #import "DYYYInteractionNoticeStyle.h"
 #import "DYYYMessageListStyle.h"
 #import "DYYYMessageListCardView.h"
+#import "DYYYMessageListMetrics.h"
 #import "DYYYMessageListUpdateState.h"
 #import "DYYYUtils.h"
 #import <QuartzCore/QuartzCore.h>
@@ -9,6 +10,11 @@
 @interface DYYYNoticeCardState : NSObject
 @property (nonatomic, weak) UICollectionViewCell *cell;
 @property (nonatomic, strong) DYYYMessageListCardView *background;
+@property (nonatomic, strong) DYYYMessageListCardView *panel;
+@property (nonatomic, strong) UIView *nativeBackground;
+@property (nonatomic, strong) CALayer *divider;
+@property (nonatomic) BOOL first;
+@property (nonatomic) BOOL last;
 @property (nonatomic, strong) CAShapeLayer *mask;
 @property (nonatomic, strong) CALayer *nativeMask;
 @property (nonatomic, strong) DYYYMessageListUpdateState *updates;
@@ -40,6 +46,7 @@
     if(s.applied && CGAffineTransformEqualToTransform(content.transform,s.appliedTransform))[UIView performWithoutAnimation:^{content.transform=s.nativeTransform;}];
     if(content.layer.mask==s.mask)content.layer.mask=s.nativeMask;
     for(UIView *line in s.lines.keyEnumerator.allObjects)if(line.hidden)line.hidden=[[s.lines objectForKey:line] boolValue];
+    if(cell.backgroundView==s.panel)cell.backgroundView=s.nativeBackground;
     [s.background removeFromSuperview];objc_setAssociatedObject(cell,@selector(synchronizeCell:),nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);[[self cells] removeObject:cell];
 }
 + (id)beginUpdate:(UICollectionViewCell *)cell {
@@ -69,17 +76,33 @@
     if(!s){
         if(content.layer.mask)return;
         s=[DYYYNoticeCardState new];s.cell=cell;s.nativeMask=content.layer.mask;s.mask=[CAShapeLayer layer];s.mask.fillColor=UIColor.blackColor.CGColor;s.updates=[DYYYMessageListUpdateState new];s.lines=[NSMapTable weakToStrongObjectsMapTable];
-        s.background=[[DYYYMessageListCardView alloc] initWithFrame:content.bounds];s.background.accessibilityIdentifier=@"DYads.InteractionNoticeCard";
+        s.background=[[DYYYMessageListCardView alloc] initWithFrame:content.bounds];s.background.accessibilityIdentifier=@"DYads.InteractionNoticeSurface";
+        s.panel=[[DYYYMessageListCardView alloc] initWithFrame:cell.bounds];s.panel.accessibilityIdentifier=@"DYads.InteractionNoticeGroup";s.nativeBackground=cell.backgroundView;
+        s.divider=[CALayer layer];[s.panel.layer addSublayer:s.divider];s.first=YES;s.last=YES;
         objc_setAssociatedObject(cell,@selector(synchronizeCell:),s,OBJC_ASSOCIATION_RETAIN_NONATOMIC);[[self cells] addObject:cell];
     }
     s.busy=YES;
     @try {
+    UICollectionView *collection=nil;
+    for(UIView *view=cell.superview;view;view=view.superview)if([view isKindOfClass:UICollectionView.class]){collection=(id)view;break;}
+    NSIndexPath *path=[collection indexPathForCell:cell];
+    if(path && path.section<[collection numberOfSections]){
+        NSInteger count=[collection numberOfItemsInSection:path.section];
+        if(path.item<count){s.first=path.item==0;s.last=path.item+1==count;}
+    }
         if(!s.applied || !CGAffineTransformEqualToTransform(content.transform,s.appliedTransform))s.nativeTransform=content.transform;
         s.appliedTransform=CGAffineTransformScale(s.nativeTransform,0.92,0.92);
         [UIView performWithoutAnimation:^{if(!CGAffineTransformEqualToTransform(content.transform,s.appliedTransform))content.transform=s.appliedTransform;}];s.applied=YES;
         CGRect bounds=content.bounds;
-        s.background.fillColor=([DYYYUtils isDarkMode] || cell.traitCollection.userInterfaceStyle==UIUserInterfaceStyleDark)?[UIColor colorWithWhite:0.14 alpha:1]:UIColor.secondarySystemGroupedBackgroundColor;
-        s.background.segment=@{@"x":@0,@"y":@0,@"width":@(bounds.size.width),@"height":@(bounds.size.height),@"radius":@20,@"first":@YES,@"last":@YES};
+        BOOL dark=[DYYYUtils isDarkMode] || cell.traitCollection.userInterfaceStyle==UIUserInterfaceStyleDark;
+        UIColor *fill=dark?[UIColor colorWithWhite:0.125 alpha:1]:UIColor.secondarySystemGroupedBackgroundColor;
+        s.background.fillColor=fill;s.panel.fillColor=fill;
+        NSMutableDictionary *segment=[[DYYYMessageListMetrics segmentForKind:@"regular" previous:s.first?nil:@"regular" next:s.last?nil:@"regular" width:cell.bounds.size.width height:cell.bounds.size.height] mutableCopy];
+        if(!s.last)segment[@"height"]=@([segment[@"height"] doubleValue]+0.5);
+        s.panel.segment=segment;
+        if(!CGRectEqualToRect(s.panel.frame,cell.bounds))s.panel.frame=cell.bounds;
+        if(cell.backgroundView!=s.panel){s.nativeBackground=cell.backgroundView;cell.backgroundView=s.panel;}
+        s.background.segment=@{@"x":@0,@"y":@0,@"width":@(bounds.size.width),@"height":@(bounds.size.height),@"radius":@0,@"first":@NO,@"last":@NO};
         if(!CGRectEqualToRect(s.background.frame,bounds))s.background.frame=bounds;
         if(s.background.superview!=content)[content insertSubview:s.background atIndex:0];
         for(UIView *body in content.subviews)if(body.class==UIView.class && body.subviews.count<=32){
@@ -88,10 +111,16 @@
                 if(!line.hidden)line.hidden=YES;
             }
         }
-        CGPathRef path=[UIBezierPath bezierPathWithRoundedRect:bounds cornerRadius:20].CGPath;
+        CGRect panelRect=CGRectMake([segment[@"x"] doubleValue],[segment[@"y"] doubleValue],[segment[@"width"] doubleValue],[segment[@"height"] doubleValue]);
+        CGRect maskRect=[cell convertRect:panelRect toView:content];
+        UIRectCorner corners=0;if(s.first)corners|=UIRectCornerTopLeft|UIRectCornerTopRight;if(s.last)corners|=UIRectCornerBottomLeft|UIRectCornerBottomRight;
+        CGPathRef maskPath=[UIBezierPath bezierPathWithRoundedRect:maskRect byRoundingCorners:corners cornerRadii:CGSizeMake(14/0.92,14/0.92)].CGPath;
         [CATransaction begin];[CATransaction setDisableActions:YES];
         if(!CGRectEqualToRect(s.mask.frame,bounds))s.mask.frame=bounds;
-        if(!s.mask.path || !CGPathEqualToPath(s.mask.path,path))s.mask.path=path;
+        if(!s.mask.path || !CGPathEqualToPath(s.mask.path,maskPath))s.mask.path=maskPath;
+        CGRect lineRect=CGRectMake(96,cell.bounds.size.height-0.5,MAX(0,cell.bounds.size.width-120),0.333);
+        if(!CGRectEqualToRect(s.divider.frame,lineRect))s.divider.frame=lineRect;
+        s.divider.backgroundColor=(dark?[UIColor colorWithWhite:1 alpha:0.045]:[UIColor colorWithWhite:0 alpha:0.045]).CGColor;s.divider.hidden=s.last;
         if(content.layer.mask!=s.mask)content.layer.mask=s.mask;[CATransaction commit];
     } @finally {s.busy=NO;}
 }
@@ -99,7 +128,7 @@
 + (NSDictionary *)diagnostics {
     if(!NSThread.isMainThread)return @{};
     NSUInteger active=0;
-    for(UICollectionViewCell *cell in [self cells].allObjects)if(cell.window){DYYYNoticeCardState *s=[self state:cell];if(s.applied && cell.contentView.layer.mask==s.mask && s.background.superview==cell.contentView && CGAffineTransformEqualToTransform(cell.contentView.transform,s.appliedTransform))active++;}
-    return @{@"enabled":@([DYYYMessageListStyle cardsEnabled]),@"roundedVisibleCells":@(active)};
+    for(UICollectionViewCell *cell in [self cells].allObjects)if(cell.window){DYYYNoticeCardState *s=[self state:cell];if(s.applied && cell.contentView.layer.mask==s.mask && s.background.superview==cell.contentView && cell.backgroundView==s.panel && CGAffineTransformEqualToTransform(cell.contentView.transform,s.appliedTransform))active++;}
+    return @{@"enabled":@([DYYYMessageListStyle cardsEnabled]),@"roundedVisibleCells":@(active),@"layout":@"section_groups"};
 }
 @end

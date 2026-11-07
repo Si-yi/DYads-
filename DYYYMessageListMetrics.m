@@ -6,7 +6,8 @@
     if(![@[@"notice",@"pinned",@"regular"] containsObject:kind?:@""] || !isfinite(height) || height<40 || height>200)return @{};
     BOOL first=[kind isEqual:@"notice"] || ![kind isEqual:previous];
     BOOL last=[kind isEqual:@"notice"] || ![kind isEqual:next];
-    double top=first?12:0,bottom=last?12:0;
+    double edge=[kind isEqual:@"notice"]?6:12;
+    double top=first?edge:0,bottom=last?edge:0;
     return @{@"top":@(top),@"bottom":@(bottom),@"nativeHeight":@(height),@"height":@(height+top+bottom)};
 }
 + (NSDictionary *)segmentForKind:(NSString *)kind previous:(NSString *)previous next:(NSString *)next width:(double)width height:(double)height {
@@ -14,7 +15,7 @@
     BOOL first = [kind isEqual:@"notice"] || ![kind isEqual:previous];
     BOOL last = [kind isEqual:@"notice"] || ![kind isEqual:next];
     double top = first ? 6 : 0, bottom = last ? 6 : 0;
-    return @{@"x":@16,@"y":@(top),@"width":@(width-32),@"height":@(height-top-bottom),@"first":@(first),@"last":@(last),@"radius":@18};
+    return @{@"x":@16,@"y":@(top),@"width":@(width-32),@"height":@(height-top-bottom),@"first":@(first),@"last":@(last),@"radius":@14};
 }
 + (NSDictionary *)contentTransformForX:(double)x y:(double)y width:(double)width height:(double)height rowWidth:(double)rowWidth rowHeight:(double)rowHeight {
     if (!isfinite(x) || !isfinite(y) || !isfinite(width) || !isfinite(height) || !isfinite(rowWidth) || !isfinite(rowHeight) ||

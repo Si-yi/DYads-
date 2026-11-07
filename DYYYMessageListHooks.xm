@@ -84,6 +84,11 @@
 - (void)onThemeDidChanged { %orig; [DYYYMessageListStyle synchronizeCell:self]; }
 %end
 %end
+%group DYYYNoticeTabSelectionHooks
+%hook AWEIMFansAndInteractMergeViewControllerNaviBar
+- (void)setSelectedIndex:(long long)index { %orig(index); [DYYYMessageListStyle synchronizeHeaderForView:(UIView *)self]; }
+%end
+%end
 %ctor {
     [DYYYMessageListStyle preparePreferences];
     if([DYYYMessageListStyle contentAdapterReady]) { %init(DYYYMessageContentGeometryHooks); }
@@ -97,6 +102,8 @@
     }
     Class light=NSClassFromString(@"AWEIMChatCellRecommendChatLIView");
     if([light isSubclassOfClass:UIView.class] && [DYYYChatEnhancementPolicy class:light selector:@selector(lightInteractionBtn) result:'@' arguments:@""]) { %init(DYYYMessageLightInteractionHooks); }
+    Class tabs=NSClassFromString(@"AWEIMFansAndInteractMergeViewControllerNaviBar");
+    if([tabs isSubclassOfClass:UIView.class] && [DYYYChatEnhancementPolicy class:tabs selector:@selector(setSelectedIndex:) result:'v' arguments:@"q"]) { %init(DYYYNoticeTabSelectionHooks); }
     if([cell isSubclassOfClass:UITableViewCell.class] && [DYYYChatEnhancementPolicy class:cell selector:@selector(renderWithHolder:) result:'v' arguments:@"@"]) {
         %init(DYYYMessageListCellHooks);
         if([DYYYChatEnhancementPolicy class:cell selector:@selector(onThemeDidChanged) result:'v' arguments:@""]) { %init(DYYYMessageListCellThemeHooks); }

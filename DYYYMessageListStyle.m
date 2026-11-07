@@ -23,6 +23,10 @@
 @property (nonatomic) BOOL lineHidden;
 @property (nonatomic) BOOL busy;
 @property (nonatomic, copy) NSString *kind;
+@property (nonatomic, weak) UIImageView *logoSource;
+@property (nonatomic, strong) UIImageView *logoView;
+@property (nonatomic, strong) CALayer *logoMask;
+@property (nonatomic, strong) CALayer *nativeLogoMask;
 @end
 @implementation DYYYMessageCardState @end
 
@@ -68,6 +72,9 @@
 @property (nonatomic, strong) NSMapTable<UIView *, id> *fills;
 @property (nonatomic, weak) UIView *line;
 @property (nonatomic) BOOL notice;
+@property (nonatomic) CGRect leftRect;
+@property (nonatomic, weak) UIView *indicator;
+@property (nonatomic) BOOL indicatorHidden;
 @property (nonatomic, weak) UIView *leftAnchor;
 @property (nonatomic, weak) UIView *rightAnchor;
 @property (nonatomic, copy) NSArray<NSLayoutConstraint *> *constraints;
@@ -178,6 +185,28 @@
         if(button.layer.mask!=state.mask)button.layer.mask=state.mask;[CATransaction commit];
         if(!UIEdgeInsetsEqualToEdgeInsets(button.imageEdgeInsets,state.appliedInsets))button.imageEdgeInsets=state.appliedInsets;
     } @finally {state.busy=NO;}
+}
++ (void)resetNoticeLogo:(DYYYMessageCardState *)state {
+    if(state.logoSource.layer.mask==state.logoMask)state.logoSource.layer.mask=state.nativeLogoMask;
+    [state.logoView removeFromSuperview];state.logoView=nil;state.logoSource=nil;state.logoMask=nil;state.nativeLogoMask=nil;
+}
++ (void)synchronizeNoticeLogo:(UITableViewCell *)cell state:(DYYYMessageCardState *)state {
+    if(![state.kind isEqual:@"notice"]){[self resetNoticeLogo:state];return;}
+    UIImageView *source=(id)[self avatarInContent:cell.contentView];
+    if(![source isKindOfClass:UIImageView.class] || !source.image || !source.superview){[self resetNoticeLogo:state];return;}
+    if(source!=state.logoSource){
+        [self resetNoticeLogo:state];if(source.layer.mask)return;
+        state.logoSource=source;state.nativeLogoMask=source.layer.mask;state.logoMask=[CALayer layer];state.logoMask.backgroundColor=UIColor.clearColor.CGColor;
+        state.logoView=[UIImageView new];state.logoView.contentMode=UIViewContentModeScaleAspectFit;state.logoView.userInteractionEnabled=NO;state.logoView.accessibilityElementsHidden=YES;state.logoView.accessibilityIdentifier=@"DYads.CompactInteractionLogo";
+    }
+    if(state.logoView.image!=source.image)state.logoView.image=source.image;
+    CGRect frame=source.frame;CGFloat side=MIN(40,MIN(frame.size.width,frame.size.height));
+    CGRect compact=CGRectMake(CGRectGetMidX(frame)-side/2,CGRectGetMidY(frame)-side/2,side,side);
+    if(!CGRectEqualToRect(state.logoView.frame,compact))state.logoView.frame=compact;
+    [CATransaction begin];[CATransaction setDisableActions:YES];
+    if(!CGRectEqualToRect(state.logoMask.frame,source.bounds))state.logoMask.frame=source.bounds;
+    if(source.layer.mask!=state.logoMask){state.nativeLogoMask=source.layer.mask;source.layer.mask=state.logoMask;}[CATransaction commit];
+    if(state.logoView.superview!=source.superview)[source.superview addSubview:state.logoView];
 }
 + (void)clearFill:(UIView *)view state:(DYYYMessageCardState *)state {
     if(!view)return;
@@ -330,6 +359,7 @@
     DYYYMessageCardState *state=objc_getAssociatedObject(cell,@selector(synchronizeCell:));
     if(!state || state.busy)return;
     state.busy=YES;
+    [self resetNoticeLogo:state];
     if(cell.backgroundView==state.background)cell.backgroundView=state.nativeBackground;
     if(cell.selectedBackgroundView==state.selected)cell.selectedBackgroundView=state.nativeSelected;
     for(UIView *view in state.fills.keyEnumerator.allObjects)if(!view.backgroundColor || CGColorGetAlpha(view.backgroundColor.CGColor)==0){
@@ -373,7 +403,8 @@
     @try {
         state.kind=kind;
         BOOL dark=[DYYYUtils isDarkMode] || cell.traitCollection.userInterfaceStyle==UIUserInterfaceStyleDark;
-        state.background.fillColor=dark?[UIColor colorWithWhite:0.14 alpha:1]:UIColor.secondarySystemGroupedBackgroundColor;
+        CGFloat surfaceWhite=[kind isEqual:@"notice"]?0.105:0.125;
+        state.background.fillColor=dark?[UIColor colorWithWhite:surfaceWhite alpha:1]:UIColor.secondarySystemGroupedBackgroundColor;
         state.selected.fillColor=dark?[UIColor colorWithWhite:0.21 alpha:1]:UIColor.tertiarySystemFillColor;
         state.background.segment=segment;state.selected.segment=segment;
         if(!CGRectEqualToRect(state.background.frame,cell.bounds))state.background.frame=cell.bounds;
@@ -388,6 +419,7 @@
         UIView *line=cell.horizontalLine;
         if(line!=state.line){state.line=line;state.lineHidden=line.hidden;}
         if(!line.hidden)line.hidden=YES;
+        [self synchronizeNoticeLogo:cell state:state];
     } @finally {state.busy=NO;}
 }
 + (void)synchronizeController:(UIViewController *)controller {
@@ -426,6 +458,7 @@
     }
     if(!bar.opaque)bar.opaque=state.nativeOpaque;
     if(state.line.hidden)state.line.hidden=state.lineHidden;
+    if(state.indicator.hidden)state.indicator.hidden=state.indicatorHidden;
     objc_setAssociatedObject(bar,@selector(synchronizeBar:),nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     [[self bars] removeObject:bar];
     state.busy=NO;
@@ -452,6 +485,26 @@
     UIColor *color=view.backgroundColor;
     if(![state.fills objectForKey:view] || (color && CGColorGetAlpha(color.CGColor)>0))[state.fills setObject:color?:NSNull.null forKey:view];
     if(color && CGColorGetAlpha(color.CGColor)>0)view.backgroundColor=UIColor.clearColor;
+}
++ (CGRect)noticeBackFrame:(UIView *)left carrier:(UIView *)carrier {
+    CGRect ink=CGRectNull;NSMutableArray *pending=[NSMutableArray arrayWithObject:left];NSUInteger visited=0;
+    while(pending.count && visited++<64){
+        UIView *view=pending.lastObject;[pending removeLastObject];if(view.hidden || view.alpha<=0.01)continue;
+        if(([view isKindOfClass:UILabel.class] || [view isKindOfClass:UIImageView.class]) && view.bounds.size.width>0 && view.bounds.size.height>0){
+            CGRect frame=[view convertRect:view.bounds toView:carrier];ink=CGRectIsNull(ink)?frame:CGRectUnion(ink,frame);
+        }
+        if(pending.count+view.subviews.count<=64)[pending addObjectsFromArray:view.subviews];
+    }
+    if(CGRectIsNull(ink))ink=left.frame;
+    CGFloat width=MIN(76,MAX(44,ink.size.width+16));
+    return CGRectMake(MAX(8,CGRectGetMidX(ink)-width/2),(carrier.bounds.size.height-40)/2,width,40);
+}
++ (UIView *)selectedNoticeItem:(UIView *)plate {
+    Class cls=NSClassFromString(@"AWEIMFansAndInteractMergeViewControllerNaviBar");
+    if(![DYYYChatEnhancementPolicy class:cls selector:@selector(itemViews) result:'@' arguments:@""] || ![DYYYChatEnhancementPolicy class:cls selector:@selector(currentSelectedIndex) result:'q' arguments:@""])return nil;
+    AWEIMFansAndInteractMergeViewControllerNaviBar *tabs=(id)plate;NSArray *items=tabs.itemViews;long long index=tabs.currentSelectedIndex;
+    if(![items isKindOfClass:NSArray.class] || index<0 || (NSUInteger)index>=items.count)return nil;
+    UIView *item=items[(NSUInteger)index];return [item isKindOfClass:UIView.class] && [item isDescendantOfView:plate]?item:nil;
 }
 + (void)synchronizeBar:(UIView *)candidate {
     if(!NSThread.isMainThread || ![candidate isKindOfClass:NSClassFromString(@"AWENavigationBar")])return;
@@ -480,26 +533,46 @@
         // 玻璃的约束依赖原生按钮容器的实际边界；不会把布局中途的零宽当作最终尺寸。
         // 背景留在外层，不进入原生按钮数组/子视图，避免参与原生按钮宽度测量。
         CGFloat height=MIN(44,carrier.bounds.size.height);
-        CGRect leftRect=CGRectMake(left.frame.origin.x-(notice?6:0),(carrier.bounds.size.height-height)/2,notice?left.bounds.size.width+12:height,height);
+        UIView *selected=notice?[self selectedNoticeItem:right]:nil;
+        UIView *rightAnchor=selected?:right;
+        CGRect leftRect=notice?[self noticeBackFrame:left carrier:carrier]:CGRectMake(left.frame.origin.x,(carrier.bounds.size.height-height)/2,height,height);
         CGRect rightRect=CGRectMake(right.frame.origin.x,(carrier.bounds.size.height-height)/2,right.bounds.size.width,height);
-        BOOL rebind=state.notice!=notice || state.leftAnchor!=left || state.rightAnchor!=right || state.left.superview!=carrier || state.right.superview!=carrier;
+        if(selected){CGRect item=[selected convertRect:selected.bounds toView:carrier];rightRect=CGRectMake(CGRectGetMidX(item)-58,(carrier.bounds.size.height-36)/2,116,36);}
+        BOOL rebind=state.notice!=notice || state.leftAnchor!=left || state.rightAnchor!=rightAnchor || state.left.superview!=carrier || state.right.superview!=carrier || !CGSizeEqualToSize(state.leftRect.size,leftRect.size) || (notice && !CGRectEqualToRect(state.leftRect,leftRect));
         if(rebind)[NSLayoutConstraint deactivateConstraints:state.constraints];
-        [DYYYChatChrome placeGlassBackground:state.left frame:leftRect inView:carrier];
-        [DYYYChatChrome placeGlassBackground:state.right frame:rightRect inView:carrier];
+        [UIView performWithoutAnimation:^{
+            [DYYYChatChrome placeGlassBackground:state.left frame:leftRect inView:carrier];
+            [DYYYChatChrome placeGlassBackground:state.right frame:rightRect inView:carrier];
+            state.left.alpha=notice?0.82:1;state.right.alpha=notice?0.72:1;
+            state.left.layer.borderColor=[UIColor colorWithWhite:1 alpha:(notice?0.12:0.18)].CGColor;
+            state.right.layer.borderColor=[UIColor colorWithWhite:1 alpha:(notice?0.10:0.18)].CGColor;
+        }];
+        if(!selected && state.indicator){if(state.indicator.hidden)state.indicator.hidden=state.indicatorHidden;state.indicator=nil;}
+        if(selected && [right respondsToSelector:@selector(indicatorView)]){
+            UIView *indicator=((AWEIMFansAndInteractMergeViewControllerNaviBar *)right).indicatorView;
+            if(![indicator isKindOfClass:UIView.class])indicator=nil;
+            if(indicator!=state.indicator){if(state.indicator.hidden)state.indicator.hidden=state.indicatorHidden;state.indicator=indicator;state.indicatorHidden=indicator.hidden;}
+            if(!indicator.hidden)indicator.hidden=YES;
+        }
         if(rebind){
             state.left.translatesAutoresizingMaskIntoConstraints=NO;state.right.translatesAutoresizingMaskIntoConstraints=NO;
-            state.constraints=@[
-                [state.left.leadingAnchor constraintEqualToAnchor:left.leadingAnchor constant:notice?-6:0],
+            NSMutableArray *constraints=[NSMutableArray arrayWithArray:@[
+                notice?[state.left.leadingAnchor constraintEqualToAnchor:carrier.leadingAnchor constant:leftRect.origin.x]:[state.left.leadingAnchor constraintEqualToAnchor:left.leadingAnchor],
                 [state.left.centerYAnchor constraintEqualToAnchor:carrier.centerYAnchor],
-                notice?[state.left.widthAnchor constraintEqualToAnchor:left.widthAnchor constant:12]:[state.left.widthAnchor constraintEqualToConstant:44],
-                [state.left.heightAnchor constraintEqualToConstant:44],
-                [state.right.leadingAnchor constraintEqualToAnchor:right.leadingAnchor],
-                [state.right.trailingAnchor constraintEqualToAnchor:right.trailingAnchor],
+                [state.left.widthAnchor constraintEqualToConstant:leftRect.size.width],
+                [state.left.heightAnchor constraintEqualToConstant:leftRect.size.height],
                 [state.right.centerYAnchor constraintEqualToAnchor:carrier.centerYAnchor],
-                [state.right.heightAnchor constraintEqualToConstant:44]];
-            [NSLayoutConstraint activateConstraints:state.constraints];state.leftAnchor=left;state.rightAnchor=right;state.notice=notice;
+                [state.right.heightAnchor constraintEqualToConstant:rightRect.size.height]]];
+            if(selected)[constraints addObjectsFromArray:@[[state.right.centerXAnchor constraintEqualToAnchor:selected.centerXAnchor],[state.right.widthAnchor constraintEqualToConstant:116]]];
+            else [constraints addObjectsFromArray:@[[state.right.leadingAnchor constraintEqualToAnchor:right.leadingAnchor],[state.right.trailingAnchor constraintEqualToAnchor:right.trailingAnchor]]];
+            state.constraints=constraints;[NSLayoutConstraint activateConstraints:constraints];
+            state.leftAnchor=left;state.rightAnchor=rightAnchor;state.notice=notice;state.leftRect=leftRect;
         }
     } @finally {state.busy=NO;}
+}
++ (void)synchronizeHeaderForView:(UIView *)view {
+    if(!NSThread.isMainThread)return;
+    for(NSUInteger i=0;view && i<8;i++,view=view.superview)if([view isKindOfClass:NSClassFromString(@"AWENavigationBar")]){[self synchronizeBar:view];[self scheduleBarSynchronization:view];break;}
 }
 + (void)scheduleBarSynchronization:(UIView *)bar {
     if(!NSThread.isMainThread)return;
@@ -549,6 +622,8 @@
         decisions[decision]=@([decisions[decision] unsignedIntegerValue]+1);
         if(content.count>=3)continue;
         NSMutableDictionary *sample=[@{@"scaleX":@(hypot(view.transform.a,view.transform.b)),@"visualFrame":[self valuesForFrame:[view convertRect:view.bounds toView:state.cell]],@"matrixMatches":@(matches),@"updateDepth":@(state.updates.depth),@"paddingTop":@(state.topPadding),@"paddingBottom":@(state.bottomPadding)} mutableCopy];
+        DYYYMessageCardState *card=objc_getAssociatedObject(state.cell,@selector(synchronizeCell:));
+        if(card.logoView.superview)sample[@"noticeLogoFrame"]=[self valuesForFrame:[card.logoView convertRect:card.logoView.bounds toView:state.cell]];
         for(UIView *child in view.subviews){
             if([child isKindOfClass:NSClassFromString(@"IESIMAsyncDrawableView")] && !sample[@"textFrame"] && !child.hidden)
                 sample[@"textFrame"]=[self valuesForFrame:[child convertRect:child.bounds toView:state.cell]];
@@ -563,7 +638,7 @@
     NSMutableArray *headers=[NSMutableArray array];
     for(UIView *bar in [self bars].allObjects)if(bar.window && headers.count<4){
         DYYYMessageHeaderState *s=[self headerState:bar create:NO];
-        [headers addObject:@{@"transparent":@(!bar.backgroundColor || CGColorGetAlpha(bar.backgroundColor.CGColor)==0),@"leftGlassWidth":@(s.left.bounds.size.width),@"rightGlassWidth":@(s.right.bounds.size.width),@"rightMounted":@(s.right.superview!=nil)}];
+        [headers addObject:@{@"transparent":@(!bar.backgroundColor || CGColorGetAlpha(bar.backgroundColor.CGColor)==0),@"leftGlassWidth":@(s.left.bounds.size.width),@"rightGlassWidth":@(s.right.bounds.size.width),@"rightMounted":@(s.right.superview!=nil),@"selectedTabOnly":@(s.notice)}];
     }
     return @{@"cardsEnabled":@([self cardsEnabled]),@"topEnabled":@([self topEnabled]),@"adapterReady":@([self adapterReady]),@"visibleRowsByGroup":groups,@"insetRows":@(insets),@"contentScale":@0.92,@"contentDecisions":decisions,@"contentContainers":content,@"contentAdapterReady":@([self contentAdapterReady]),@"backgroundMasks":@(backgroundMasks),@"compactLightInteractionViews":@([self lightViews].allObjects.count),@"headers":headers,@"nativeRowGeometry":@YES,@"unreadMutation":@NO};
 }

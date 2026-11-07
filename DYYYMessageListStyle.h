@@ -16,6 +16,7 @@
 + (CGAffineTransform)nativeContentTransform:(CGAffineTransform)transform forView:(UIView *)view;
 + (void)didSetContentTransform:(UIView *)view;
 + (void)synchronizeBar:(UIView *)bar;
++ (void)synchronizeHeaderForView:(UIView *)view;
 + (void)scheduleBarSynchronization:(UIView *)bar;
 + (UIColor *)nativeBackgroundColor:(UIColor *)color forBar:(UIView *)bar;
 + (BOOL)nativeOpaque:(BOOL)opaque forBar:(UIView *)bar;

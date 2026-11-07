@@ -2573,6 +2573,12 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @interface AWEIMChatCellRecommendChatLIView : UIView
 @property (nonatomic, strong) UIButton *lightInteractionBtn;
 @end
+@interface AWEIMFansAndInteractMergeViewControllerNaviBar : UIView
+@property (nonatomic, strong) NSArray<UIView *> *itemViews;
+@property (nonatomic, assign) long long currentSelectedIndex;
+@property (nonatomic, strong) UIView *indicatorView;
+- (void)setSelectedIndex:(long long)index;
+@end
 @interface AWEIMChatListCommonCell : UITableViewCell
 @property (nonatomic, weak) AWEIMChatCellViewModel *cellViewModel;
 @property (nonatomic, strong) UIView *avatarContainer;

@@ -18,12 +18,13 @@ int main(void) {
             double height=[padding[@"height"] doubleValue],top=[padding[@"top"] doubleValue],bottom=[padding[@"bottom"] doubleValue];
             double center=total+(top+height-bottom)/2;
             if([previousKind isEqual:kinds[i]] && ![kinds[i] isEqual:@"notice"])NSCAssert(fabs(center-previousCenter-72)<0.001,@"只增加组边缘留白，组内头像中心间距保持72pt");
-            if(top)NSCAssert(fabs((top+height-bottom)/2-56*0.92/2-6-16.24)<0.001,@"首行头像到卡片顶部留16.24pt");
-            if(bottom)NSCAssert(fabs(height-6-((top+height-bottom)/2+56*0.92/2)-16.24)<0.001,@"末行头像到卡片底部留16.24pt");
+            double gap=[kinds[i] isEqual:@"notice"]?10.24:16.24;
+            if(top)NSCAssert(fabs((top+height-bottom)/2-56*0.92/2-6-gap)<0.001,@"互动入口收紧，会话组仍保持首行留白");
+            if(bottom)NSCAssert(fabs(height-6-((top+height-bottom)/2+56*0.92/2)-gap)<0.001,@"互动入口收紧，会话组仍保持末行留白");
             total+=height;previousCenter=center;previousKind=kinds[i];
         }
-        NSCAssert(total==648,@"三组共增加六处12pt边缘空间");
-        NSCAssert([[DYYYMessageListMetrics paddingForKind:@"notice" previous:nil next:@"pinned" nativeHeight:72][@"height"] doubleValue]==96,@"独立互动消息上下均有留白");
+        NSCAssert(total==636,@"互动入口仅加12pt，会话组各保留24pt边缘空间");
+        NSCAssert([[DYYYMessageListMetrics paddingForKind:@"notice" previous:nil next:@"pinned" nativeHeight:72][@"height"] doubleValue]==84,@"独立互动入口更紧凑且仍有上下留白");
         NSCAssert(![DYYYMessageListMetrics paddingForKind:@"regular" previous:nil next:nil nativeHeight:-1].count,@"未知自动行高保留原生");
         NSCAssert([[DYYYMessageListMetrics kindForNotice:YES pinned:YES] isEqual:@"notice"],@"互动独立，不并入置顶");
         NSDictionary *only=[DYYYMessageListMetrics segmentForKind:@"regular" previous:nil next:nil width:440 height:72];
