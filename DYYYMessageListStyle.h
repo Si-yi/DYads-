@@ -3,6 +3,9 @@
 + (void)preparePreferences;
 + (BOOL)cardsEnabled;
 + (BOOL)topEnabled;
++ (CGFloat)rowHeight:(CGFloat)native controller:(UIViewController *)controller table:(UITableView *)table indexPath:(NSIndexPath *)path;
++ (void)synchronizeLightInteraction:(UIView *)view;
++ (void)resetLightInteraction:(UIView *)view;
 + (void)synchronizeController:(UIViewController *)controller;
 + (void)synchronizeCell:(UITableViewCell *)cell;
 + (void)resetCell:(UITableViewCell *)cell;

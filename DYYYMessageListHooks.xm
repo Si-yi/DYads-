@@ -1,5 +1,6 @@
 #import "AwemeHeaders.h"
 #import "DYYYMessageListStyle.h"
+#import "DYYYInteractionNoticeStyle.h"
 #import "DYYYChatEnhancementPolicy.h"
 
 %group DYYYMessageListControllerHooks
@@ -18,6 +19,20 @@
 %group DYYYMessageListDataHooks
 %hook AWEIMChatListViewController
 - (void)setChatList:(NSArray *)chats { %orig(chats); [DYYYMessageListStyle synchronizeController:self]; }
+%end
+%end
+%group DYYYMessageListRowHeightHooks
+%hook AWEIMChatListViewController
+- (CGFloat)tableView:(UITableView *)table heightForRowAtIndexPath:(NSIndexPath *)path {
+    CGFloat native=%orig(table,path);
+    return [DYYYMessageListStyle rowHeight:native controller:self table:table indexPath:path];
+}
+%end
+%end
+%group DYYYMessageLightInteractionHooks
+%hook AWEIMChatCellRecommendChatLIView
+- (void)layoutSubviews { %orig; [DYYYMessageListStyle synchronizeLightInteraction:self]; }
+- (void)didMoveToWindow { %orig; if(self.window)[DYYYMessageListStyle synchronizeLightInteraction:self];else [DYYYMessageListStyle resetLightInteraction:self]; }
 %end
 %end
 %group DYYYMessageListCellHooks
@@ -54,7 +69,7 @@
 %hook AWENavigationBar
 - (void)setBackgroundColor:(UIColor *)color { %orig([DYYYMessageListStyle nativeBackgroundColor:color forBar:self]); }
 - (void)setOpaque:(BOOL)opaque { %orig([DYYYMessageListStyle nativeOpaque:opaque forBar:self]); }
-- (void)layoutSubviews { %orig; [DYYYMessageListStyle synchronizeBar:self]; [DYYYMessageListStyle scheduleBarSynchronization:self]; }
+- (void)layoutSubviews { %orig; [DYYYInteractionNoticeStyle installHooks]; [DYYYMessageListStyle synchronizeBar:self]; [DYYYMessageListStyle scheduleBarSynchronization:self]; }
 - (void)didMoveToWindow { %orig; [DYYYMessageListStyle synchronizeBar:self]; [DYYYMessageListStyle scheduleBarSynchronization:self]; }
 %end
 %end
@@ -77,8 +92,11 @@
         [DYYYChatEnhancementPolicy class:list selector:@selector(tableView) result:'@' arguments:@""] &&
         [DYYYChatEnhancementPolicy class:list selector:@selector(chatList) result:'@' arguments:@""]) {
         %init(DYYYMessageListControllerHooks);
+        if([DYYYChatEnhancementPolicy class:list selector:@selector(tableView:heightForRowAtIndexPath:) result:@encode(CGFloat)[0] arguments:@"@@"]) { %init(DYYYMessageListRowHeightHooks); }
         if([DYYYChatEnhancementPolicy class:list selector:@selector(setChatList:) result:'v' arguments:@"@"]) { %init(DYYYMessageListDataHooks); }
     }
+    Class light=NSClassFromString(@"AWEIMChatCellRecommendChatLIView");
+    if([light isSubclassOfClass:UIView.class] && [DYYYChatEnhancementPolicy class:light selector:@selector(lightInteractionBtn) result:'@' arguments:@""]) { %init(DYYYMessageLightInteractionHooks); }
     if([cell isSubclassOfClass:UITableViewCell.class] && [DYYYChatEnhancementPolicy class:cell selector:@selector(renderWithHolder:) result:'v' arguments:@"@"]) {
         %init(DYYYMessageListCellHooks);
         if([DYYYChatEnhancementPolicy class:cell selector:@selector(onThemeDidChanged) result:'v' arguments:@""]) { %init(DYYYMessageListCellThemeHooks); }

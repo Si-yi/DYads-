@@ -38,7 +38,7 @@ TWEAK_NAME = DYads-
 
 DYads-_FILES = DYYY.xm DYYYFloatClearButton.xm DYYYFloatSpeedButton.m DYYYSettings.xm DYYYAutoMessageHooks.xm DYYYABTestHook.xm DYYYLongPressPanel.xm DYYYGlassTabBar.xm DYYYProfileClean.xm DYYYPlusIcon.m DKTabBarIcons.m DKTabBarIconDraw.m DKIconCropper.m DYYYSettingsHelper.m DYYYAutoMessage.m DYYYAutoMessagePanel.m DYYYBackupTools.m DYYYDebugInspector.m DKDebugCapture.m DKClassDump.m DKZipWriter.m DYYYImagePickerDelegate.m DYYYBackupPickerDelegate.m DYYYBottomAlertView.m DYYYCustomInputView.m DYYYOptionsSelectionView.m DYYYIconOptionsDialogView.m DYYYAboutDialogView.m DYYYKeywordListView.m DYYYFilterSettingsView.m DYYYConfirmCloseView.m DYYYToast.m DYYYManager.m DYYYUtils.m CityManager.m AWMSafeDispatchTimer.m
 DYads-_FILES += DYYYRecallMarkerMetrics.m DYYYRecallPolicy.m DYYYRecallStore.m DYYYRecallCoordinator.m DYYYRecallHooks.xm
-DYads-_FILES += DYYYMessageListStyle.m DYYYMessageListCardView.m DYYYMessageListMetrics.m DYYYMessageListUpdateState.m DYYYMessageListHooks.xm
+DYads-_FILES += DYYYMessageListStyle.m DYYYMessageListCardView.m DYYYMessageListMetrics.m DYYYMessageListUpdateState.m DYYYMessageListHooks.xm DYYYInteractionNoticeStyle.m DYYYInteractionNoticeHooks.xm
 DYads-_FILES += DYYYChatLifecycle.m DYYYChatTransitionTrace.m
 DYads-_FILES += DYYYChatEnhancements.m DYYYChatEnhancementPolicy.m DYYYChatEnhancementHooks.xm
 DYads-_FILES += DYYYHomeDailyFilter.m DYYYHomeDailyFilterHooks.xm

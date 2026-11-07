@@ -2555,6 +2555,7 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @property (nonatomic, copy) NSArray *chatList;
 - (void)tableView:(UITableView *)table willDisplayCell:(UITableViewCell *)cell forRowAtIndexPath:(NSIndexPath *)path;
 - (void)tableView:(UITableView *)table didEndDisplayingCell:(UITableViewCell *)cell forRowAtIndexPath:(NSIndexPath *)path;
+- (CGFloat)tableView:(UITableView *)table heightForRowAtIndexPath:(NSIndexPath *)path;
 @end
 @interface AWEIMChatModel : NSObject
 @property (nonatomic, assign) BOOL stickOnTop;
@@ -2565,6 +2566,12 @@ typedef NS_ENUM(NSUInteger, DYEdgeMode) {
 @property (nonatomic, strong) AWEIMChatModel *chat;
 @end
 @interface UITableViewCellContentView : UIView
+@end
+// 实际运行时类：AWENoticeSwiftBizUI.InteractionNoticeContainerCell。
+@interface DYYYNativeInteractionNoticeCell : UICollectionViewCell
+@end
+@interface AWEIMChatCellRecommendChatLIView : UIView
+@property (nonatomic, strong) UIButton *lightInteractionBtn;
 @end
 @interface AWEIMChatListCommonCell : UITableViewCell
 @property (nonatomic, weak) AWEIMChatCellViewModel *cellViewModel;

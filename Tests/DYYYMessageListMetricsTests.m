@@ -12,12 +12,25 @@ int main(void) {
             if(i==2 || i==3 || i==6) NSCAssert(![segment[@"first"] boolValue] && ![segment[@"last"] boolValue],@"组内聊天连续，不能逐行圆角");
         }
         NSCAssert(starts==3 && ends==3,@"互动、置顶、普通三整块卡片");
+        double total=0,previousCenter=-1;NSString *previousKind=nil;
+        for(NSUInteger i=0;i<kinds.count;i++){
+            NSDictionary *padding=[DYYYMessageListMetrics paddingForKind:kinds[i] previous:i?kinds[i-1]:nil next:i+1<kinds.count?kinds[i+1]:nil nativeHeight:72];
+            double height=[padding[@"height"] doubleValue],top=[padding[@"top"] doubleValue],bottom=[padding[@"bottom"] doubleValue];
+            double center=total+(top+height-bottom)/2;
+            if([previousKind isEqual:kinds[i]] && ![kinds[i] isEqual:@"notice"])NSCAssert(fabs(center-previousCenter-72)<0.001,@"只增加组边缘留白，组内头像中心间距保持72pt");
+            if(top)NSCAssert(fabs((top+height-bottom)/2-56*0.92/2-6-16.24)<0.001,@"首行头像到卡片顶部留16.24pt");
+            if(bottom)NSCAssert(fabs(height-6-((top+height-bottom)/2+56*0.92/2)-16.24)<0.001,@"末行头像到卡片底部留16.24pt");
+            total+=height;previousCenter=center;previousKind=kinds[i];
+        }
+        NSCAssert(total==648,@"三组共增加六处12pt边缘空间");
+        NSCAssert([[DYYYMessageListMetrics paddingForKind:@"notice" previous:nil next:@"pinned" nativeHeight:72][@"height"] doubleValue]==96,@"独立互动消息上下均有留白");
+        NSCAssert(![DYYYMessageListMetrics paddingForKind:@"regular" previous:nil next:nil nativeHeight:-1].count,@"未知自动行高保留原生");
         NSCAssert([[DYYYMessageListMetrics kindForNotice:YES pinned:YES] isEqual:@"notice"],@"互动独立，不并入置顶");
         NSDictionary *only=[DYYYMessageListMetrics segmentForKind:@"regular" previous:nil next:nil width:440 height:72];
         NSCAssert([only[@"first"] boolValue] && [only[@"last"] boolValue],@"没有置顶时普通列表也有完整圆角");
         NSDictionary *lastPin=[DYYYMessageListMetrics segmentForKind:@"pinned" previous:@"pinned" next:@"regular" width:440 height:72];
         NSDictionary *firstNormal=[DYYYMessageListMetrics segmentForKind:@"regular" previous:@"pinned" next:@"regular" width:440 height:72];
-        NSCAssert(72-[lastPin[@"y"] doubleValue]-[lastPin[@"height"] doubleValue]+[firstNormal[@"y"] doubleValue]==12,@"两个组之间12pt空隙且原行高不变");
+        NSCAssert(72-[lastPin[@"y"] doubleValue]-[lastPin[@"height"] doubleValue]+[firstNormal[@"y"] doubleValue]==12,@"两个组之间保留12pt空隙");
         NSCAssert(![DYYYMessageListMetrics segmentForKind:@"unknown" previous:nil next:nil width:440 height:72].count,@"未知业务不猜分组");
         // 80C4F15D 真实平铺行：头像、时间、摘要与角标都由相同映射保留相对间距。
         NSDictionary *avatar=[DYYYMessageListMetrics contentTransformForX:16 y:8 width:56 height:56 rowWidth:440 rowHeight:72];

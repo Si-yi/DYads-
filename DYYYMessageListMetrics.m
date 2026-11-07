@@ -2,6 +2,13 @@
 #include <math.h>
 @implementation DYYYMessageListMetrics
 + (NSString *)kindForNotice:(BOOL)notice pinned:(BOOL)pinned { return notice ? @"notice" : pinned ? @"pinned" : @"regular"; }
++ (NSDictionary *)paddingForKind:(NSString *)kind previous:(NSString *)previous next:(NSString *)next nativeHeight:(double)height {
+    if(![@[@"notice",@"pinned",@"regular"] containsObject:kind?:@""] || !isfinite(height) || height<40 || height>200)return @{};
+    BOOL first=[kind isEqual:@"notice"] || ![kind isEqual:previous];
+    BOOL last=[kind isEqual:@"notice"] || ![kind isEqual:next];
+    double top=first?12:0,bottom=last?12:0;
+    return @{@"top":@(top),@"bottom":@(bottom),@"nativeHeight":@(height),@"height":@(height+top+bottom)};
+}
 + (NSDictionary *)segmentForKind:(NSString *)kind previous:(NSString *)previous next:(NSString *)next width:(double)width height:(double)height {
     if (![@[@"notice",@"pinned",@"regular"] containsObject:kind ?: @""] || !isfinite(width) || !isfinite(height) || width < 160 || height < 40) return @{};
     BOOL first = [kind isEqual:@"notice"] || ![kind isEqual:previous];
