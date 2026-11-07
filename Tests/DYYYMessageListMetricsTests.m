@@ -1,5 +1,6 @@
 #import <Foundation/Foundation.h>
 #import "DYYYMessageListMetrics.h"
+#include <math.h>
 int main(void) {
     @autoreleasepool {
         NSArray *kinds = @[@"notice",@"pinned",@"pinned",@"pinned",@"pinned",@"regular",@"regular",@"regular"];
@@ -18,18 +19,25 @@ int main(void) {
         NSDictionary *firstNormal=[DYYYMessageListMetrics segmentForKind:@"regular" previous:@"pinned" next:@"regular" width:440 height:72];
         NSCAssert(72-[lastPin[@"y"] doubleValue]-[lastPin[@"height"] doubleValue]+[firstNormal[@"y"] doubleValue]==12,@"两个组之间12pt空隙且原行高不变");
         NSCAssert(![DYYYMessageListMetrics segmentForKind:@"unknown" previous:nil next:nil width:440 height:72].count,@"未知业务不猜分组");
-        // E68EEF19 实际头像、时间、超长摘要和未读数字；内缩后保留比例及尾部空间。
-        NSDictionary *avatar=[DYYYMessageListMetrics contentPlacementForX:16 width:56 rowWidth:440 trailing:NO nativeRightLimit:424];
-        NSDictionary *time=[DYYYMessageListMetrics contentPlacementForX:375 width:49 rowWidth:440 trailing:YES nativeRightLimit:424];
-        NSDictionary *badge=[DYYYMessageListMetrics contentPlacementForX:402 width:22 rowWidth:440 trailing:YES nativeRightLimit:424];
-        NSDictionary *subtitle=[DYYYMessageListMetrics contentPlacementForX:84 width:340 rowWidth:440 trailing:NO nativeRightLimit:424];
-        NSCAssert(16+[avatar[@"translation"] doubleValue]==32 && [avatar[@"visibleWidth"] doubleValue]==56,@"头像和面板间距16pt，头像不变形");
-        NSCAssert(375+[time[@"translation"] doubleValue]+49==408 && 402+[badge[@"translation"] doubleValue]+22==408,@"时间与红点一同内缩，保持原生对齐");
-        NSDictionary *withBadge=[DYYYMessageListMetrics contentPlacementForX:84 width:306 rowWidth:440 trailing:NO nativeRightLimit:390];
-        NSCAssert([withBadge[@"visibleWidth"] doubleValue]==274 && 84+16+274+12==402-16,@"真实22pt未读角标与长摘要内缩后仍保留12pt间距");
-        NSCAssert([subtitle[@"visibleWidth"] doubleValue]==308,@"长摘要只在面板内绘制，不能盖住外边距");
-        NSCAssert(![DYYYMessageListMetrics contentPlacementForX:438 width:40 rowWidth:440 trailing:YES nativeRightLimit:424].count,@"未知越界组件不强行平移");
-        NSCAssert(![DYYYMessageListMetrics contentPlacementForX:0 width:0 rowWidth:440 trailing:NO nativeRightLimit:424].count,@"布局未就绪不能保存零尺寸方案");
+        // 80C4F15D 真实平铺行：头像、时间、摘要与角标都由相同映射保留相对间距。
+        NSDictionary *avatar=[DYYYMessageListMetrics contentTransformForX:16 y:8 width:56 height:56 rowWidth:440 rowHeight:72];
+        NSDictionary *time=[DYYYMessageListMetrics contentTransformForX:363 y:16 width:61 height:15 rowWidth:440 rowHeight:72];
+        NSDictionary *subtitle=[DYYYMessageListMetrics contentTransformForX:84 y:40 width:306 height:17 rowWidth:440 rowHeight:72];
+        NSDictionary *badge=[DYYYMessageListMetrics contentTransformForX:402 y:40.5 width:22 height:16 rowWidth:440 rowHeight:72];
+        double leftGap=[avatar[@"x"] doubleValue]-16;
+        double rightGap=424-[time[@"x"] doubleValue]-[time[@"width"] doubleValue];
+        NSCAssert(fabs(leftGap-16.32)<0.001 && fabs(rightGap-leftGap)<0.001,@"头像与时间到卡片边缘均留约16pt，不再贴边");
+        NSCAssert(fabs([avatar[@"width"] doubleValue]-[avatar[@"height"] doubleValue])<0.001,@"头像等比缩小，保持圆形");
+        NSCAssert([avatar[@"y"] doubleValue]>10 && [avatar[@"y"] doubleValue]+[avatar[@"height"] doubleValue]<62,@"头像上下也留出更多空白");
+        double textGap=[badge[@"x"] doubleValue]-[subtitle[@"x"] doubleValue]-[subtitle[@"width"] doubleValue];
+        NSCAssert(fabs(textGap-11.04)<0.001,@"摘要与角标原有12pt间距同步缩放，保留分离");
+        NSDictionary *prefix=[DYYYMessageListMetrics contentTransformForX:84 y:40 width:53 height:17 rowWidth:440 rowHeight:72];
+        NSDictionary *sender=[DYYYMessageListMetrics contentTransformForX:137 y:40 width:259 height:17 rowWidth:440 rowHeight:72];
+        NSCAssert(fabs([prefix[@"x"] doubleValue]+[prefix[@"width"] doubleValue]-[sender[@"x"] doubleValue])<0.001,@"群聊条数与摘要仍连续对齐");
+        NSCAssert(![DYYYMessageListMetrics contentTransformForX:438 y:8 width:40 height:56 rowWidth:440 rowHeight:72].count,@"未知越界组件不接管");
+        NSCAssert(![DYYYMessageListMetrics contentTransformForX:0 y:0 width:0 height:0 rowWidth:440 rowHeight:72].count,@"未完成布局不接管");
+        NSCAssert(![DYYYMessageListMetrics contentTransformForX:NAN y:8 width:56 height:56 rowWidth:440 rowHeight:72].count,@"非法几何安全跳过");
+        for(NSUInteger i=0;i<1000;i++) NSCAssert([avatar isEqual:[DYYYMessageListMetrics contentTransformForX:16 y:8 width:56 height:56 rowWidth:440 rowHeight:72]],@"始终用原生center/bounds映射，反复布局不继续缩小");
         for(NSUInteger i=0;i<100;i++) NSCAssert([only isEqual:[DYYYMessageListMetrics segmentForKind:@"regular" previous:nil next:nil width:440 height:72]],@"复用和重复布局不累加");
         NSLog(@"DYYYMessageListMetrics regression tests passed");
     }

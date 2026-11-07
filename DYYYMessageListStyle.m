@@ -19,6 +19,7 @@
 @property (nonatomic) BOOL lineHidden;
 @property (nonatomic) BOOL busy;
 @property (nonatomic, copy) NSString *kind;
+@property (nonatomic, copy) NSString *contentDecision;
 @end
 @implementation DYYYMessageCardState @end
 
@@ -52,7 +53,6 @@
     if(ready)return YES;
     Class cell=NSClassFromString(@"AWEIMChatListCommonCell"),vm=NSClassFromString(@"AWEIMChatCellViewModel"),chat=NSClassFromString(@"AWEIMChatModel");
     ready = [DYYYChatEnhancementPolicy class:cell selector:@selector(cellViewModel) result:'@' arguments:@""] &&
-        [DYYYChatEnhancementPolicy class:cell selector:@selector(avatarContainer) result:'@' arguments:@""] &&
         [DYYYChatEnhancementPolicy class:vm selector:@selector(chat) result:'@' arguments:@""] &&
         [DYYYChatEnhancementPolicy class:chat selector:@selector(stickOnTop) result:'B' arguments:@""] &&
         [DYYYChatEnhancementPolicy class:chat selector:@selector(name) result:'@' arguments:@""] &&
@@ -91,25 +91,19 @@
         if(CGAffineTransformEqualToTransform(view.transform,[saved[@"applied"] CGAffineTransformValue]))view.transform=[saved[@"native"] CGAffineTransformValue];
     }
     [state.translations removeAllObjects];
-    for(UIView *view in state.masks.keyEnumerator.allObjects){
-        NSDictionary *saved=[state.masks objectForKey:view];
-        if([saved[@"background"] boolValue])continue;
-        if(view.layer.mask==saved[@"applied"])view.layer.mask=saved[@"native"]==NSNull.null?nil:saved[@"native"];
-        [state.masks removeObjectForKey:view];
-    }
 }
-+ (void)maskView:(UIView *)view visibleWidth:(CGFloat)width background:(BOOL)background state:(DYYYMessageCardState *)state {
++ (void)maskBackground:(UIView *)view state:(DYYYMessageCardState *)state {
     NSDictionary *saved=[state.masks objectForKey:view];
     if(saved && view.layer.mask!=saved[@"applied"]){[state.masks removeObjectForKey:view];saved=nil;}
     CALayer *mask=saved[@"applied"];
     if(!mask){
         if(view.layer.mask)return;
         // 原生满行底板可能在异步渲染后重写颜色。仅遮住已核对的空背景视图，不钩全局 setter。
-        mask=[CALayer layer];mask.backgroundColor=background?UIColor.clearColor.CGColor:UIColor.blackColor.CGColor;
-        [state.masks setObject:@{@"native":NSNull.null,@"applied":mask,@"background":@(background)} forKey:view];
+        mask=[CALayer layer];mask.backgroundColor=UIColor.clearColor.CGColor;
+        [state.masks setObject:@{@"native":NSNull.null,@"applied":mask,@"background":@YES} forKey:view];
         [CATransaction begin];[CATransaction setDisableActions:YES];view.layer.mask=mask;[CATransaction commit];
     }
-    CGRect rect=background?view.bounds:CGRectMake(0,0,width,view.bounds.size.height);
+    CGRect rect=view.bounds;
     if(!CGRectEqualToRect(mask.frame,rect)){[CATransaction begin];[CATransaction setDisableActions:YES];mask.frame=rect;[CATransaction commit];}
 }
 + (void)prepareCellLayout:(UITableViewCell *)cell {
@@ -122,51 +116,32 @@
     state.busy=NO;
 }
 + (void)insetContent:(AWEIMChatListCommonCell *)cell state:(DYYYMessageCardState *)state {
-    // 39.5 异步平铺布局：只平移已确认的原生组件，保留头像比例、正文绘制、按钮和原生命中。
-    UIView *avatar=[cell respondsToSelector:@selector(avatarContainer)]?cell.avatarContainer:nil;
-    if(avatar.superview!=cell.contentView){[self restoreInsets:state];return;}
-    NSMutableArray *components=[NSMutableArray array];
+    // 异步平铺分支不保证 avatarContainer 属性就是已挂载的头像容器。
+    // 只枚举已显示的直接内容组件，同一行统一缩放，保持原生内容和动作。
+    if(!CGPointEqualToPoint(cell.contentView.bounds.origin,CGPointZero) || cell.contentView.subviews.count>64){state.contentDecision=@"unsupported_container";[self restoreInsets:state];return;}
+    NSMutableArray *placements=[NSMutableArray array];
     for(UIView *view in cell.contentView.subviews){
-        if(view==state.line || view.hidden)continue;
-        if(view.class==UIView.class && !view.subviews.count && !view.layer.contents && CGRectEqualToRect(view.frame,cell.contentView.bounds))continue;
-        BOOL supported=view==avatar || [view isKindOfClass:NSClassFromString(@"IESIMAsyncDrawableView")] ||
-            [view isKindOfClass:NSClassFromString(@"AWEIMConsecutiveChatDaysWrapper")] ||
-            [view isKindOfClass:NSClassFromString(@"AWEIMChatCellRecommendChatLIView")] || view.class==UIImageView.class;
+        NSDictionary *mask=[state.masks objectForKey:view];
+        if(view==state.line || [mask[@"background"] boolValue] || view.hidden || view.alpha<=0.01 || view.bounds.size.width<=0 || view.bounds.size.height<=0)continue;
         NSDictionary *old=[state.translations objectForKey:view];
         BOOL owns=old && CGAffineTransformEqualToTransform(view.transform,[old[@"applied"] CGAffineTransformValue]);
         CGAffineTransform native=owns?[old[@"native"] CGAffineTransformValue]:view.transform;
-        if(!supported || !CGAffineTransformIsIdentity(native)){[self restoreInsets:state];return;}
-        [components addObject:view];
-    }
-    NSMutableArray *placements=[NSMutableArray array];
-    for(UIView *view in components){
-        NSDictionary *old=[state.translations objectForKey:view];
-        if(old && !CGAffineTransformEqualToTransform(view.transform,[old[@"applied"] CGAffineTransformValue])){[state.translations removeObjectForKey:view];old=nil;}
-        // UIView 的 center/bounds 不随 transform 平移；由这两者取得原生矩形，不能再次扣 tx。
+        if(!CGAffineTransformIsIdentity(native) || !CGPointEqualToPoint(view.layer.anchorPoint,CGPointMake(0.5,0.5))){state.contentDecision=@"native_transform_or_anchor";[self restoreInsets:state];return;}
+        // center/bounds 不随 transform 改变，不能按已缩过的 frame 重算或再次扣偏移。
         CGRect rect=CGRectMake(view.center.x-view.bounds.size.width/2,view.center.y-view.bounds.size.height/2,view.bounds.size.width,view.bounds.size.height);
-        BOOL trailing=view!=avatar && ![view isKindOfClass:NSClassFromString(@"AWEIMConsecutiveChatDaysWrapper")] && rect.origin.x>=cell.bounds.size.width*0.6;
-        CGFloat rightLimit=cell.bounds.size.width-16;
-        if(!trailing)for(UIView *other in components){
-            if(other==view || other==avatar || [other isKindOfClass:NSClassFromString(@"AWEIMConsecutiveChatDaysWrapper")])continue;
-            CGRect tail=CGRectMake(other.center.x-other.bounds.size.width/2,other.center.y-other.bounds.size.height/2,other.bounds.size.width,other.bounds.size.height);
-            if(tail.origin.x<cell.bounds.size.width*0.6 || CGRectGetMaxY(tail)<=CGRectGetMinY(rect) || CGRectGetMinY(tail)>=CGRectGetMaxY(rect))continue;
-            CGFloat gap=MAX(0,MIN(12,tail.origin.x-CGRectGetMaxX(rect)));
-            rightLimit=MIN(rightLimit,tail.origin.x-gap);
-        }
-        NSDictionary *plan=[DYYYMessageListMetrics contentPlacementForX:rect.origin.x width:rect.size.width rowWidth:cell.bounds.size.width trailing:trailing nativeRightLimit:rightLimit];
-        if(!plan.count || (!trailing && [plan[@"visibleWidth"] doubleValue]<rect.size.width && ![view isKindOfClass:NSClassFromString(@"IESIMAsyncDrawableView")])){[self restoreInsets:state];return;}
-        [placements addObject:@{@"view":view,@"plan":plan}];
+        NSDictionary *plan=[DYYYMessageListMetrics contentTransformForX:rect.origin.x y:rect.origin.y width:rect.size.width height:rect.size.height rowWidth:cell.bounds.size.width rowHeight:cell.bounds.size.height];
+        if(!plan.count){state.contentDecision=@"unsupported_geometry";[self restoreInsets:state];return;}
+        [placements addObject:@{@"view":view,@"plan":plan,@"native":[NSValue valueWithCGAffineTransform:native]}];
     }
+    if(!placements.count){state.contentDecision=@"empty";[self restoreInsets:state];return;}
     for(NSDictionary *placement in placements){
         UIView *view=placement[@"view"];NSDictionary *plan=placement[@"plan"];
-        NSDictionary *old=[state.translations objectForKey:view];
-        CGAffineTransform native=old?[old[@"native"] CGAffineTransformValue]:view.transform;
-        CGAffineTransform applied=CGAffineTransformTranslate(native,[plan[@"translation"] doubleValue],0);
+        CGFloat scale=[plan[@"scale"] doubleValue];
+        CGAffineTransform applied=CGAffineTransformMake(scale,0,0,scale,[plan[@"translationX"] doubleValue],[plan[@"translationY"] doubleValue]);
         if(!CGAffineTransformEqualToTransform(view.transform,applied))view.transform=applied;
-        [state.translations setObject:@{@"native":[NSValue valueWithCGAffineTransform:native],@"applied":[NSValue valueWithCGAffineTransform:applied]} forKey:view];
-        if([plan[@"visibleWidth"] doubleValue]<view.bounds.size.width && [view isKindOfClass:NSClassFromString(@"IESIMAsyncDrawableView")])
-            [self maskView:view visibleWidth:[plan[@"visibleWidth"] doubleValue] background:NO state:state];
+        [state.translations setObject:@{@"native":placement[@"native"],@"applied":[NSValue valueWithCGAffineTransform:applied]} forKey:view];
     }
+    state.contentDecision=@"applied";
 }
 + (void)resetCell:(UITableViewCell *)cell {
     if(!NSThread.isMainThread)return;
@@ -221,7 +196,7 @@
         [self clearFill:cell state:state];[self clearFill:cell.contentView state:state];
         for(UIView *view in cell.contentView.subviews)
             if(view.class==UIView.class && !view.subviews.count && !view.layer.contents && !view.layer.sublayers.count && CGRectEqualToRect(view.frame,cell.contentView.bounds))
-                [self maskView:view visibleWidth:0 background:YES state:state];
+                [self maskBackground:view state:state];
         UIView *line=cell.horizontalLine;
         if(line!=state.line){state.line=line;state.lineHidden=line.hidden;}
         if(!line.hidden)line.hidden=YES;
@@ -355,10 +330,12 @@
 + (NSDictionary *)diagnostics {
     if(!NSThread.isMainThread)return @{};
     NSMutableDictionary *groups=[NSMutableDictionary dictionary];
+    NSMutableDictionary *decisions=[NSMutableDictionary dictionary];
     NSUInteger insets=0,backgroundMasks=0;
     for(UITableViewCell *cell in [self cells].allObjects)if(cell.window){
         DYYYMessageCardState *s=objc_getAssociatedObject(cell,@selector(synchronizeCell:));
         if(s.kind)groups[s.kind]=@([groups[s.kind] unsignedIntegerValue]+1);
+        if(s.contentDecision)decisions[s.contentDecision]=@([decisions[s.contentDecision] unsignedIntegerValue]+1);
         if(s.translations.count)insets++;
         for(UIView *view in s.masks.keyEnumerator.allObjects){NSDictionary *mask=[s.masks objectForKey:view];if([mask[@"background"] boolValue] && view.layer.mask==mask[@"applied"])backgroundMasks++;}
     }
@@ -367,6 +344,6 @@
         DYYYMessageHeaderState *s=[self headerState:bar create:NO];
         [headers addObject:@{@"transparent":@(!bar.backgroundColor || CGColorGetAlpha(bar.backgroundColor.CGColor)==0),@"leftGlassWidth":@(s.left.bounds.size.width),@"rightGlassWidth":@(s.right.bounds.size.width),@"rightMounted":@(s.right.superview!=nil)}];
     }
-    return @{@"cardsEnabled":@([self cardsEnabled]),@"topEnabled":@([self topEnabled]),@"adapterReady":@([self adapterReady]),@"visibleRowsByGroup":groups,@"insetRows":@(insets),@"backgroundMasks":@(backgroundMasks),@"headers":headers,@"nativeRowGeometry":@YES,@"unreadMutation":@NO};
+    return @{@"cardsEnabled":@([self cardsEnabled]),@"topEnabled":@([self topEnabled]),@"adapterReady":@([self adapterReady]),@"visibleRowsByGroup":groups,@"insetRows":@(insets),@"contentScale":@0.92,@"contentDecisions":decisions,@"backgroundMasks":@(backgroundMasks),@"headers":headers,@"nativeRowGeometry":@YES,@"unreadMutation":@NO};
 }
 @end
